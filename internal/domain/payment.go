@@ -1,5 +1,5 @@
-// Copyright (c) 2026 Paysim by Stéphane Primault — Tous droits réservés.
-// Author: Stéphane Primault <sprimault@users.noreply.github.com>
+// Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
+// SPDX-License-Identifier: Apache-2.0
 
 // Package domain contient la machine à états du paiement et son journal
 // d'événements. Il ne connaît aucun fournisseur — cet invariant est vérifié

@@ -1,5 +1,5 @@
-// Copyright (c) 2026 Paysim by Stéphane Primault — Tous droits réservés.
-// Author: Stéphane Primault <sprimault@users.noreply.github.com>
+// Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
+// SPDX-License-Identifier: Apache-2.0
 
 // Package arch regroupe les tests d'architecture du projet Paysim. Il ne
 // contient aucun code applicatif — seulement des tests qui vérifient les
