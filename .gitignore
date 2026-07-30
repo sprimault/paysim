@@ -10,3 +10,6 @@ web/node_modules/
 .claude/
 CLAUDE.md
 /memory
+
+# IDE JetBrains
+.idea/
