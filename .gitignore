@@ -1,0 +1,12 @@
+# binaires
+/paysim
+/paysim.exe
+
+# front
+web/dist/
+web/node_modules/
+
+# configuration de travail
+.claude/
+CLAUDE.md
+/memory
