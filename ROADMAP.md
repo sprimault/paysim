@@ -3,7 +3,7 @@
 Chaque phase est livrable seule et a un critère de fin vérifiable. On ne commence pas la
 suivante avant que le critère soit atteint.
 
-**Phase en cours : 0**
+**Phase en cours : 1**
 
 ---
 
