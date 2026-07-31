@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sprimault/paysim/internal/chaos"
 	"github.com/sprimault/paysim/internal/config"
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/providers/payzen"
@@ -72,13 +73,25 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		"max_payments", cfg.MaxPayments,
 		"hmac_configured", cfg.PayzenHMACKey != "",
 		"api_token_configured", cfg.APIToken != "",
+		"chaos_latency_ms", cfg.ChaosLatencyMs,
+		"chaos_error_rate", cfg.ChaosErrorRate,
 	)
+
+	// Chaos reste nil (donc inerte) si la config est vide — invariant 5.
+	var chaosInj *chaos.Chaos
+	if cfg.ChaosLatencyMs > 0 || cfg.ChaosErrorRate > 0 {
+		chaosInj = chaos.New(chaos.Config{
+			LatencyMs: cfg.ChaosLatencyMs,
+			ErrorRate: cfg.ChaosErrorRate,
+		}, logger)
+	}
 
 	store := payzen.NewStore()
 	queue := delivery.New(&http.Client{Timeout: httpClientTimeout}, logger, cfg.MaxPayments)
 	payzenHandler := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{
 		HMACKey:  cfg.PayzenHMACKey,
 		APIToken: cfg.APIToken,
+		Chaos:    chaosInj,
 	})
 
 	var ready atomic.Bool

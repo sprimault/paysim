@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sprimault/paysim/internal/chaos"
 	"github.com/sprimault/paysim/internal/delivery"
 )
 
@@ -882,6 +883,139 @@ func TestBearerAuthCorrectToken(t *testing.T) {
 		}, "secret-bearer")
 	if status != http.StatusOK {
 		t.Errorf("status = %d, veut 200", status)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Tests chaos (vertical 1 phase 2)
+// -----------------------------------------------------------------------------
+
+func TestChaosInjectsErrorOnAPIRoutes(t *testing.T) {
+	t.Parallel()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	c := chaos.New(chaos.Config{ErrorRate: 100}, logger)
+
+	server, _, _ := newTestServerFull(t, HandlerConfig{Chaos: c})
+
+	// /api-payment/V4/* passe par le middleware chaos → 500 systématique.
+	req, _ := http.NewRequest(http.MethodPost,
+		server.URL+"/api-payment/V4/Charge/CreatePayment",
+		strings.NewReader(`{"orderId":"o","amount":100,"currency":"EUR"}`))
+	req.SetBasicAuth("u", "p")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("status = %d, veut 500 (chaos injecté)", resp.StatusCode)
+	}
+}
+
+func TestChaosDoesNotAffectSimulateRoutes(t *testing.T) {
+	t.Parallel()
+	// ErrorRate=100 sur /api-payment/* NE DOIT PAS impacter /paysim/simulate/*.
+	// C'est le contrat : chaos simule les défauts PSP, pas ceux de l'API
+	// de contrôle Paysim.
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	c := chaos.New(chaos.Config{ErrorRate: 100}, logger)
+
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", Chaos: c})
+
+	// L'appel simulate avec un formToken inconnu doit répondre 400
+	// (erreur métier), pas 500 (chaos). Preuve que le middleware chaos
+	// n'est pas sur cette route.
+	_, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{FormToken: "inexistant", Outcome: OutcomePaid, ReturnURL: "http://x"}, "")
+	if status == http.StatusInternalServerError {
+		t.Errorf("simulate reçoit 500 alors que chaos ne doit pas s'y appliquer")
+	}
+}
+
+func TestMagicAmountForcesUnpaid(t *testing.T) {
+	t.Parallel()
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	merchant, received := newMerchantServer(t)
+
+	// Montant se terminant par 01 → force UNPAID quel que soit outcome demandé.
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{OrderID: "o", Amount: 1501, Currency: "EUR"}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	// On demande PAID, mais magic amount doit forcer UNPAID.
+	_, _ = simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{
+			FormToken: ca.FormToken,
+			ReturnURL: merchant.URL,
+			Outcome:   OutcomePaid,
+		}, "")
+
+	select {
+	case wh := <-received:
+		if !strings.Contains(wh.Values.Get("kr-answer"), `"orderStatus":"UNPAID"`) {
+			t.Errorf("orderStatus attendu UNPAID (magic 01), reçu : %s",
+				wh.Values.Get("kr-answer"))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("webhook non reçu")
+	}
+}
+
+func TestMagicAmountLatencyOnCreatePayment(t *testing.T) {
+	t.Parallel()
+	// Montant se terminant par 03 → latence 30s côté serveur. On la
+	// coupe via un contexte client à 200ms pour valider que la latence
+	// est bien appliquée (le client abandonne avant que le serveur ne
+	// réponde). Impossible sans magic value dans un délai normal.
+	server, _, _ := newTestServerFull(t, HandlerConfig{})
+
+	body := `{"orderId":"o","amount":1503,"currency":"EUR"}`
+	req, _ := http.NewRequest(http.MethodPost,
+		server.URL+"/api-payment/V4/Charge/CreatePayment",
+		strings.NewReader(body))
+	req.SetBasicAuth("u", "p")
+	req.Header.Set("Content-Type", "application/json")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	req = req.WithContext(ctx)
+
+	start := time.Now()
+	resp, err := http.DefaultClient.Do(req)
+	elapsed := time.Since(start)
+
+	// L'appel doit être coupé par le timeout client, pas répondre.
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatalf("appel a répondu en %v, veut timeout (magic latence 03 = 30s)", elapsed)
+	}
+	// Le timeout doit avoir tenu au moins 190ms (la latence de 30s a
+	// bien démarré).
+	if elapsed < 190*time.Millisecond {
+		t.Errorf("timeout à %v, veut >= 190ms", elapsed)
+	}
+}
+
+func TestChaosDefaultInertOnAPIRoutes(t *testing.T) {
+	t.Parallel()
+	// HandlerConfig sans Chaos → aucun middleware chaos, invariant 5.
+	server, _, _ := newTestServerFull(t, HandlerConfig{})
+
+	// Un CreatePayment simple ne doit pas voir d'injection 500 ni de
+	// latence anormale.
+	start := time.Now()
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{OrderID: "o", Amount: 100, Currency: "EUR"}, "u", "p")
+	elapsed := time.Since(start)
+
+	if elapsed > 200*time.Millisecond {
+		t.Errorf("appel a duré %v sans chaos configuré, veut instantané", elapsed)
+	}
+	if create.Status != "SUCCESS" {
+		t.Errorf("status = %q sans chaos, veut SUCCESS", create.Status)
 	}
 }
 

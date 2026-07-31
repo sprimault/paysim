@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/sprimault/paysim/internal/chaos"
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/domain"
 )
@@ -30,6 +31,11 @@ type HandlerConfig struct {
 	// APIToken protege les endpoints de simulation via Bearer. Vide =
 	// API de controle ouverte (mode local explicite, cf. CLAUDE.md).
 	APIToken string
+
+	// Chaos porte l'injection de pannes appliquee sur les endpoints
+	// REST V4 uniquement (pas sur l'API de controle /paysim/simulate/*).
+	// Nil = pas de chaos (invariant 5 par defaut).
+	Chaos *chaos.Chaos
 }
 
 // Handler regroupe l'etat necessaire pour servir les endpoints REST V4
@@ -64,8 +70,13 @@ func NewHandler(store *Store, queue *delivery.Queue, logger *slog.Logger, cfg Ha
 	simMux.HandleFunc("POST /paysim/simulate/browserReturn", h.browserReturn)
 	simMux.HandleFunc("POST /paysim/simulate/ipn", h.ipn)
 
+	// Chaos s'applique uniquement sur les endpoints REST V4 (ce que
+	// PayZen exposerait vraiment) — pas sur l'API de contrôle Paysim,
+	// dont les défauts ne sont pas ce qu'on veut simuler.
+	apiWithChaos := cfg.Chaos.Middleware(withBasicAuth(apiMux, logger))
+
 	mainMux := http.NewServeMux()
-	mainMux.Handle("/api-payment/V4/", withBasicAuth(apiMux, logger))
+	mainMux.Handle("/api-payment/V4/", apiWithChaos)
 	mainMux.Handle("/paysim/simulate/", withBearerToken(simMux, cfg.APIToken, logger))
 
 	return mainMux
@@ -121,6 +132,12 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, ErrCodeInvalidRequest, "corps JSON invalide")
 		return
 	}
+
+	// Magic amount : si le montant se termine par 03, on applique une
+	// latence extrême avant même d'aller plus loin — provoque un
+	// timeout côté client marchand sans changer le résultat de
+	// l'appel. Voir chaos.MagicLatencyMs.
+	h.cfg.Chaos.Sleep(r.Context(), chaos.MagicLatencyMs(req.Amount))
 
 	uuid, err := newUUID()
 	if err != nil {
@@ -382,6 +399,13 @@ func (h *Handler) simulate(
 	tx := h.store.ByToken(formToken)
 	if tx == nil {
 		return "", "", errors.New("formToken inconnu")
+	}
+	// Magic amount : si le montant se termine par 01, l'outcome
+	// demandé est forcé à UNPAID quel que soit le paramètre client.
+	// Cohérent avec l'invariant 5 : le chaos par valeur magique est
+	// un mode d'activation légitime, sans besoin de config globale.
+	if magic := chaos.MagicOutcome(tx.Amount); magic != "" {
+		opts.Outcome = magic
 	}
 	targetURL := urlOverride
 	if targetURL == "" {

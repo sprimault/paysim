@@ -69,6 +69,17 @@ type Config struct {
 	// tout — interface, API de contrôle, endpoints REST V4 (invariant
 	// contrat de conteneur du CLAUDE.md).
 	HTTPAddr string
+
+	// ChaosLatencyMs est le délai (en millisecondes) ajouté par le
+	// middleware chaos à chaque requête sur /api-payment/V4/*. Zéro =
+	// pas de latence injectée. Invariant 5 : le chaos n'est jamais
+	// actif par défaut.
+	ChaosLatencyMs int
+
+	// ChaosErrorRate est le pourcentage (0-100) de requêtes sur
+	// /api-payment/V4/* qui reçoivent une 500 injectée. Zéro = pas
+	// d'erreur.
+	ChaosErrorRate int
 }
 
 // defaultHTTPAddr est l'adresse d'écoute par défaut si PAYSIM_HTTP_ADDR
@@ -127,6 +138,22 @@ func loadFrom(
 
 	if raw, ok := lookup("PAYSIM_HTTP_ADDR"); ok && raw != "" {
 		cfg.HTTPAddr = raw
+	}
+
+	if raw, ok := lookup("PAYSIM_CHAOS_LATENCY_MS"); ok {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 {
+			return nil, fmt.Errorf("configuration: PAYSIM_CHAOS_LATENCY_MS invalide (%q)", raw)
+		}
+		cfg.ChaosLatencyMs = n
+	}
+
+	if raw, ok := lookup("PAYSIM_CHAOS_ERROR_RATE"); ok {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 || n > 100 {
+			return nil, fmt.Errorf("configuration: PAYSIM_CHAOS_ERROR_RATE invalide (%q), attendu 0-100", raw)
+		}
+		cfg.ChaosErrorRate = n
 	}
 
 	if raw, ok := lookup("PAYSIM_MAX_PAYMENTS"); ok {

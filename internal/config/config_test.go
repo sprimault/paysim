@@ -99,6 +99,55 @@ func TestLoadNominalComplet(t *testing.T) {
 	}
 }
 
+func TestLoadChaosDefaultAndOverride(t *testing.T) {
+	t.Parallel()
+
+	t.Run("defaut inerte", func(t *testing.T) {
+		t.Parallel()
+		cfg, err := loadFrom(minEnv().lookup, mockFS{}.read)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.ChaosLatencyMs != 0 || cfg.ChaosErrorRate != 0 {
+			t.Errorf("chaos défaut = %d/%d, veut 0/0 (invariant 5)", cfg.ChaosLatencyMs, cfg.ChaosErrorRate)
+		}
+	})
+
+	t.Run("activation", func(t *testing.T) {
+		t.Parallel()
+		env := minEnv()
+		env["PAYSIM_CHAOS_LATENCY_MS"] = "250"
+		env["PAYSIM_CHAOS_ERROR_RATE"] = "30"
+		cfg, err := loadFrom(env.lookup, mockFS{}.read)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.ChaosLatencyMs != 250 || cfg.ChaosErrorRate != 30 {
+			t.Errorf("chaos = %d/%d, veut 250/30", cfg.ChaosLatencyMs, cfg.ChaosErrorRate)
+		}
+	})
+
+	t.Run("latency negative refusee", func(t *testing.T) {
+		t.Parallel()
+		env := minEnv()
+		env["PAYSIM_CHAOS_LATENCY_MS"] = "-10"
+		_, err := loadFrom(env.lookup, mockFS{}.read)
+		if err == nil {
+			t.Error("latency négative acceptée")
+		}
+	})
+
+	t.Run("error rate hors bornes refusee", func(t *testing.T) {
+		t.Parallel()
+		env := minEnv()
+		env["PAYSIM_CHAOS_ERROR_RATE"] = "150"
+		_, err := loadFrom(env.lookup, mockFS{}.read)
+		if err == nil {
+			t.Error("error rate 150 accepté")
+		}
+	})
+}
+
 func TestLoadHTTPAddrDefaultAndOverride(t *testing.T) {
 	t.Parallel()
 
