@@ -18,6 +18,8 @@ import (
 	"log/slog"
 	"math/rand"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -104,16 +106,86 @@ func (c *Chaos) ShouldFail() bool {
 	return c.rng.Intn(100) < c.cfg.ErrorRate
 }
 
-// Middleware retourne un http.Handler qui applique le chaos avant de
-// passer à next : latence, puis éventuellement 500 injecté. Récepteur
-// nil safe : renvoie next inchangé. À appliquer sur les routes qui
-// simulent le PSP (/api-payment/V4/*), pas sur l'API de contrôle
-// (/paysim/simulate/*) ni sur les probes de santé.
-func (c *Chaos) Middleware(next http.Handler) http.Handler {
-	if c == nil {
-		return next
+// Overrides regroupe les directives extraites du header X-Paysim-Chaos.
+// Champs à zéro = pas de directive pour cette dimension.
+type Overrides struct {
+	// LatencyMs impose un délai en millisecondes sur cette requête.
+	LatencyMs int
+
+	// Status force ce code HTTP en retour (400 <= Status < 600).
+	// Zéro = pas de status forcé.
+	Status int
+}
+
+// ParseHeader décode la valeur d'un header X-Paysim-Chaos en Overrides.
+// Format : query-string style, ex "latency=2000&status=500". Parsing
+// best-effort : chaque token invalide est silencieusement ignoré — un
+// header mal formé ne casse pas la requête, il est juste inactif.
+//
+// Clés reconnues : "latency" (int > 0, ms), "status" (int dans 400-599).
+func ParseHeader(h string) Overrides {
+	var o Overrides
+	for _, kv := range strings.Split(h, "&") {
+		parts := strings.SplitN(kv, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		switch key {
+		case "latency":
+			if n, err := strconv.Atoi(val); err == nil && n > 0 {
+				o.LatencyMs = n
+			}
+		case "status":
+			if n, err := strconv.Atoi(val); err == nil && n >= 400 && n < 600 {
+				o.Status = n
+			}
+		}
 	}
+	return o
+}
+
+// Middleware retourne un http.Handler qui applique le chaos avant de
+// passer à next. Toujours actif — même sur récepteur nil — parce qu'un
+// header X-Paysim-Chaos doit pouvoir déclencher du chaos même sans
+// config statique configurée.
+//
+// Précédence : le header X-Paysim-Chaos, quand présent, remplace
+// intégralement la config statique. Cohérent avec l'intention d'un
+// testeur qui vise une requête précise — pas de mélange subtil qui
+// masquerait ce qu'il vient de configurer via header.
+//
+// À appliquer sur les routes qui simulent le PSP (/api-payment/V4/*),
+// pas sur l'API de contrôle (/paysim/simulate/*) ni sur les probes.
+func (c *Chaos) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 1. Header per-request prime sur config statique.
+		if headerVal := r.Header.Get("X-Paysim-Chaos"); headerVal != "" {
+			o := ParseHeader(headerVal)
+			if o.LatencyMs > 0 {
+				select {
+				case <-time.After(time.Duration(o.LatencyMs) * time.Millisecond):
+				case <-r.Context().Done():
+					return
+				}
+			}
+			if o.Status > 0 {
+				if c != nil {
+					c.logger.Info("chaos_header_status_injected",
+						"path", r.URL.Path, "status", o.Status)
+				}
+				http.Error(w, "chaos: injected via header", o.Status)
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+		// 2. Config statique (si Chaos non nil).
+		if c == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
 		c.Sleep(r.Context(), 0)
 		if c.ShouldFail() {
 			c.logger.Info("chaos_error_injected", "path", r.URL.Path)

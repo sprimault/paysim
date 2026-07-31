@@ -205,6 +205,118 @@ func TestMagicOutcome(t *testing.T) {
 	}
 }
 
+func TestParseHeader(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		in   string
+		want Overrides
+	}{
+		{"vide", "", Overrides{}},
+		{"latency seule", "latency=1500", Overrides{LatencyMs: 1500}},
+		{"status seul", "status=503", Overrides{Status: 503}},
+		{"les deux", "latency=200&status=500", Overrides{LatencyMs: 200, Status: 500}},
+		{"cle inconnue ignoree", "unknown=42&latency=100", Overrides{LatencyMs: 100}},
+		{"latency invalide ignoree", "latency=abc", Overrides{}},
+		{"status hors bornes ignore", "status=200", Overrides{}}, // < 400 refusé
+		{"status hors bornes haut", "status=700", Overrides{}},
+		{"latency negative ignoree", "latency=-10", Overrides{}},
+		{"format degrade partiel", "latency=100&status", Overrides{LatencyMs: 100}},
+		{"espaces autour", "latency = 200 & status = 500 ", Overrides{LatencyMs: 200, Status: 500}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got := ParseHeader(c.in)
+			if got != c.want {
+				t.Errorf("ParseHeader(%q) = %+v, veut %+v", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+func TestMiddlewareHeaderInjectsStatus(t *testing.T) {
+	t.Parallel()
+	// Chaos nil : même sans config statique, le header agit.
+	var c *Chaos
+
+	wrapped := c.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Paysim-Chaos", "status=503")
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("code = %d, veut 503", rec.Code)
+	}
+}
+
+func TestMiddlewareHeaderAppliesLatency(t *testing.T) {
+	t.Parallel()
+	var c *Chaos
+	wrapped := c.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Paysim-Chaos", "latency=120")
+	rec := httptest.NewRecorder()
+	start := time.Now()
+	wrapped.ServeHTTP(rec, req)
+	elapsed := time.Since(start)
+
+	if elapsed < 110*time.Millisecond {
+		t.Errorf("latency header = %v, veut >= 110ms", elapsed)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("code = %d, veut 200 (latence n'affecte pas le code)", rec.Code)
+	}
+}
+
+func TestMiddlewareHeaderOverridesConfig(t *testing.T) {
+	t.Parallel()
+	// Config statique : ErrorRate 100 (500 systématique).
+	// Header : status=200 non forcé (juste latency).
+	// Attendu : le header prime, pas de 500 injecté par config.
+	c := New(Config{ErrorRate: 100, LatencyMs: 5000}, discardLogger())
+
+	wrapped := c.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("X-Paysim-Chaos", "latency=50")
+	rec := httptest.NewRecorder()
+	start := time.Now()
+	wrapped.ServeHTTP(rec, req)
+	elapsed := time.Since(start)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("code = %d, veut 200 (config ErrorRate 100 doit être ignoré par header)", rec.Code)
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Errorf("elapsed = %v, veut < 500ms (config LatencyMs=5000 doit être ignoré)", elapsed)
+	}
+}
+
+func TestMiddlewareHeaderIgnoredIfEmpty(t *testing.T) {
+	t.Parallel()
+	// Header absent : la config statique s'applique normalement.
+	c := New(Config{ErrorRate: 100}, discardLogger())
+	wrapped := c.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	rec := httptest.NewRecorder()
+	wrapped.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("sans header : code = %d, veut 500 (config ErrorRate 100)", rec.Code)
+	}
+}
+
 func TestMagicLatencyMs(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
