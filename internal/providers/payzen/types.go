@@ -229,21 +229,45 @@ const (
 	OutcomeAbandoned  = "ABANDONED"
 )
 
+// WebhookChaos regroupe les injections de pannes appliquees au webhook
+// resultant de la simulation. Chaque flag est independant, tous
+// inertes par defaut (invariant 5).
+type WebhookChaos struct {
+	// Duplicate : le meme webhook est enqueue deux fois — le marchand
+	// doit gerer l'idempotence.
+	Duplicate bool `json:"duplicate,omitempty"`
+
+	// BadSignature : le kr-hash envoye est altere. Le marchand qui
+	// verifie la signature doit refuser le webhook.
+	BadSignature bool `json:"badSignature,omitempty"`
+
+	// RaceBeforeResponse : la reponse HTTP au simulate est retardee
+	// de 500 ms, laissant le temps au webhook de partir en avance.
+	// Cote client, la webhook arrive avant la reponse a l'appel de
+	// simulation — la course la plus dure a reproduire en prod.
+	RaceBeforeResponse bool `json:"raceBeforeResponse,omitempty"`
+}
+
 // BrowserReturnRequest est le corps de POST /paysim/simulate/browserReturn.
 // Endpoint de controle Paysim (pas PayZen) : le marchand demande a
 // Paysim de simuler la fin d'un parcours et l'envoi du retour signe
 // vers son URL. Les champs optionnels ont des valeurs par defaut
 // coherentes avec un paiement CB VISA reussi 3DS SUCCESS.
+//
+// DeliveryDelayMs retarde l'envoi du webhook resultant. Compose avec
+// deux appels successifs pour simuler du out-of-order sans flag dedie.
 type BrowserReturnRequest struct {
-	FormToken         string `json:"formToken"`
-	ReturnURL         string `json:"returnUrl,omitempty"`         // surcharge la ReturnURL de la Transaction
-	Outcome           string `json:"outcome"`                     // PAID | AUTHORISED | UNPAID | EXPIRED
-	PaymentMethodType string `json:"paymentMethodType,omitempty"` // defaut CARDS
-	CardBrand         string `json:"cardBrand,omitempty"`         // defaut VISA
-	Wallet            string `json:"wallet,omitempty"`            // ex APPLE_PAY, GOOGLEPAY
-	ThreeDSStatus     string `json:"threeDSStatus,omitempty"`     // defaut SUCCESS
-	ErrorCode         string `json:"errorCode,omitempty"`         // pour UNPAID
-	ErrorMessage      string `json:"errorMessage,omitempty"`
+	FormToken         string       `json:"formToken"`
+	ReturnURL         string       `json:"returnUrl,omitempty"`         // surcharge la ReturnURL de la Transaction
+	Outcome           string       `json:"outcome"`                     // PAID | AUTHORISED | UNPAID | EXPIRED
+	PaymentMethodType string       `json:"paymentMethodType,omitempty"` // defaut CARDS
+	CardBrand         string       `json:"cardBrand,omitempty"`         // defaut VISA
+	Wallet            string       `json:"wallet,omitempty"`            // ex APPLE_PAY, GOOGLEPAY
+	ThreeDSStatus     string       `json:"threeDSStatus,omitempty"`     // defaut SUCCESS
+	ErrorCode         string       `json:"errorCode,omitempty"`         // pour UNPAID
+	ErrorMessage      string       `json:"errorMessage,omitempty"`
+	Chaos             WebhookChaos `json:"chaos,omitempty"`
+	DeliveryDelayMs   int          `json:"deliveryDelayMs,omitempty"`
 }
 
 // BrowserReturnResponse est le corps de reponse a l'API de controle.
@@ -262,15 +286,17 @@ type BrowserReturnResponse struct {
 // distincts pour deux flux distincts cote marchand, meme si le
 // contenu du POST est identique.
 type IPNRequest struct {
-	FormToken         string `json:"formToken"`
-	NotificationURL   string `json:"notificationUrl,omitempty"`
-	Outcome           string `json:"outcome"`
-	PaymentMethodType string `json:"paymentMethodType,omitempty"`
-	CardBrand         string `json:"cardBrand,omitempty"`
-	Wallet            string `json:"wallet,omitempty"`
-	ThreeDSStatus     string `json:"threeDSStatus,omitempty"`
-	ErrorCode         string `json:"errorCode,omitempty"`
-	ErrorMessage      string `json:"errorMessage,omitempty"`
+	FormToken         string       `json:"formToken"`
+	NotificationURL   string       `json:"notificationUrl,omitempty"`
+	Outcome           string       `json:"outcome"`
+	PaymentMethodType string       `json:"paymentMethodType,omitempty"`
+	CardBrand         string       `json:"cardBrand,omitempty"`
+	Wallet            string       `json:"wallet,omitempty"`
+	ThreeDSStatus     string       `json:"threeDSStatus,omitempty"`
+	ErrorCode         string       `json:"errorCode,omitempty"`
+	ErrorMessage      string       `json:"errorMessage,omitempty"`
+	Chaos             WebhookChaos `json:"chaos,omitempty"`
+	DeliveryDelayMs   int          `json:"deliveryDelayMs,omitempty"`
 }
 
 // IPNResponse est le corps de reponse — identique en structure a

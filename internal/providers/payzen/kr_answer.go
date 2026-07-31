@@ -196,6 +196,8 @@ type BrowserReturnOpts struct {
 	ThreeDSStatus     string
 	ErrorCode         string
 	ErrorMessage      string
+	Chaos             WebhookChaos
+	DeliveryDelayMs   int
 }
 
 // buildDeliveryWebhook construit le Webhook a remettre a
@@ -203,16 +205,30 @@ type BrowserReturnOpts struct {
 // champs kr-* attendus par un integrateur PayZen, signature calculee
 // via Sign. Prend un id de webhook explicite pour permettre au handler
 // de le retourner au marchand pour tracage.
-func buildDeliveryWebhook(id, targetURL string, answer *KrAnswer, hmacKey, answerType string) (delivery.Webhook, string, error) {
+//
+// badSignature altere le kr-hash envoye (flip du premier caractere
+// hex) tout en preservant sa forme (64 chars hex minuscule). Le hash
+// retourne comme deuxieme valeur reste le VRAI hash, pour que le
+// handler puisse le retourner au marchand a titre diagnostique — il
+// verra ainsi que ce qu'il recoit ne correspond pas.
+//
+// delay est propage au Webhook.Delay, respecte par le scheduler avant
+// l'envoi effectif — permet le out-of-order par composition.
+func buildDeliveryWebhook(id, targetURL string, answer *KrAnswer, hmacKey, answerType string, badSignature bool, delay time.Duration) (delivery.Webhook, string, error) {
 	raw, err := json.Marshal(answer)
 	if err != nil {
 		return delivery.Webhook{}, "", fmt.Errorf("serialisation kr-answer: %w", err)
 	}
 	hash := Sign(raw, hmacKey)
 
+	sentHash := hash
+	if badSignature {
+		sentHash = flipFirstHexChar(hash)
+	}
+
 	form := url.Values{}
 	form.Set("kr-answer", string(raw))
-	form.Set("kr-hash", hash)
+	form.Set("kr-hash", sentHash)
 	form.Set("kr-hash-algorithm", "sha256_hmac")
 	form.Set("kr-hash-key", "sha256_hmac")
 	form.Set("kr-answer-type", answerType)
@@ -223,8 +239,26 @@ func buildDeliveryWebhook(id, targetURL string, answer *KrAnswer, hmacKey, answe
 		Headers: map[string]string{
 			"Content-Type": "application/x-www-form-urlencoded",
 		},
-		Body: []byte(form.Encode()),
+		Body:  []byte(form.Encode()),
+		Delay: delay,
 	}
 	return wh, hash, nil
+}
+
+// flipFirstHexChar altere un hash hex en changeant son premier
+// caractere : '0' devient '1', tout autre chiffre devient '0'.
+// Preserve la longueur et le format — teste la verification chez le
+// marchand, pas un check naif de forme.
+func flipFirstHexChar(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	b := []byte(s)
+	if b[0] == '0' {
+		b[0] = '1'
+	} else {
+		b[0] = '0'
+	}
+	return string(b)
 }
 

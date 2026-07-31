@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -29,9 +30,10 @@ var (
 )
 
 // Queue est la file de livraison. Une unique instance par processus,
-// pilotée par un unique worker via Run. Sûre à Enqueue depuis plusieurs
-// goroutines concurrentes (la synchronisation est portée par le channel
-// interne et les compteurs atomiques).
+// pilotée par un unique scheduler via Run — le scheduler lance chaque
+// delivery en goroutine indépendante pour supporter les délais
+// différenciés (out-of-order chaos) sans bloquer les livraisons
+// suivantes.  Sûre à Enqueue depuis plusieurs goroutines concurrentes.
 type Queue struct {
 	client *http.Client
 	logger *slog.Logger
@@ -40,6 +42,7 @@ type Queue struct {
 	delivered atomic.Int64
 	failed    atomic.Int64
 	running   atomic.Bool
+	inflight  sync.WaitGroup // livraisons en cours (goroutines lancées, non terminées)
 }
 
 // Stats est un instantané des compteurs. Utile pour l'observabilité,
@@ -102,20 +105,33 @@ func (q *Queue) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			// Drain avant sortie : on épuise les jobs déjà enqueuvés
-			// avant la détection du ctx.Done(). Les Enqueue qui
-			// arriveraient après ne sont pas garantis d'être traités.
+			// puis on attend les livraisons en vol (delays en cours,
+			// requêtes HTTP en cours). Sans ça, un webhook avec Delay
+			// serait perdu à l'arrêt.
 			for {
 				select {
 				case w := <-q.jobs:
-					q.deliver(w)
+					q.launch(ctx, w)
 				default:
+					q.inflight.Wait()
 					return nil
 				}
 			}
 		case w := <-q.jobs:
-			q.deliver(w)
+			q.launch(ctx, w)
 		}
 	}
+}
+
+// launch démarre une goroutine de livraison avec suivi WaitGroup.
+// Chaque delivery est indépendante — supporte des délais différenciés
+// (out-of-order chaos) sans bloquer les livraisons suivantes.
+func (q *Queue) launch(ctx context.Context, w Webhook) {
+	q.inflight.Add(1)
+	go func() {
+		defer q.inflight.Done()
+		q.deliver(ctx, w)
+	}()
 }
 
 // Stats retourne un instantané des compteurs. Lecture atomique, sans
@@ -130,15 +146,31 @@ func (q *Queue) Stats() Stats {
 	}
 }
 
-// deliver traite un webhook : construit la requête, l'envoie via le
-// client HTTP injecté, met à jour les compteurs et logue le résultat.
-// Une tentative unique en phase 1 — les retry (avec backoff, jitter,
-// idempotency) arrivent avec le chaos en phase 2.
+// deliver traite un webhook : respecte le Delay éventuel, construit
+// la requête, l'envoie via le client HTTP injecté, met à jour les
+// compteurs et logue le résultat. Une tentative unique — les retry
+// (avec backoff, jitter, idempotency) arrivent plus tard.
 //
 // Reçoit le Webhook par valeur : les compteurs Attempts et LastTryAt
 // mis à jour ici ne sont visibles qu'au sein de ce log ; le Webhook
 // original a déjà été consommé du channel et n'est plus référencé.
-func (q *Queue) deliver(w Webhook) {
+//
+// Si le contexte est annulé pendant le Delay, la livraison est
+// abandonnée (comptée en Failed avec log). C'est ce qui permet un
+// arrêt de la queue en un temps borné même quand des délais sont
+// pendants.
+func (q *Queue) deliver(ctx context.Context, w Webhook) {
+	if w.Delay > 0 {
+		select {
+		case <-time.After(w.Delay):
+		case <-ctx.Done():
+			q.failed.Add(1)
+			q.logger.Warn("webhook_delay_cancelled",
+				"id", w.ID, "url", w.URL, "delay", w.Delay)
+			return
+		}
+	}
+
 	w.Attempts++
 	w.LastTryAt = time.Now().UTC()
 

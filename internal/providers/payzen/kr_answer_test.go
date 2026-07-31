@@ -202,7 +202,7 @@ func TestBuildDeliveryWebhookSignsCorrectly(t *testing.T) {
 	answer := buildKrAnswer(tx, opts, "", "TEST")
 
 	const key = "clef-de-test-hmac"
-	wh, hash, err := buildDeliveryWebhook("delivery-1", "http://marchand", answer, key, "V4/Payment")
+	wh, hash, err := buildDeliveryWebhook("delivery-1", "http://marchand", answer, key, "V4/Payment", false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

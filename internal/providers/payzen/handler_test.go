@@ -1019,6 +1019,181 @@ func TestChaosDefaultInertOnAPIRoutes(t *testing.T) {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// Tests chaos sur webhooks (vertical 3 phase 2)
+// -----------------------------------------------------------------------------
+
+func TestWebhookChaosDuplicate(t *testing.T) {
+	t.Parallel()
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	merchant, received := newMerchantServer(t)
+
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{OrderID: "o", Amount: 100, Currency: "EUR"}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	_, _ = simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{
+			FormToken: ca.FormToken,
+			ReturnURL: merchant.URL,
+			Outcome:   OutcomePaid,
+			Chaos:     WebhookChaos{Duplicate: true},
+		}, "")
+
+	// Attendre les 2 POSTs.
+	got := 0
+	timeout := time.After(2 * time.Second)
+	for got < 2 {
+		select {
+		case <-received:
+			got++
+		case <-timeout:
+			t.Fatalf("attendu 2 webhooks (duplicate), reçus %d", got)
+		}
+	}
+}
+
+func TestWebhookChaosBadSignature(t *testing.T) {
+	t.Parallel()
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "cle-hmac"})
+	merchant, received := newMerchantServer(t)
+
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{OrderID: "o", Amount: 100, Currency: "EUR"}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	resp, _ := simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{
+			FormToken: ca.FormToken,
+			ReturnURL: merchant.URL,
+			Outcome:   OutcomePaid,
+			Chaos:     WebhookChaos{BadSignature: true},
+		}, "")
+
+	select {
+	case wh := <-received:
+		sentHash := wh.Values.Get("kr-hash")
+		// Le hash envoyé doit être différent du hash retourné à l'appelant
+		// (qui reste le vrai hash pour diagnostic).
+		if sentHash == resp.KrHash {
+			t.Errorf("BadSignature actif mais hash envoyé == hash annoncé (%q)", sentHash)
+		}
+		// Le hash marchand recalculé ne doit PAS matcher — c'est le contrat.
+		krAnswer := wh.Values.Get("kr-answer")
+		if Verify([]byte(krAnswer), sentHash, "cle-hmac") {
+			t.Error("Verify du marchand accepte le hash altéré — le chaos badSignature ne fonctionne pas")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("webhook non reçu")
+	}
+}
+
+func TestWebhookChaosOutOfOrder(t *testing.T) {
+	t.Parallel()
+	// Composition : deux appels successifs, le premier avec DeliveryDelayMs=300,
+	// le second sans → le second arrive en premier chez le marchand.
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+
+	// Marchand qui tag chaque POST par ordre d'arrivée dans un channel.
+	arrivals := make(chan string, 2)
+	merchant := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		values, _ := url.ParseQuery(string(body))
+		krAnswer := values.Get("kr-answer")
+		// UNPAID contient PAID en sous-chaîne — tester UNPAID en
+		// premier, ou utiliser la forme JSON complète.
+		switch {
+		case strings.Contains(krAnswer, `"orderStatus":"UNPAID"`):
+			arrivals <- "UNPAID"
+		case strings.Contains(krAnswer, `"orderStatus":"PAID"`):
+			arrivals <- "PAID"
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer merchant.Close()
+
+	// Deux transactions distinctes.
+	create1, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{OrderID: "premier", Amount: 100, Currency: "EUR"}, "u", "p")
+	var ca1 CreatePaymentAnswer
+	_ = json.Unmarshal(create1.Answer, &ca1)
+	create2, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{OrderID: "second", Amount: 200, Currency: "EUR"}, "u", "p")
+	var ca2 CreatePaymentAnswer
+	_ = json.Unmarshal(create2.Answer, &ca2)
+
+	// Simuler dans l'ordre : premier PAID avec délai 300ms, puis second UNPAID immédiat.
+	_, _ = simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{
+			FormToken: ca1.FormToken, ReturnURL: merchant.URL,
+			Outcome: OutcomePaid, DeliveryDelayMs: 300,
+		}, "")
+	_, _ = simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{
+			FormToken: ca2.FormToken, ReturnURL: merchant.URL,
+			Outcome: OutcomeUnpaid,
+		}, "")
+
+	first := <-arrivals
+	second := <-arrivals
+	if first != "UNPAID" || second != "PAID" {
+		t.Errorf("ordre reçu [%s, %s], veut [UNPAID, PAID] (out-of-order par delay)", first, second)
+	}
+}
+
+func TestWebhookChaosRaceBeforeResponse(t *testing.T) {
+	t.Parallel()
+	// La réponse HTTP à simulate doit arriver APRÈS le webhook côté
+	// marchand. Vérifie que la course la plus subtile est bien reproduite.
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+
+	webhookAt := make(chan time.Time, 1)
+	merchant := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		webhookAt <- time.Now()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer merchant.Close()
+
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{OrderID: "o", Amount: 100, Currency: "EUR"}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	// Mesurer l'instant de la réponse HTTP à browserReturn.
+	body, _ := json.Marshal(BrowserReturnRequest{
+		FormToken: ca.FormToken,
+		ReturnURL: merchant.URL,
+		Outcome:   OutcomePaid,
+		Chaos:     WebhookChaos{RaceBeforeResponse: true},
+	})
+	req, _ := http.NewRequest(http.MethodPost,
+		server.URL+"/paysim/simulate/browserReturn",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	responseAt := time.Now()
+	_ = resp.Body.Close()
+
+	select {
+	case whAt := <-webhookAt:
+		if !whAt.Before(responseAt) {
+			t.Errorf("webhook reçu à %v, réponse HTTP à %v : la course n'a pas eu lieu",
+				whAt, responseAt)
+		}
+		// La différence doit être significative (le sleep est de 500ms côté serveur).
+		if diff := responseAt.Sub(whAt); diff < 100*time.Millisecond {
+			t.Errorf("écart webhook→réponse = %v, veut >= 100ms (race pas assez marquée)", diff)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("webhook non reçu")
+	}
+}
+
 func TestBearerOpenWhenTokenUnset(t *testing.T) {
 	t.Parallel()
 	// APIToken vide → pas de check, tout passe.

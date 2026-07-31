@@ -335,6 +335,8 @@ func (h *Handler) browserReturn(w http.ResponseWriter, r *http.Request) {
 		ThreeDSStatus:     req.ThreeDSStatus,
 		ErrorCode:         req.ErrorCode,
 		ErrorMessage:      req.ErrorMessage,
+		Chaos:             req.Chaos,
+		DeliveryDelayMs:   req.DeliveryDelayMs,
 	}
 	hash, deliveryID, err := h.simulate(req.FormToken, req.ReturnURL, opts, "V4/Payment",
 		func(tx *Transaction) string { return tx.ReturnURL })
@@ -364,6 +366,8 @@ func (h *Handler) ipn(w http.ResponseWriter, r *http.Request) {
 		ThreeDSStatus:     req.ThreeDSStatus,
 		ErrorCode:         req.ErrorCode,
 		ErrorMessage:      req.ErrorMessage,
+		Chaos:             req.Chaos,
+		DeliveryDelayMs:   req.DeliveryDelayMs,
 	}
 	hash, deliveryID, err := h.simulate(req.FormToken, req.NotificationURL, opts, "V4/Payment",
 		func(tx *Transaction) string { return tx.NotificationURL })
@@ -429,12 +433,27 @@ func (h *Handler) simulate(
 	if err != nil {
 		return "", "", fmt.Errorf("generation deliveryId: %w", err)
 	}
-	wh, hash, err := buildDeliveryWebhook(deliveryID, targetURL, answer, h.cfg.HMACKey, answerType)
+	delay := time.Duration(opts.DeliveryDelayMs) * time.Millisecond
+	wh, hash, err := buildDeliveryWebhook(deliveryID, targetURL, answer, h.cfg.HMACKey, answerType,
+		opts.Chaos.BadSignature, delay)
 	if err != nil {
 		return "", "", err
 	}
 	if err := h.queue.Enqueue(wh); err != nil {
 		return "", "", fmt.Errorf("enqueue: %w", err)
+	}
+	// Duplicate : deuxième enqueue du meme webhook — le marchand doit
+	// gerer l'idempotence via l'UUID de transaction.
+	if opts.Chaos.Duplicate {
+		if err := h.queue.Enqueue(wh); err != nil {
+			h.logger.Warn("chaos_duplicate_enqueue_failed", "err", err)
+		}
+	}
+	// Race before response : on retarde la reponse HTTP pour laisser
+	// le webhook partir en premier. Le client marchand recoit ainsi
+	// la notification avant la reponse a son appel de simulation.
+	if opts.Chaos.RaceBeforeResponse {
+		time.Sleep(500 * time.Millisecond)
 	}
 	return hash, deliveryID, nil
 }

@@ -198,17 +198,5 @@ func TestSignVerifyRoundTrip(t *testing.T) {
 	}
 }
 
-// flipFirstHexChar remplace le premier chiffre hex par un autre valide,
-// pour construire un hash de meme longueur mais avec un bit different.
-func flipFirstHexChar(s string) string {
-	if len(s) == 0 {
-		return s
-	}
-	b := []byte(s)
-	if b[0] == '0' {
-		b[0] = '1'
-	} else {
-		b[0] = '0'
-	}
-	return string(b)
-}
+// Note : flipFirstHexChar est defini dans kr_answer.go (paquet) et
+// reutilise ici pour les tests d'alteration de hash.

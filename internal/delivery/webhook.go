@@ -48,4 +48,11 @@ type Webhook struct {
 	// LastTryAt est l'instant de la dernière tentative, UTC. Vaut la
 	// valeur zéro tant que le worker n'a pas traité le webhook.
 	LastTryAt time.Time
+
+	// Delay est le délai avant premier envoi. Zéro = immédiat.
+	// Permet aux appelants du chaos de simuler un webhook retardé
+	// (out-of-order avec un second webhook non retardé) sans bloquer
+	// les autres livraisons — le scheduler lance chaque delivery en
+	// goroutine indépendante depuis le vertical 3 phase 2.
+	Delay time.Duration
 }

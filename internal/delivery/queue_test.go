@@ -276,6 +276,122 @@ func TestNewCapacityMinimum(t *testing.T) {
 	}
 }
 
+// TestDeliverRespectsDelay vérifie qu'un Webhook.Delay différencie
+// l'instant de livraison. Cœur du support out-of-order.
+func TestDeliverRespectsDelay(t *testing.T) {
+	t.Parallel()
+	received := make(chan time.Time, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		received <- time.Now()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	q := newQueue(t, 10)
+	cancel, wait := runInBackground(t, q)
+
+	enqueuedAt := time.Now()
+	if err := q.Enqueue(Webhook{ID: "w", URL: server.URL, Body: []byte("{}"), Delay: 300 * time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case receivedAt := <-received:
+		elapsed := receivedAt.Sub(enqueuedAt)
+		if elapsed < 250*time.Millisecond {
+			t.Errorf("livraison à %v après Enqueue, veut >= 250ms (delay=300ms)", elapsed)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("webhook non reçu")
+	}
+
+	cancel()
+	wait()
+}
+
+// TestOutOfOrderDelivery : deux webhooks, le premier avec délai, le
+// second sans → le second arrive avant le premier. C'est le mécanisme
+// de composition qui remplace un flag "out-of-order" dédié.
+func TestOutOfOrderDelivery(t *testing.T) {
+	t.Parallel()
+	receivedIDs := make(chan string, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.Header.Get("X-Test-ID")
+		receivedIDs <- id
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	q := newQueue(t, 10)
+	cancel, wait := runInBackground(t, q)
+
+	// Enqueue "premier" (délai 300ms) puis "second" (immédiat).
+	// Ordre d'arrivée attendu : "second", puis "premier".
+	if err := q.Enqueue(Webhook{
+		ID: "premier", URL: server.URL, Body: []byte("{}"),
+		Delay:   300 * time.Millisecond,
+		Headers: map[string]string{"X-Test-ID": "premier"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := q.Enqueue(Webhook{
+		ID: "second", URL: server.URL, Body: []byte("{}"),
+		Headers: map[string]string{"X-Test-ID": "second"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	first := <-receivedIDs
+	second := <-receivedIDs
+	if first != "second" || second != "premier" {
+		t.Errorf("ordre reçu = [%s, %s], veut [second, premier]", first, second)
+	}
+
+	cancel()
+	wait()
+}
+
+// TestDrainWaitsForInflightWithDelay : à l'arrêt, si un webhook a un
+// délai encore en cours, le drain doit soit attendre soit compter
+// l'échec — pas laisser une goroutine orpheline.
+func TestDrainWaitsForInflightWithDelay(t *testing.T) {
+	t.Parallel()
+	var received atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		received.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	q := newQueue(t, 10)
+	if err := q.Enqueue(Webhook{
+		ID: "differé", URL: server.URL, Body: []byte("{}"),
+		Delay: 100 * time.Millisecond,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// ctx annulé rapidement, le délai n'est pas fini.
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	// Run doit revenir sans goroutine orpheline. Le webhook est
+	// abandonné (failed++) parce que ctx annulé pendant le délai.
+	if err := q.Run(ctx); err != nil {
+		t.Fatalf("Run : %v", err)
+	}
+
+	if received.Load() != 0 {
+		t.Errorf("webhook livré (%d) alors que ctx annulé pendant delay", received.Load())
+	}
+	if q.Stats().Failed != 1 {
+		t.Errorf("Failed = %d, veut 1 (delay interrompu par cancel)", q.Stats().Failed)
+	}
+}
+
 func TestEnqueueAutoSetsCreatedAt(t *testing.T) {
 	t.Parallel()
 	// On envoie un webhook avec CreatedAt zéro et on vérifie que
