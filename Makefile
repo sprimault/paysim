@@ -24,7 +24,7 @@ sec:
 	gosec ./...
 
 build:
-	@echo "build: pas encore implémenté (phase 1)" && exit 1
+	CGO_ENABLED=0 go build -trimpath -o paysim ./cmd/paysim
 
 fixtures:
 	@echo "fixtures: pas encore implémenté (phase 2)" && exit 1

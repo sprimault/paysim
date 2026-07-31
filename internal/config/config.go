@@ -63,7 +63,18 @@ type Config struct {
 	// (exclusifs). Vide = signature désactivée, les endpoints de
 	// simulation retourneront une erreur claire au premier appel.
 	PayzenHMACKey string
+
+	// HTTPAddr est l'adresse d'écoute du serveur HTTP, au format Go
+	// (":8080", "127.0.0.1:8080"). Défaut ":8080". Un seul port pour
+	// tout — interface, API de contrôle, endpoints REST V4 (invariant
+	// contrat de conteneur du CLAUDE.md).
+	HTTPAddr string
 }
+
+// defaultHTTPAddr est l'adresse d'écoute par défaut si PAYSIM_HTTP_ADDR
+// n'est pas fournie. Cohérent avec l'exemple documenté "localhost:8080"
+// dans CLAUDE.md.
+const defaultHTTPAddr = ":8080"
 
 // Load lit la configuration depuis les variables d'environnement du
 // processus et retourne une struct validée. Toute erreur est unique et
@@ -83,6 +94,7 @@ func loadFrom(
 	cfg := &Config{
 		MaxPayments: defaultMaxPayments,
 		LogLevel:    slog.LevelInfo,
+		HTTPAddr:    defaultHTTPAddr,
 	}
 
 	pub, err := requiredURL(lookup, "PAYSIM_PUBLIC_URL")
@@ -112,6 +124,10 @@ func loadFrom(
 		return nil, err
 	}
 	cfg.PayzenHMACKey = hmacKey
+
+	if raw, ok := lookup("PAYSIM_HTTP_ADDR"); ok && raw != "" {
+		cfg.HTTPAddr = raw
+	}
 
 	if raw, ok := lookup("PAYSIM_MAX_PAYMENTS"); ok {
 		n, err := strconv.Atoi(raw)

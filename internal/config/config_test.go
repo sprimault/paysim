@@ -99,6 +99,34 @@ func TestLoadNominalComplet(t *testing.T) {
 	}
 }
 
+func TestLoadHTTPAddrDefaultAndOverride(t *testing.T) {
+	t.Parallel()
+
+	t.Run("defaut", func(t *testing.T) {
+		t.Parallel()
+		cfg, err := loadFrom(minEnv().lookup, mockFS{}.read)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.HTTPAddr != ":8080" {
+			t.Errorf("HTTPAddr defaut = %q, veut :8080", cfg.HTTPAddr)
+		}
+	})
+
+	t.Run("surcharge", func(t *testing.T) {
+		t.Parallel()
+		env := minEnv()
+		env["PAYSIM_HTTP_ADDR"] = "127.0.0.1:9000"
+		cfg, err := loadFrom(env.lookup, mockFS{}.read)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.HTTPAddr != "127.0.0.1:9000" {
+			t.Errorf("HTTPAddr = %q", cfg.HTTPAddr)
+		}
+	})
+}
+
 func TestLoadPayzenHMACKeyFromFile(t *testing.T) {
 	t.Parallel()
 	env := minEnv()

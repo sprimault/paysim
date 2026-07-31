@@ -18,3 +18,6 @@ CLAUDE.md
 internal/providers/*/testdata/*.png
 internal/providers/*/testdata/*.jpg
 internal/providers/*/testdata/*.jpeg
+
+# Logs générés par l'exemple d'intégration PHP
+examples/php/*.log
