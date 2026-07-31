@@ -21,6 +21,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sprimault/paysim/internal/api"
+	"github.com/sprimault/paysim/internal/bus"
 	"github.com/sprimault/paysim/internal/chaos"
 	"github.com/sprimault/paysim/internal/config"
 	"github.com/sprimault/paysim/internal/delivery"
@@ -86,18 +88,22 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		}, logger)
 	}
 
+	eventBus := bus.New()
 	store := payzen.NewStore()
 	queue := delivery.New(&http.Client{Timeout: httpClientTimeout}, logger, cfg.MaxPayments)
+	queue.SetPublisher(eventBus)
 	payzenHandler := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{
-		HMACKey:  cfg.PayzenHMACKey,
-		APIToken: cfg.APIToken,
-		Chaos:    chaosInj,
+		HMACKey:   cfg.PayzenHMACKey,
+		APIToken:  cfg.APIToken,
+		Chaos:     chaosInj,
+		Publisher: eventBus,
 	})
+	apiHandler := api.NewHandler(store, queue, eventBus, logger, cfg.APIToken)
 
 	var ready atomic.Bool
 	ready.Store(true)
 
-	mux := buildMux(payzenHandler, cfg.BasePath, &ready)
+	mux := buildMux(payzenHandler, apiHandler, cfg.BasePath, &ready)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -159,11 +165,17 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 
 // buildMux assemble le multiplexeur principal : /healthz et /readyz au
 // niveau racine (hors de tout auth, hors de BasePath — les kubelet
-// probes n'envoient rien de spécial), le reste sous BasePath si
-// configuré, ou à la racine sinon. Le payzenHandler porte déjà ses
-// propres middlewares (Basic Auth pour /api-payment/V4/*, Bearer pour
-// /paysim/simulate/*).
-func buildMux(payzenHandler http.Handler, basePath string, ready *atomic.Bool) http.Handler {
+// probes n'envoient rien de spécial), l'API UI sous /paysim/api/v1/*,
+// le reste (endpoints PayZen simulés) sous BasePath si configuré, ou
+// à la racine sinon.
+//
+// L'API UI est TOUJOURS à la racine, même avec BasePath — cohérent
+// avec l'usage kubelet et permet aux dashboards de rester
+// accessibles à un chemin stable.
+//
+// Le payzenHandler porte déjà ses propres middlewares (Basic Auth pour
+// /api-payment/V4/*, Bearer pour /paysim/simulate/*).
+func buildMux(payzenHandler http.Handler, apiHandler http.Handler, basePath string, ready *atomic.Bool) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -180,6 +192,10 @@ func buildMux(payzenHandler http.Handler, basePath string, ready *atomic.Bool) h
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready"))
 	})
+
+	if apiHandler != nil {
+		mux.Handle("/paysim/api/v1/", apiHandler)
+	}
 
 	if basePath != "" {
 		mux.Handle(basePath+"/", http.StripPrefix(basePath, payzenHandler))

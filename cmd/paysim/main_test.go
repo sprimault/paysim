@@ -40,7 +40,7 @@ func buildTestServer(t *testing.T, basePath string) (*httptest.Server, *atomic.B
 	var ready atomic.Bool
 	ready.Store(true)
 
-	server := httptest.NewServer(buildMux(handler, basePath, &ready))
+	server := httptest.NewServer(buildMux(handler, nil, basePath, &ready))
 	t.Cleanup(func() {
 		server.Close()
 		cancel()

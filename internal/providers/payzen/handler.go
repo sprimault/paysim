@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/sprimault/paysim/internal/bus"
 	"github.com/sprimault/paysim/internal/chaos"
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/domain"
@@ -36,6 +37,10 @@ type HandlerConfig struct {
 	// REST V4 uniquement (pas sur l'API de controle /paysim/simulate/*).
 	// Nil = pas de chaos (invariant 5 par defaut).
 	Chaos *chaos.Chaos
+
+	// Publisher est le bus d'evenements pour alimenter l'UI et les
+	// abonnes SSE. Nil = pas de publication, comportement inchange.
+	Publisher *bus.Bus
 }
 
 // Handler regroupe l'etat necessaire pour servir les endpoints REST V4
@@ -172,6 +177,17 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:       now,
 	}
 	h.store.Save(tx)
+
+	h.cfg.Publisher.Publish(bus.Event{
+		Type: "payment_created",
+		At:   now,
+		Data: map[string]any{
+			"uuid":    uuid,
+			"orderId": req.OrderID,
+			"amount":  req.Amount,
+			"currency": req.Currency,
+		},
+	})
 
 	h.writeSuccess(w, CreatePaymentAnswer{FormToken: token})
 }
@@ -423,6 +439,17 @@ func (h *Handler) simulate(
 	}
 	tx.UpdatedAt = time.Now().UTC()
 	h.store.Save(tx)
+
+	h.cfg.Publisher.Publish(bus.Event{
+		Type: "payment_state_changed",
+		At:   tx.UpdatedAt,
+		Data: map[string]any{
+			"uuid":    tx.UUID,
+			"orderId": tx.OrderID,
+			"state":   string(tx.Payment.State()),
+			"outcome": opts.Outcome,
+		},
+	})
 
 	// serverURL vide en phase 1 (arrivera avec cmd/paysim qui saura
 	// son propre PublicURL). Mode "TEST" en dur — un simulateur n'a

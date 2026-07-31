@@ -76,6 +76,21 @@ func (s *Store) Len() int {
 	return n
 }
 
+// AllTransactions retourne un snapshot de toutes les transactions
+// indexees par UUID. Utilise par l'API UI pour la liste globale.
+// Snapshot pris sous verrou puis relache — l'appelant reçoit ses
+// propres pointeurs, mais la Transaction pointe toujours vers le
+// meme domain.Payment vivant. Ordre non garanti (map iteration).
+func (s *Store) AllTransactions() []*Transaction {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]*Transaction, 0, len(s.byUUID))
+	for _, tx := range s.byUUID {
+		out = append(out, tx)
+	}
+	return out
+}
+
 // SaveSubscription indexe un abonnement par son ID. Ecrase silencieusement
 // un abonnement existant sous le meme ID, comme Save pour Transaction.
 func (s *Store) SaveSubscription(sub *Subscription) {

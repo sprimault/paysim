@@ -12,6 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/sprimault/paysim/internal/bus"
 )
 
 // Sentinelles exportées : l'appelant doit pouvoir distinguer une file
@@ -29,6 +31,22 @@ var (
 	ErrAlreadyRunning = errors.New("worker deja en cours")
 )
 
+// historySize borne l'historique circulaire des webhooks. 200 couvre
+// largement l'usage interactif ; passer au-delà nécessiterait un
+// stockage persistant (phase 4).
+const historySize = 200
+
+// WebhookRecord est une entrée d'historique : le webhook enqueue plus
+// le résultat effectif de la tentative. Consommé par l'API UI pour
+// afficher le journal de livraison avec bouton de rejeu.
+type WebhookRecord struct {
+	Webhook     Webhook
+	Status      string    // "delivered" | "failed"
+	StatusCode  int       // status HTTP reçu, 0 si erreur avant réponse
+	ErrorMsg    string    // message si failed, sinon vide
+	CompletedAt time.Time // instant fin de tentative
+}
+
 // Queue est la file de livraison. Une unique instance par processus,
 // pilotée par un unique scheduler via Run — le scheduler lance chaque
 // delivery en goroutine indépendante pour supporter les délais
@@ -43,6 +61,13 @@ type Queue struct {
 	failed    atomic.Int64
 	running   atomic.Bool
 	inflight  sync.WaitGroup // livraisons en cours (goroutines lancées, non terminées)
+
+	histMu   sync.RWMutex
+	history  [historySize]WebhookRecord
+	histIdx  int // prochaine position d'écriture
+	histFull bool
+
+	publisher *bus.Bus // optionnel — publie webhook_delivered/failed
 }
 
 // Stats est un instantané des compteurs. Utile pour l'observabilité,
@@ -146,6 +171,54 @@ func (q *Queue) Stats() Stats {
 	}
 }
 
+// SetPublisher branche un bus d'événements sur la queue. À chaque
+// tentative de livraison, un event bus.Event est publié :
+// "webhook_delivered" (2xx) ou "webhook_failed" (autre / erreur).
+// Optionnel — sans publisher, la queue fonctionne inchangée.
+func (q *Queue) SetPublisher(b *bus.Bus) {
+	q.publisher = b
+}
+
+// Recent retourne les n derniers enregistrements (les plus récents
+// d'abord). Si n dépasse la capacité de l'historique ou le nombre
+// d'entrées, tout est retourné. Snapshot indépendant — l'appelant
+// peut modifier le slice sans affecter le buffer interne.
+func (q *Queue) Recent(n int) []WebhookRecord {
+	q.histMu.RLock()
+	defer q.histMu.RUnlock()
+
+	total := q.histIdx
+	if q.histFull {
+		total = historySize
+	}
+	if n > total {
+		n = total
+	}
+	if n <= 0 {
+		return nil
+	}
+
+	out := make([]WebhookRecord, n)
+	// Parcours à l'envers depuis histIdx-1 (le plus récent).
+	for i := 0; i < n; i++ {
+		pos := (q.histIdx - 1 - i + historySize) % historySize
+		out[i] = q.history[pos]
+	}
+	return out
+}
+
+// recordHistory ajoute une entrée à l'anneau circulaire. Appelée en
+// fin de deliver().
+func (q *Queue) recordHistory(rec WebhookRecord) {
+	q.histMu.Lock()
+	q.history[q.histIdx] = rec
+	q.histIdx = (q.histIdx + 1) % historySize
+	if q.histIdx == 0 {
+		q.histFull = true
+	}
+	q.histMu.Unlock()
+}
+
 // deliver traite un webhook : respecte le Delay éventuel, construit
 // la requête, l'envoie via le client HTTP injecté, met à jour les
 // compteurs et logue le résultat. Une tentative unique — les retry
@@ -167,6 +240,7 @@ func (q *Queue) deliver(ctx context.Context, w Webhook) {
 			q.failed.Add(1)
 			q.logger.Warn("webhook_delay_cancelled",
 				"id", w.ID, "url", w.URL, "delay", w.Delay)
+			q.finish(w, "failed", 0, "delay cancelled")
 			return
 		}
 	}
@@ -178,6 +252,7 @@ func (q *Queue) deliver(ctx context.Context, w Webhook) {
 	if err != nil {
 		q.failed.Add(1)
 		q.logger.Error("webhook_failed", "id", w.ID, "url", w.URL, "err", err)
+		q.finish(w, "failed", 0, err.Error())
 		return
 	}
 	for k, v := range w.Headers {
@@ -188,6 +263,7 @@ func (q *Queue) deliver(ctx context.Context, w Webhook) {
 	if err != nil {
 		q.failed.Add(1)
 		q.logger.Error("webhook_failed", "id", w.ID, "url", w.URL, "err", err)
+		q.finish(w, "failed", 0, err.Error())
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -197,10 +273,31 @@ func (q *Queue) deliver(ctx context.Context, w Webhook) {
 		q.logger.Info("webhook_delivered",
 			"id", w.ID, "url", w.URL,
 			"status", resp.StatusCode, "attempts", w.Attempts)
+		q.finish(w, "delivered", resp.StatusCode, "")
 	} else {
 		q.failed.Add(1)
 		q.logger.Warn("webhook_failed",
 			"id", w.ID, "url", w.URL,
 			"status", resp.StatusCode, "attempts", w.Attempts)
+		q.finish(w, "failed", resp.StatusCode, "")
 	}
+}
+
+// finish enregistre l'historique et publie l'événement bus. Extrait
+// pour concentrer les side-effects post-livraison.
+func (q *Queue) finish(w Webhook, status string, statusCode int, errMsg string) {
+	rec := WebhookRecord{
+		Webhook:     w,
+		Status:      status,
+		StatusCode:  statusCode,
+		ErrorMsg:    errMsg,
+		CompletedAt: time.Now().UTC(),
+	}
+	q.recordHistory(rec)
+
+	q.publisher.Publish(bus.Event{
+		Type: "webhook_" + status,
+		At:   rec.CompletedAt,
+		Data: rec,
+	})
 }
