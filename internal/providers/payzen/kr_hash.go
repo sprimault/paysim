@@ -5,7 +5,10 @@
 //
 // Reference : https://payzen.io/fr-FR/
 // Version d'API visee : V4 (endpoints /api-payment/V4/*, retours kr-answer/kr-hash)
-// Derniere verification contre la sandbox reelle : en attente du premier vecteur capture
+// Derniere verification contre le SDK officiel Lyra : 2026-07-31
+// (vecteur EMPTY_ANSWER extrait de rest-api-server-java-sdk /
+// ClientCryptUtilTest.java, validation byte-pour-byte de la primitive
+// et du format de sortie)
 //
 // Le protocole V4 est distinct de l'API Formulaire V2 historique (champs vads_*)
 // — voir la memoire projet reference-payzen-v4. Ce paquet ne connait ni V2 ni le
@@ -23,10 +26,13 @@ import (
 // boutique. Retourne le hash encode en hexadecimal minuscule, format
 // attendu par PayZen dans le champ POST kr-hash accompagnant kr-answer.
 //
-// C'est un HMAC-SHA-256 standard : la primitive est validee par les
-// vecteurs RFC 4231. La conformite byte-pour-byte au format kr-answer
-// realement emis par PayZen exige un vecteur de retour capture reel
-// depuis la sandbox — voir invariant 4.
+// C'est un HMAC-SHA-256 standard, verifie de deux facons independantes :
+// (1) primitive validee par les vecteurs RFC 4231 ; (2) sortie
+// verifiee byte-pour-byte contre le SDK Java officiel Lyra
+// (rest-api-server-java-sdk / ClientCryptUtilTest.java). Point cle :
+// la cle n'est PAS concatenee au message avant hachage, contrairement
+// a ce que font certaines libs PHP OSS historiques — le SDK officiel
+// fait juste HMAC(message, key).
 func Sign(krAnswer []byte, key string) string {
 	mac := hmac.New(sha256.New, []byte(key))
 	mac.Write(krAnswer)

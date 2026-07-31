@@ -126,6 +126,59 @@ func TestVerifyRejects(t *testing.T) {
 	}
 }
 
+// lyraOfficialCases contient les vecteurs de test hardcodés dans le
+// SDK Java officiel Lyra (lyra/rest-api-server-java-sdk), fichier
+// src/test/java/com/lyra/rest/client/ClientCryptUtilTest.java.
+//
+// Ce sont des calculs cryptographiques (message + clé → hash), pas de
+// la propriété intellectuelle : on peut les recopier au titre de
+// l'interopérabilité. Ils constituent la SEULE référence officielle
+// Lyra disponible publiquement qui permette de valider notre
+// implémentation byte-pour-byte contre le SDK officiel.
+//
+// Confirmation cruciale portée par ces vecteurs : Lyra fait
+// HMAC-SHA-256(message, key) SANS concaténer la clé au message —
+// contrairement à ce que font certaines libs PHP OSS historiques.
+// Notre implémentation Go Sign() respecte cette convention.
+var lyraOfficialCases = []struct {
+	name string
+	data []byte
+	key  string
+	hash string
+}{
+	{
+		name: "empty answer",
+		data: []byte(""),
+		key:  "ktM7bSeTJpclvpm4eEE9N0LIyoxUvsQ9AAYbQI1xQx7Qh",
+		hash: "a95c2b13d50d57858ff38e7abd76c39d644fd5d1cfdcc360e4c61f2fc48d4a5e",
+	},
+}
+
+func TestSignMatchesLyraOfficial(t *testing.T) {
+	t.Parallel()
+	for _, c := range lyraOfficialCases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got := Sign(c.data, c.key)
+			if got != c.hash {
+				t.Errorf("Sign() = %s\n     veut %s", got, c.hash)
+			}
+		})
+	}
+}
+
+func TestVerifyAcceptsLyraOfficial(t *testing.T) {
+	t.Parallel()
+	for _, c := range lyraOfficialCases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if !Verify(c.data, c.hash, c.key) {
+				t.Errorf("Verify() sur vecteur Lyra officiel = false")
+			}
+		})
+	}
+}
+
 func TestSignVerifyRoundTrip(t *testing.T) {
 	t.Parallel()
 	// Sanity check : ce que Sign produit doit passer Verify. Redondant
