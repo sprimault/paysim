@@ -5,6 +5,8 @@
 # front
 web/dist/
 web/node_modules/
+web/.eslintcache
+web/coverage/
 
 # configuration de travail
 .claude/

@@ -1,0 +1,38 @@
+/* Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Reset et bases design system Paysim.
+ * - Font Inter par défaut sur body.
+ * - Focus visible cohérent (accessibilité clavier).
+ * - Tabular numerals sur les montants et timestamps (via .tabular).
+ */
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-zinc-50 text-zinc-900;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-white;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .font-mono {
+    font-family: 'JetBrains Mono Variable', ui-monospace, monospace;
+  }
+}
