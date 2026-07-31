@@ -28,20 +28,30 @@ invalides, et que le diagramme d'états est dans `docs/states.md`.
 
 ---
 
-## Phase 1 — Un fournisseur, en vrai : PayZen
+## Phase 1 — Un fournisseur, en vrai : PayZen V4 (API REST)
 
-L'adaptateur complet : formulaire de paiement, calcul et vérification de signature sur les
-champs `vads_*`, retour navigateur, IPN serveur à serveur.
+L'adaptateur complet côté serveur : les endpoints REST V4 en HTTP Basic
+(`CreatePayment`, `UpdatePayment`, `Transaction/Get`, `CreateSubscription`,
+`Subscription/Get`), le retour navigateur et le webhook IPN signés en HMAC-SHA-256
+hex (`kr-hash`) sur le body JSON `kr-answer`.
+
+L'API Formulaire V2 (champs `vads_*` + redirection navigateur) reste hors périmètre :
+elle est en fin de vie et n'est pas ce que visent les intégrations modernes. Le
+SmartForm JavaScript côté client (SDK Krypton `KR` chargé depuis `static.payzen.eu`)
+n'est pas simulé non plus — c'est un SDK officiel PayZen, on l'utilise tel quel dans
+l'exemple d'intégration.
 
 - L'interface `Provider` se dégage à partir de ce cas concret, pas avant.
-- Vecteurs de signature capturés dans `testdata/`.
-- Une application d'exemple minimale en PHP dans `examples/symfony/`, qui sert à la fois de
-  validation réelle et de documentation.
+- Vecteurs `kr-hash` capturés dans `testdata/`.
+- Une application d'exemple minimale en PHP dans `examples/symfony/`, qui sert à la
+  fois de validation réelle et de documentation.
 
-**Fini quand** : l'application d'exemple effectue un paiement complet de bout en bout contre
-Paysim, sans modification du SDK PayZen autre que l'URL de base — et le fait aussi bien en
-local qu'avec les deux services dans un `compose`. Ce second cas est le seul qui valide
-vraiment la séparation des deux URL.
+**Fini quand** : l'application d'exemple effectue un paiement complet de bout en bout
+contre Paysim — appel de `/V4/Charge/CreatePayment`, réception d'un `formToken`,
+réception d'un retour navigateur signé et vérification du `kr-hash` — sans modification
+du code d'intégration autre que l'URL de base. Le fait aussi bien en local qu'avec les
+deux services dans un `compose`. Ce second cas est le seul qui valide vraiment la
+séparation des deux URL.
 
 ---
 
