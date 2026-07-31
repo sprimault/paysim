@@ -34,11 +34,11 @@ type APIError struct {
 // les codes reels de PayZen (INT_010, PSP_010, ACQ_010...). Le jour ou
 // un client attend un code PayZen precis, on mappera ici.
 const (
-	ErrCodeInvalidRequest      = "PAYSIM_INVALID_REQUEST"
-	ErrCodeInvalidAmount       = "PAYSIM_INVALID_AMOUNT"
-	ErrCodeInvalidCurrency     = "PAYSIM_INVALID_CURRENCY"
-	ErrCodeInvalidPayment      = "PAYSIM_INVALID_PAYMENT"
-	ErrCodeUUIDUnknown = "PAYSIM_UUID_UNKNOWN"
+	ErrCodeInvalidRequest  = "PAYSIM_INVALID_REQUEST"
+	ErrCodeInvalidAmount   = "PAYSIM_INVALID_AMOUNT"
+	ErrCodeInvalidCurrency = "PAYSIM_INVALID_CURRENCY"
+	ErrCodeInvalidPayment  = "PAYSIM_INVALID_PAYMENT"
+	ErrCodeUUIDUnknown     = "PAYSIM_UUID_UNKNOWN"
 	// #nosec G101 -- code d'erreur, pas un secret.
 	ErrCodeTokenUnknown        = "PAYSIM_TOKEN_UNKNOWN"
 	ErrCodeSubscriptionUnknown = "PAYSIM_SUBSCRIPTION_UNKNOWN"
@@ -47,13 +47,20 @@ const (
 // CreatePaymentRequest est le corps JSON attendu par POST
 // /api-payment/V4/Charge/CreatePayment. Les noms de champs sont ceux
 // utilises par PayZen — on les recopie tels quels (regle providers.md).
+//
+// ReturnURL et NotificationURL sont des extensions propres a Paysim
+// (non-standard PayZen) : le vrai back-office porte cette configuration
+// statiquement, mais un simulateur profite d'un contrat par requete.
+// Optionnelles — si absentes, l'appel de simulation devra les fournir.
 type CreatePaymentRequest struct {
-	OrderID    string            `json:"orderId"`
-	Amount     format.Amount     `json:"amount"`   // centimes
-	Currency   string            `json:"currency"` // ISO 4217
-	FormAction string            `json:"formAction,omitempty"`
-	Customer   Customer          `json:"customer,omitempty"`
-	Metadata   map[string]string `json:"metadata,omitempty"`
+	OrderID         string            `json:"orderId"`
+	Amount          format.Amount     `json:"amount"`   // centimes
+	Currency        string            `json:"currency"` // ISO 4217
+	FormAction      string            `json:"formAction,omitempty"`
+	Customer        Customer          `json:"customer,omitempty"`
+	Metadata        map[string]string `json:"metadata,omitempty"`
+	ReturnURL       string            `json:"returnUrl,omitempty"`
+	NotificationURL string            `json:"notificationUrl,omitempty"`
 }
 
 // CreatePaymentAnswer est le contenu de answer sur succes.
@@ -71,15 +78,15 @@ type TransactionGetRequest struct {
 // on garde ce qui est utile pour le controle cote marchand, on n'invente
 // pas ce qu'on ne peut pas remplir.
 type TransactionGetAnswer struct {
-	UUID              string           `json:"uuid"`
-	OrderID           string           `json:"orderId"`
-	Amount            format.Amount    `json:"amount"`
-	Currency          string           `json:"currency"`
-	OrderStatus       domain.State     `json:"orderStatus"`
-	PaymentMethodType string           `json:"paymentMethodType,omitempty"`
-	CreationDate      string           `json:"creationDate"` // ISO 8601 UTC
-	LastUpdateDate    string           `json:"lastUpdateDate"`
-	Customer          Customer         `json:"customer,omitempty"`
+	UUID              string            `json:"uuid"`
+	OrderID           string            `json:"orderId"`
+	Amount            format.Amount     `json:"amount"`
+	Currency          string            `json:"currency"`
+	OrderStatus       domain.State      `json:"orderStatus"`
+	PaymentMethodType string            `json:"paymentMethodType,omitempty"`
+	CreationDate      string            `json:"creationDate"` // ISO 8601 UTC
+	LastUpdateDate    string            `json:"lastUpdateDate"`
+	Customer          Customer          `json:"customer,omitempty"`
 	Metadata          map[string]string `json:"metadata,omitempty"`
 }
 
@@ -109,18 +116,24 @@ type BillingDetails struct {
 // porte aussi l'aggregat domain.Payment, qui reste la source de verite
 // pour la machine a etats — les autres champs sont metadonnees pour
 // remplir les payloads V4.
+//
+// ReturnURL et NotificationURL sont stockees ici a titre de valeurs
+// par defaut pour les appels de simulation. L'appel de simulation
+// peut les surcharger.
 type Transaction struct {
-	FormToken  string
-	UUID       string
-	OrderID    string
-	Amount     format.Amount
-	Currency   string
-	FormAction string
-	Customer   Customer
-	Metadata   map[string]string
-	Payment    *domain.Payment
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	FormToken       string
+	UUID            string
+	OrderID         string
+	Amount          format.Amount
+	Currency        string
+	FormAction      string
+	Customer        Customer
+	Metadata        map[string]string
+	Payment         *domain.Payment
+	ReturnURL       string
+	NotificationURL string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // UpdatePaymentRequest est le corps de POST /api-payment/V4/Charge/UpdatePayment.
@@ -199,4 +212,168 @@ type Subscription struct {
 	Rrule              string
 	Metadata           map[string]string
 	CreatedAt          time.Time
+}
+
+// Outcomes supportes pour les APIs de controle
+// /paysim/simulate/browserReturn et /paysim/simulate/ipn.
+//
+// ABANDONED est mappe sur domain.Expire() : semantiquement l'utilisateur
+// est parti, le paiement n'a jamais reussi — cf. le status EXPIRED cote
+// domaine (pas de nouvel etat "abandoned" au domain, ce serait de la
+// dette pour une nuance metier faible).
+const (
+	OutcomePaid       = "PAID"
+	OutcomeAuthorised = "AUTHORISED"
+	OutcomeUnpaid     = "UNPAID"
+	OutcomeExpired    = "EXPIRED"
+	OutcomeAbandoned  = "ABANDONED"
+)
+
+// BrowserReturnRequest est le corps de POST /paysim/simulate/browserReturn.
+// Endpoint de controle Paysim (pas PayZen) : le marchand demande a
+// Paysim de simuler la fin d'un parcours et l'envoi du retour signe
+// vers son URL. Les champs optionnels ont des valeurs par defaut
+// coherentes avec un paiement CB VISA reussi 3DS SUCCESS.
+type BrowserReturnRequest struct {
+	FormToken         string `json:"formToken"`
+	ReturnURL         string `json:"returnUrl,omitempty"`         // surcharge la ReturnURL de la Transaction
+	Outcome           string `json:"outcome"`                     // PAID | AUTHORISED | UNPAID | EXPIRED
+	PaymentMethodType string `json:"paymentMethodType,omitempty"` // defaut CARDS
+	CardBrand         string `json:"cardBrand,omitempty"`         // defaut VISA
+	Wallet            string `json:"wallet,omitempty"`            // ex APPLE_PAY, GOOGLEPAY
+	ThreeDSStatus     string `json:"threeDSStatus,omitempty"`     // defaut SUCCESS
+	ErrorCode         string `json:"errorCode,omitempty"`         // pour UNPAID
+	ErrorMessage      string `json:"errorMessage,omitempty"`
+}
+
+// BrowserReturnResponse est le corps de reponse a l'API de controle.
+// Renvoie le hash calcule pour permettre au marchand de le comparer
+// dans un test d'integration (diagnostic seulement, pas de secret).
+type BrowserReturnResponse struct {
+	Status     string `json:"status"`
+	DeliveryID string `json:"deliveryId,omitempty"`
+	KrHash     string `json:"krHash,omitempty"`
+}
+
+// IPNRequest est le corps de POST /paysim/simulate/ipn. Meme mecanique
+// que BrowserReturnRequest, mais le POST resultant part vers
+// NotificationURL (webhook serveur-a-serveur) au lieu de ReturnURL
+// (retour navigateur). La distinction est logique : deux endpoints
+// distincts pour deux flux distincts cote marchand, meme si le
+// contenu du POST est identique.
+type IPNRequest struct {
+	FormToken         string `json:"formToken"`
+	NotificationURL   string `json:"notificationUrl,omitempty"`
+	Outcome           string `json:"outcome"`
+	PaymentMethodType string `json:"paymentMethodType,omitempty"`
+	CardBrand         string `json:"cardBrand,omitempty"`
+	Wallet            string `json:"wallet,omitempty"`
+	ThreeDSStatus     string `json:"threeDSStatus,omitempty"`
+	ErrorCode         string `json:"errorCode,omitempty"`
+	ErrorMessage      string `json:"errorMessage,omitempty"`
+}
+
+// IPNResponse est le corps de reponse — identique en structure a
+// BrowserReturnResponse.
+type IPNResponse struct {
+	Status     string `json:"status"`
+	DeliveryID string `json:"deliveryId,omitempty"`
+	KrHash     string `json:"krHash,omitempty"`
+}
+
+// KrAnswer est la structure JSON sérialisée et envoyée dans le champ
+// POST kr-answer du retour navigateur / du webhook IPN. Structure plate
+// au top-level (pas de wrapper `{status, answer}` — celui-ci concerne
+// uniquement les reponses de l'API REST V4).
+//
+// Les champs `_type` sont un artefact du sérialiseur Java de PayZen
+// (discriminateur pour la deserialisation cote SDK) — on les reproduit
+// litteralement (invariant 3).
+type KrAnswer struct {
+	ShopID             string          `json:"shopId,omitempty"`
+	OrderCycle         string          `json:"orderCycle"`
+	OrderStatus        string          `json:"orderStatus"`
+	ServerDate         string          `json:"serverDate"`
+	ServerURL          string          `json:"serverUrl,omitempty"`
+	ApplicationVersion string          `json:"applicationVersion,omitempty"`
+	Mode               string          `json:"mode"`
+	OrderDetails       KrOrderDetails  `json:"orderDetails"`
+	Customer           Customer        `json:"customer,omitempty"`
+	Transactions       []KrTransaction `json:"transactions"`
+	SubscriptionID     string          `json:"subscriptionId,omitempty"`
+	Type               string          `json:"_type"`
+}
+
+// KrOrderDetails contient les infos de commande cote PayZen.
+type KrOrderDetails struct {
+	OrderTotalAmount     format.Amount `json:"orderTotalAmount"`
+	OrderCurrency        string        `json:"orderCurrency"`
+	Mode                 string        `json:"mode"`
+	OrderID              string        `json:"orderId"`
+	OrderEffectiveAmount format.Amount `json:"orderEffectiveAmount"`
+	Type                 string        `json:"_type"`
+}
+
+// KrTransaction est un element du tableau transactions[]. En phase 1
+// on n'a qu'une entree par retour (pas de paiements en plusieurs fois).
+type KrTransaction struct {
+	ShopID             string               `json:"shopId,omitempty"`
+	UUID               string               `json:"uuid"`
+	Amount             format.Amount        `json:"amount"`
+	Currency           string               `json:"currency"`
+	PaymentMethodType  string               `json:"paymentMethodType"`
+	PaymentMethodToken string               `json:"paymentMethodToken,omitempty"`
+	Status             string               `json:"status"`         // PAID | UNPAID
+	DetailedStatus     string               `json:"detailedStatus"` // AUTHORISED | CAPTURED | REFUSED | ...
+	OperationType      string               `json:"operationType"`  // DEBIT | CREDIT
+	CreationDate       string               `json:"creationDate"`
+	ErrorCode          string               `json:"errorCode,omitempty"`
+	ErrorMessage       string               `json:"errorMessage,omitempty"`
+	Metadata           map[string]string    `json:"metadata,omitempty"`
+	TransactionDetails KrTransactionDetails `json:"transactionDetails"`
+	Type               string               `json:"_type"`
+}
+
+// KrTransactionDetails porte les details specifiques a la methode de
+// paiement utilisee (CB, wallet, virement...). CardDetails et
+// ThreeDSResponse sont des pointeurs pour permettre leur omission
+// naturelle (omitempty) quand la methode ne les porte pas.
+type KrTransactionDetails struct {
+	Mid             string             `json:"mid,omitempty"`
+	CreationContext string             `json:"creationContext"`
+	Wallet          string             `json:"wallet,omitempty"`
+	CardDetails     *KrCardDetails     `json:"cardDetails,omitempty"`
+	ThreeDSResponse *KrThreeDSResponse `json:"threeDSResponse,omitempty"`
+	Type            string             `json:"_type"`
+}
+
+// KrCardDetails contient les infos carte visibles cote marchand.
+// PAN toujours masque — la vraie PAN n'entre jamais dans un retour PSP,
+// invariant PCI-DSS. Le simulateur reproduit ce masquage tel quel.
+type KrCardDetails struct {
+	PAN             string `json:"pan"`
+	Brand           string `json:"brand"`
+	ProductCategory string `json:"productCategory,omitempty"`
+	ExpiryMonth     int    `json:"expiryMonth"`
+	ExpiryYear      int    `json:"expiryYear"`
+	Country         string `json:"country,omitempty"`
+	IssuerName      string `json:"issuerName,omitempty"`
+	EffectiveBrand  string `json:"effectiveBrand,omitempty"`
+	Type            string `json:"_type"`
+}
+
+// KrThreeDSResponse porte le resultat de l'authentification 3D Secure
+// telle qu'elle a ete portee par le SmartForm cote client.
+type KrThreeDSResponse struct {
+	AuthenticationResultData KrAuthenticationResultData `json:"authenticationResultData"`
+	Type                     string                     `json:"_type"`
+}
+
+// KrAuthenticationResultData porte le status precis du 3DS.
+// Status : SUCCESS | FAILURE | NOT_ENROLLED | UNAVAILABLE.
+// AuthenticationType : FRICTIONLESS | CHALLENGE.
+type KrAuthenticationResultData struct {
+	Status             string `json:"status"`
+	AuthenticationType string `json:"authenticationType,omitempty"`
+	Type               string `json:"_type"`
 }

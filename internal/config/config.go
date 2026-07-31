@@ -56,6 +56,13 @@ type Config struct {
 
 	// LogLevel est le niveau minimum des logs émis via log/slog.
 	LogLevel slog.Level
+
+	// PayzenHMACKey est la clé HMAC-SHA-256 utilisée pour signer les
+	// retours navigateur et les webhooks IPN simulés (champ kr-hash).
+	// Lue depuis PAYSIM_PAYZEN_HMAC_KEY ou PAYSIM_PAYZEN_HMAC_KEY_FILE
+	// (exclusifs). Vide = signature désactivée, les endpoints de
+	// simulation retourneront une erreur claire au premier appel.
+	PayzenHMACKey string
 }
 
 // Load lit la configuration depuis les variables d'environnement du
@@ -99,6 +106,12 @@ func loadFrom(
 		return nil, err
 	}
 	cfg.APIToken = token
+
+	hmacKey, err := secretValue(lookup, readFile, "PAYSIM_PAYZEN_HMAC_KEY")
+	if err != nil {
+		return nil, err
+	}
+	cfg.PayzenHMACKey = hmacKey
 
 	if raw, ok := lookup("PAYSIM_MAX_PAYMENTS"); ok {
 		n, err := strconv.Atoi(raw)

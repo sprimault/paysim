@@ -43,7 +43,7 @@ func New(id string, amount format.Amount, currency string) (*Payment, error) {
 	if amount <= 0 {
 		return nil, ErrInvalidAmount
 	}
-	if !isCurrencyCode(currency) {
+	if !IsCurrencyCode(currency) {
 		return nil, ErrInvalidCurrency
 	}
 	p := &Payment{
@@ -197,11 +197,15 @@ func (p *Payment) record(kind EventKind, amount format.Amount, note string) {
 	p.updatedAt = now
 }
 
-// isCurrencyCode vérifie qu'une chaîne a la forme d'un code ISO 4217 :
+// IsCurrencyCode vérifie qu'une chaîne a la forme d'un code ISO 4217 :
 // exactement trois lettres majuscules ASCII. Comparer les octets suffit
 // puisqu'un code valide est nécessairement ASCII — un caractère non-ASCII
 // occuperait plusieurs octets et échouerait déjà à len(s) != 3.
-func isCurrencyCode(s string) bool {
+//
+// Exportée pour permettre aux paquets provider de valider une devise
+// entrante sans dupliquer la règle (l'ancienne duplication dans
+// internal/providers/payzen a été retirée).
+func IsCurrencyCode(s string) bool {
 	if len(s) != 3 {
 		return false
 	}

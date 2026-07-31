@@ -5,22 +5,54 @@ package payzen
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/sprimault/paysim/internal/delivery"
 )
 
+// newTestServer construit un serveur Paysim avec queue interne, config
+// vide (Basic Auth permissive, pas de HMAC, pas de bearer). Suffit
+// pour les tests des endpoints REST V4 qui n'utilisent pas la queue.
 func newTestServer(t *testing.T) (*httptest.Server, *Store) {
+	t.Helper()
+	server, store, _ := newTestServerFull(t, HandlerConfig{})
+	return server, store
+}
+
+// newTestServerFull expose aussi la queue delivery, utile pour les
+// tests d'endpoints de simulation qui verifient le POST sortant. Le
+// worker de la queue est lance en background et arrete par le cleanup.
+func newTestServerFull(t *testing.T, cfg HandlerConfig) (*httptest.Server, *Store, *delivery.Queue) {
 	t.Helper()
 	store := NewStore()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	server := httptest.NewServer(NewHandler(store, logger))
-	t.Cleanup(server.Close)
-	return server, store
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_ = queue.Run(ctx)
+	}()
+
+	server := httptest.NewServer(NewHandler(store, queue, logger, cfg))
+	t.Cleanup(func() {
+		server.Close()
+		cancel()
+		wg.Wait()
+	})
+	return server, store, queue
 }
 
 // post envoie une requete authentifiee (Basic Auth par defaut) et
@@ -501,5 +533,377 @@ func TestMethodNotAllowed(t *testing.T) {
 
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("status = %d, veut 405", resp.StatusCode)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Tests des endpoints de simulation (/paysim/simulate/*)
+// -----------------------------------------------------------------------------
+
+// receivedWebhook capture le POST recu par un httptest.Server jouant
+// le role du marchand. Le canal recoit une entree par POST recu.
+type receivedWebhook struct {
+	Body    []byte
+	Headers http.Header
+	Values  url.Values
+}
+
+// newMerchantServer construit un httptest.Server qui capture chaque
+// POST recu et le renvoie sur un canal, avec HTTP 200 par defaut.
+// Utile pour tester la livraison des webhooks depuis Paysim.
+func newMerchantServer(t *testing.T) (*httptest.Server, <-chan receivedWebhook) {
+	t.Helper()
+	ch := make(chan receivedWebhook, 5)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		values, _ := url.ParseQuery(string(body))
+		ch <- receivedWebhook{Body: body, Headers: r.Header.Clone(), Values: values}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+	return server, ch
+}
+
+// simulate envoie un POST vers un endpoint de simulation Paysim et
+// decode la reponse. Boilerplate factorise.
+func simulate(t *testing.T, url string, body any, bearer string) (*BrowserReturnResponse, int) {
+	t.Helper()
+	raw, _ := json.Marshal(body)
+	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do : %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var out BrowserReturnResponse
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return &out, resp.StatusCode
+}
+
+func TestBrowserReturnSuccess(t *testing.T) {
+	t.Parallel()
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "test-hmac-key"})
+	merchant, received := newMerchantServer(t)
+
+	// Créer une transaction via CreatePayment.
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{OrderID: "o-1", Amount: 1500, Currency: "EUR"}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	// Déclencher la simulation.
+	resp, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{
+			FormToken: ca.FormToken,
+			ReturnURL: merchant.URL,
+			Outcome:   OutcomePaid,
+		}, "")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, veut 200", status)
+	}
+	if resp.Status != "SUCCESS" || resp.DeliveryID == "" || resp.KrHash == "" {
+		t.Errorf("réponse incomplète : %+v", resp)
+	}
+
+	// Attendre le webhook côté marchand.
+	select {
+	case wh := <-received:
+		if wh.Values.Get("kr-answer") == "" {
+			t.Error("kr-answer absent")
+		}
+		if wh.Values.Get("kr-hash") != resp.KrHash {
+			t.Errorf("kr-hash mismatch : reçu %q, retourné %q",
+				wh.Values.Get("kr-hash"), resp.KrHash)
+		}
+		if wh.Values.Get("kr-hash-algorithm") != "sha256_hmac" {
+			t.Errorf("kr-hash-algorithm = %q", wh.Values.Get("kr-hash-algorithm"))
+		}
+		if wh.Headers.Get("Content-Type") != "application/x-www-form-urlencoded" {
+			t.Errorf("Content-Type = %q", wh.Headers.Get("Content-Type"))
+		}
+		// Le kr-answer doit contenir orderStatus=PAID.
+		if !strings.Contains(wh.Values.Get("kr-answer"), `"orderStatus":"PAID"`) {
+			t.Errorf("kr-answer ne contient pas orderStatus PAID : %s",
+				wh.Values.Get("kr-answer"))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("webhook non reçu après 2s")
+	}
+}
+
+func TestBrowserReturnUsesTransactionReturnURL(t *testing.T) {
+	t.Parallel()
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	merchant, received := newMerchantServer(t)
+
+	// ReturnURL stockée à CreatePayment.
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{
+			OrderID: "o", Amount: 100, Currency: "EUR",
+			ReturnURL: merchant.URL,
+		}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	// Pas de ReturnURL dans la simulation → fallback sur celle stockée.
+	_, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{FormToken: ca.FormToken, Outcome: OutcomePaid}, "")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+
+	select {
+	case <-received:
+	case <-time.After(2 * time.Second):
+		t.Fatal("webhook non reçu")
+	}
+}
+
+func TestBrowserReturnPrioritySimulationOverTransaction(t *testing.T) {
+	t.Parallel()
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	transactionURL, _ := newMerchantServer(t)
+	simulationURL, simReceived := newMerchantServer(t)
+
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{
+			OrderID: "o", Amount: 100, Currency: "EUR",
+			ReturnURL: transactionURL.URL,
+		}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	// URL de simulation ≠ URL de transaction → la simulation gagne.
+	_, _ = simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{
+			FormToken: ca.FormToken,
+			ReturnURL: simulationURL.URL,
+			Outcome:   OutcomePaid,
+		}, "")
+
+	select {
+	case <-simReceived:
+		// Bon serveur.
+	case <-time.After(2 * time.Second):
+		t.Fatal("webhook non reçu par le serveur de simulation")
+	}
+}
+
+func TestBrowserReturnMissingURL(t *testing.T) {
+	t.Parallel()
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{OrderID: "o", Amount: 100, Currency: "EUR"}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	// Ni ReturnURL dans la simulation, ni dans la transaction.
+	_, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{FormToken: ca.FormToken, Outcome: OutcomePaid}, "")
+	if status != http.StatusBadRequest {
+		t.Errorf("status = %d, veut 400", status)
+	}
+}
+
+func TestBrowserReturnMissingHMAC(t *testing.T) {
+	t.Parallel()
+	server, _, _ := newTestServerFull(t, HandlerConfig{}) // pas de HMACKey
+	merchant, _ := newMerchantServer(t)
+
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{OrderID: "o", Amount: 100, Currency: "EUR"}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	_, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{
+			FormToken: ca.FormToken,
+			ReturnURL: merchant.URL,
+			Outcome:   OutcomePaid,
+		}, "")
+	if status != http.StatusBadRequest {
+		t.Errorf("status = %d, veut 400 (HMAC manquant)", status)
+	}
+}
+
+func TestBrowserReturnUnknownOutcome(t *testing.T) {
+	t.Parallel()
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	merchant, _ := newMerchantServer(t)
+
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{OrderID: "o", Amount: 100, Currency: "EUR"}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	_, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{
+			FormToken: ca.FormToken,
+			ReturnURL: merchant.URL,
+			Outcome:   "N_IMPORTE_QUOI",
+		}, "")
+	if status != http.StatusBadRequest {
+		t.Errorf("status = %d, veut 400", status)
+	}
+}
+
+func TestBrowserReturnUnknownFormToken(t *testing.T) {
+	t.Parallel()
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	merchant, _ := newMerchantServer(t)
+
+	_, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{
+			FormToken: "inexistant",
+			ReturnURL: merchant.URL,
+			Outcome:   OutcomePaid,
+		}, "")
+	if status != http.StatusBadRequest {
+		t.Errorf("status = %d, veut 400", status)
+	}
+}
+
+func TestBrowserReturnDomainConflict(t *testing.T) {
+	t.Parallel()
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	merchant, _ := newMerchantServer(t)
+
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{OrderID: "o", Amount: 100, Currency: "EUR"}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	// Premier appel PAID → captured.
+	_, _ = simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{
+			FormToken: ca.FormToken,
+			ReturnURL: merchant.URL,
+			Outcome:   OutcomePaid,
+		}, "")
+
+	// Deuxième appel PAID → transition interdite (déjà captured).
+	_, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{
+			FormToken: ca.FormToken,
+			ReturnURL: merchant.URL,
+			Outcome:   OutcomePaid,
+		}, "")
+	if status != http.StatusBadRequest {
+		t.Errorf("status = %d, veut 400 (transition interdite)", status)
+	}
+}
+
+func TestIPNSuccess(t *testing.T) {
+	t.Parallel()
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	merchant, received := newMerchantServer(t)
+
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{
+			OrderID: "o", Amount: 100, Currency: "EUR",
+			NotificationURL: merchant.URL,
+		}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	_, status := simulate(t, server.URL+"/paysim/simulate/ipn",
+		IPNRequest{FormToken: ca.FormToken, Outcome: OutcomePaid}, "")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+
+	select {
+	case wh := <-received:
+		if wh.Values.Get("kr-hash") == "" {
+			t.Error("kr-hash absent")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("webhook IPN non reçu")
+	}
+}
+
+func TestBearerAuthMissing(t *testing.T) {
+	t.Parallel()
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", APIToken: "secret-bearer"})
+
+	req, _ := http.NewRequest(http.MethodPost,
+		server.URL+"/paysim/simulate/browserReturn",
+		strings.NewReader(`{"formToken":"x","outcome":"PAID"}`))
+	req.Header.Set("Content-Type", "application/json")
+	// Pas de Bearer.
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status = %d, veut 401", resp.StatusCode)
+	}
+	if got := resp.Header.Get("WWW-Authenticate"); !strings.HasPrefix(got, "Bearer") {
+		t.Errorf("WWW-Authenticate = %q", got)
+	}
+}
+
+func TestBearerAuthWrongToken(t *testing.T) {
+	t.Parallel()
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", APIToken: "secret-bearer"})
+
+	_, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{FormToken: "x", Outcome: OutcomePaid}, "mauvais-token")
+	if status != http.StatusUnauthorized {
+		t.Errorf("status = %d, veut 401", status)
+	}
+}
+
+func TestBearerAuthCorrectToken(t *testing.T) {
+	t.Parallel()
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", APIToken: "secret-bearer"})
+	merchant, _ := newMerchantServer(t)
+
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{OrderID: "o", Amount: 100, Currency: "EUR"}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	// Bon bearer → passe.
+	_, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{
+			FormToken: ca.FormToken,
+			ReturnURL: merchant.URL,
+			Outcome:   OutcomePaid,
+		}, "secret-bearer")
+	if status != http.StatusOK {
+		t.Errorf("status = %d, veut 200", status)
+	}
+}
+
+func TestBearerOpenWhenTokenUnset(t *testing.T) {
+	t.Parallel()
+	// APIToken vide → pas de check, tout passe.
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	merchant, _ := newMerchantServer(t)
+
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{OrderID: "o", Amount: 100, Currency: "EUR"}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	// Aucun bearer, ça doit passer.
+	_, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{
+			FormToken: ca.FormToken,
+			ReturnURL: merchant.URL,
+			Outcome:   OutcomePaid,
+		}, "")
+	if status != http.StatusOK {
+		t.Errorf("status = %d, veut 200", status)
 	}
 }

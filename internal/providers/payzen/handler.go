@@ -5,6 +5,7 @@ package payzen
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,43 +14,67 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/domain"
 )
 
-// Handler regroupe l'etat necessaire pour servir les endpoints REST V4
-// de PayZen. Construit dans cmd/paysim/main.go, injecte au serveur HTTP.
-type Handler struct {
-	store  *Store
-	logger *slog.Logger
+// HandlerConfig regroupe les parametres injectes au Handler. Une seule
+// struct plutot que 3 parametres positionnels dans NewHandler — plus
+// lisible et extensible sans breaking change.
+type HandlerConfig struct {
+	// HMACKey est la cle HMAC-SHA-256 utilisee pour signer kr-hash sur
+	// les retours navigateur et webhooks IPN. Vide = les endpoints de
+	// simulation retournent une erreur claire au premier appel.
+	HMACKey string
+
+	// APIToken protege les endpoints de simulation via Bearer. Vide =
+	// API de controle ouverte (mode local explicite, cf. CLAUDE.md).
+	APIToken string
 }
 
-// NewHandler assemble le multiplexeur des endpoints PayZen V4, protege
-// par un middleware Basic Auth. Le multiplexeur retourne est branchable
-// tel quel sur un http.Server.
+// Handler regroupe l'etat necessaire pour servir les endpoints REST V4
+// de PayZen et les endpoints de controle Paysim. Construit dans
+// cmd/paysim/main.go, injecte au serveur HTTP.
+type Handler struct {
+	store  *Store
+	queue  *delivery.Queue
+	logger *slog.Logger
+	cfg    HandlerConfig
+}
+
+// NewHandler assemble le multiplexeur complet : endpoints REST V4
+// PayZen (proteges par Basic Auth permissive) sous /api-payment/V4/*,
+// et endpoints de controle Paysim (Bearer conditionnel) sous
+// /paysim/simulate/*.
 //
 // Le prefixe /api-payment/V4/ est celui de PayZen reel — les clients
 // doivent pouvoir pointer sur Paysim en changeant uniquement l'hote.
-func NewHandler(store *Store, logger *slog.Logger) http.Handler {
-	h := &Handler{store: store, logger: logger}
+// Le prefixe /paysim/simulate/ est propre a Paysim.
+func NewHandler(store *Store, queue *delivery.Queue, logger *slog.Logger, cfg HandlerConfig) http.Handler {
+	h := &Handler{store: store, queue: queue, logger: logger, cfg: cfg}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api-payment/V4/Charge/CreatePayment", h.createPayment)
-	mux.HandleFunc("POST /api-payment/V4/Charge/UpdatePayment", h.updatePayment)
-	mux.HandleFunc("POST /api-payment/V4/Charge/CreateSubscription", h.createSubscription)
-	mux.HandleFunc("POST /api-payment/V4/Transaction/Get", h.getTransaction)
-	mux.HandleFunc("POST /api-payment/V4/Subscription/Get", h.getSubscription)
+	apiMux := http.NewServeMux()
+	apiMux.HandleFunc("POST /api-payment/V4/Charge/CreatePayment", h.createPayment)
+	apiMux.HandleFunc("POST /api-payment/V4/Charge/UpdatePayment", h.updatePayment)
+	apiMux.HandleFunc("POST /api-payment/V4/Charge/CreateSubscription", h.createSubscription)
+	apiMux.HandleFunc("POST /api-payment/V4/Transaction/Get", h.getTransaction)
+	apiMux.HandleFunc("POST /api-payment/V4/Subscription/Get", h.getSubscription)
 
-	return withBasicAuth(mux, logger)
+	simMux := http.NewServeMux()
+	simMux.HandleFunc("POST /paysim/simulate/browserReturn", h.browserReturn)
+	simMux.HandleFunc("POST /paysim/simulate/ipn", h.ipn)
+
+	mainMux := http.NewServeMux()
+	mainMux.Handle("/api-payment/V4/", withBasicAuth(apiMux, logger))
+	mainMux.Handle("/paysim/simulate/", withBearerToken(simMux, cfg.APIToken, logger))
+
+	return mainMux
 }
 
 // withBasicAuth applique un controle Basic Auth permissif : toute
-// paire user:pass non vide est acceptee. C'est coherent avec la
-// nature simulateur — on ne veut pas de vrai controle d'acces, juste
-// signaler l'absence de header et laisser une trace du user utilise
-// pour l'observabilite.
-//
-// Une validation stricte contre PAYSIM_PAYZEN_USERNAME / _PASSWORD
-// configures pourra etre ajoutee plus tard sans breaking change.
+// paire user:pass non vide est acceptee. Coherent avec la nature
+// simulateur — on ne veut pas de vrai controle d'acces, juste signaler
+// l'absence de header et laisser une trace du user pour l'observabilite.
 func withBasicAuth(next http.Handler, logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, pass, ok := r.BasicAuth()
@@ -63,9 +88,33 @@ func withBasicAuth(next http.Handler, logger *slog.Logger) http.Handler {
 	})
 }
 
+// withBearerToken protege un mux via un token Bearer configure. Si
+// expected est vide, laisse passer sans controle (mode local explicite).
+// Sinon, exige Authorization: Bearer <expected> avec comparaison en
+// temps constant pour eviter les timing attacks — la meme famille
+// d'attaque que la verification d'un kr-hash.
+func withBearerToken(next http.Handler, expected string, logger *slog.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if expected == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		got := r.Header.Get("Authorization")
+		want := "Bearer " + expected
+		if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="Paysim"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			logger.Debug("paysim_bearer_denied", "path", r.URL.Path)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // createPayment traite POST /api-payment/V4/Charge/CreatePayment.
 // Cree un domain.Payment, l'associe a un formToken opaque genere
-// cote Paysim, stocke le contexte, retourne le formToken au marchand.
+// cote Paysim, stocke le contexte (dont ReturnURL/NotificationURL
+// si fournies), retourne le formToken au marchand.
 func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 	var req CreatePaymentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -91,17 +140,19 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	tx := &Transaction{
-		FormToken:  token,
-		UUID:       uuid,
-		OrderID:    req.OrderID,
-		Amount:     req.Amount,
-		Currency:   req.Currency,
-		FormAction: req.FormAction,
-		Customer:   req.Customer,
-		Metadata:   req.Metadata,
-		Payment:    payment,
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		FormToken:       token,
+		UUID:            uuid,
+		OrderID:         req.OrderID,
+		Amount:          req.Amount,
+		Currency:        req.Currency,
+		FormAction:      req.FormAction,
+		Customer:        req.Customer,
+		Metadata:        req.Metadata,
+		Payment:         payment,
+		ReturnURL:       req.ReturnURL,
+		NotificationURL: req.NotificationURL,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	h.store.Save(tx)
 
@@ -110,8 +161,7 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 
 // updatePayment traite POST /api-payment/V4/Charge/UpdatePayment. Met
 // a jour le contexte associe a un formToken existant : coordonnees
-// client, metadata. N'affecte pas l'etat du domain.Payment (toujours
-// "initiated" tant que le paiement n'a pas ete confirme).
+// client, metadata. N'affecte pas l'etat du domain.Payment.
 func (h *Handler) updatePayment(w http.ResponseWriter, r *http.Request) {
 	var req UpdatePaymentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -128,8 +178,6 @@ func (h *Handler) updatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mise a jour non destructive : seuls les champs fournis sont
-	// remplaces, on ne repasse pas les autres a leur zero-value.
 	if req.Customer != (Customer{}) {
 		tx.Customer = req.Customer
 	}
@@ -145,7 +193,7 @@ func (h *Handler) updatePayment(w http.ResponseWriter, r *http.Request) {
 // createSubscription traite POST /api-payment/V4/Charge/CreateSubscription.
 // Stub minimaliste en phase 1 : stocke le contexte de l'abonnement,
 // retourne un subscriptionId. Aucune mecanique de facturation periodique
-// n'est simulee — a etendre si le besoin s'exprime.
+// n'est simulee.
 func (h *Handler) createSubscription(w http.ResponseWriter, r *http.Request) {
 	var req CreateSubscriptionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -156,7 +204,7 @@ func (h *Handler) createSubscription(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, ErrCodeInvalidAmount, "montant invalide")
 		return
 	}
-	if !isCurrencyCode(req.Currency) {
+	if !domain.IsCurrencyCode(req.Currency) {
 		h.writeError(w, ErrCodeInvalidCurrency, "devise invalide")
 		return
 	}
@@ -186,9 +234,7 @@ func (h *Handler) createSubscription(w http.ResponseWriter, r *http.Request) {
 	h.writeSuccess(w, CreateSubscriptionAnswer{SubscriptionID: subID})
 }
 
-// getSubscription traite POST /api-payment/V4/Subscription/Get. Comme
-// getTransaction, un ID inconnu produit un HTTP 200 avec status ERROR —
-// respect du contrat PayZen (invariant 3).
+// getSubscription traite POST /api-payment/V4/Subscription/Get.
 func (h *Handler) getSubscription(w http.ResponseWriter, r *http.Request) {
 	var req SubscriptionGetRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -219,26 +265,10 @@ func (h *Handler) getSubscription(w http.ResponseWriter, r *http.Request) {
 	h.writeSuccess(w, answer)
 }
 
-// isCurrencyCode duplique la logique de domain.isCurrencyCode (non
-// exportee la-bas). Duplication acceptee car triviale et evite de
-// faire remonter cette validation dans le paquet domain hors du
-// perimetre de ce vertical.
-func isCurrencyCode(s string) bool {
-	if len(s) != 3 {
-		return false
-	}
-	for i := 0; i < 3; i++ {
-		if s[i] < 'A' || s[i] > 'Z' {
-			return false
-		}
-	}
-	return true
-}
-
 // getTransaction traite POST /api-payment/V4/Transaction/Get. Retourne
 // le statut d'une transaction indexee par UUID. Un UUID inconnu produit
-// une reponse HTTP 200 avec status ERROR — c'est le contrat PayZen,
-// pas un 404 (reproduction du protocole tel quel, invariant 3).
+// une reponse HTTP 200 avec status ERROR — respect du contrat PayZen
+// (invariant 3).
 func (h *Handler) getTransaction(w http.ResponseWriter, r *http.Request) {
 	var req TransactionGetRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -270,13 +300,125 @@ func (h *Handler) getTransaction(w http.ResponseWriter, r *http.Request) {
 	h.writeSuccess(w, answer)
 }
 
+// browserReturn simule le POST du retour navigateur : PayZen fait
+// theoriquement un POST vers l'URL de retour marchand avec kr-answer
+// et kr-hash. Le marchand appelle cet endpoint pour declencher la
+// simulation d'un tel retour.
+func (h *Handler) browserReturn(w http.ResponseWriter, r *http.Request) {
+	var req BrowserReturnRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeSimulateError(w, err)
+		return
+	}
+	opts := BrowserReturnOpts{
+		Outcome:           req.Outcome,
+		PaymentMethodType: req.PaymentMethodType,
+		CardBrand:         req.CardBrand,
+		Wallet:            req.Wallet,
+		ThreeDSStatus:     req.ThreeDSStatus,
+		ErrorCode:         req.ErrorCode,
+		ErrorMessage:      req.ErrorMessage,
+	}
+	hash, deliveryID, err := h.simulate(req.FormToken, req.ReturnURL, opts, "V4/Payment",
+		func(tx *Transaction) string { return tx.ReturnURL })
+	if err != nil {
+		h.writeSimulateError(w, err)
+		return
+	}
+	h.writeSimulateSuccess(w, BrowserReturnResponse{
+		Status: "SUCCESS", DeliveryID: deliveryID, KrHash: hash,
+	})
+}
+
+// ipn simule le POST du webhook IPN serveur-a-serveur. Meme mecanique
+// que browserReturn, URL cible differente : NotificationURL au lieu
+// de ReturnURL.
+func (h *Handler) ipn(w http.ResponseWriter, r *http.Request) {
+	var req IPNRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeSimulateError(w, err)
+		return
+	}
+	opts := BrowserReturnOpts{
+		Outcome:           req.Outcome,
+		PaymentMethodType: req.PaymentMethodType,
+		CardBrand:         req.CardBrand,
+		Wallet:            req.Wallet,
+		ThreeDSStatus:     req.ThreeDSStatus,
+		ErrorCode:         req.ErrorCode,
+		ErrorMessage:      req.ErrorMessage,
+	}
+	hash, deliveryID, err := h.simulate(req.FormToken, req.NotificationURL, opts, "V4/Payment",
+		func(tx *Transaction) string { return tx.NotificationURL })
+	if err != nil {
+		h.writeSimulateError(w, err)
+		return
+	}
+	h.writeSimulateSuccess(w, IPNResponse{
+		Status: "SUCCESS", DeliveryID: deliveryID, KrHash: hash,
+	})
+}
+
+// simulate est la logique commune aux deux endpoints de simulation :
+// valide la requete, fait transiter le domain.Payment, construit le
+// kr-answer, signe, enqueue le webhook via internal/delivery.
+// Retourne le hash calcule et l'id de livraison, ou une erreur qui
+// sera convertie en 400 par le handler.
+func (h *Handler) simulate(
+	formToken, urlOverride string,
+	opts BrowserReturnOpts,
+	answerType string,
+	fallbackURL func(*Transaction) string,
+) (hash, deliveryID string, err error) {
+	if h.cfg.HMACKey == "" {
+		return "", "", errors.New("simulation impossible : PAYSIM_PAYZEN_HMAC_KEY non configuree")
+	}
+	if formToken == "" {
+		return "", "", errors.New("formToken manquant")
+	}
+	if _, ok := outcomeSpecs[opts.Outcome]; !ok {
+		return "", "", fmt.Errorf("outcome %q inconnu", opts.Outcome)
+	}
+	tx := h.store.ByToken(formToken)
+	if tx == nil {
+		return "", "", errors.New("formToken inconnu")
+	}
+	targetURL := urlOverride
+	if targetURL == "" {
+		targetURL = fallbackURL(tx)
+	}
+	if targetURL == "" {
+		return "", "", errors.New("URL cible manquante : ni fournie dans la requete, ni stockee dans la transaction")
+	}
+	if err := applyOutcome(tx, opts.Outcome, opts.ErrorMessage); err != nil {
+		return "", "", fmt.Errorf("transition domain: %w", err)
+	}
+	tx.UpdatedAt = time.Now().UTC()
+	h.store.Save(tx)
+
+	// serverURL vide en phase 1 (arrivera avec cmd/paysim qui saura
+	// son propre PublicURL). Mode "TEST" en dur — un simulateur n'a
+	// pas de "PRODUCTION".
+	answer := buildKrAnswer(tx, opts, "", "TEST")
+
+	deliveryID, err = newUUID()
+	if err != nil {
+		return "", "", fmt.Errorf("generation deliveryId: %w", err)
+	}
+	wh, hash, err := buildDeliveryWebhook(deliveryID, targetURL, answer, h.cfg.HMACKey, answerType)
+	if err != nil {
+		return "", "", err
+	}
+	if err := h.queue.Enqueue(wh); err != nil {
+		return "", "", fmt.Errorf("enqueue: %w", err)
+	}
+	return hash, deliveryID, nil
+}
+
 // writeSuccess emet une reponse 200 avec status=SUCCESS et answer serialise.
 func (h *Handler) writeSuccess(w http.ResponseWriter, answer any) {
 	raw, err := json.Marshal(answer)
 	if err != nil {
-		// Erreur interne rare — un json.Marshal echoue sur des cycles
-		// ou des types non serialisables. On logue et on renvoie
-		// status ERROR generique.
 		h.logger.Error("payzen_marshal_failed", "err", err)
 		h.writeError(w, ErrCodeInvalidRequest, "serialisation reponse impossible")
 		return
@@ -286,9 +428,7 @@ func (h *Handler) writeSuccess(w http.ResponseWriter, answer any) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// writeError emet une reponse 200 avec status=ERROR — c'est le format
-// PayZen (pas de 4xx sur erreur metier, reserves aux vrais defauts de
-// requete gerents par le serveur HTTP lui-meme).
+// writeError emet une reponse 200 avec status=ERROR — format PayZen.
 func (h *Handler) writeError(w http.ResponseWriter, code, message string) {
 	raw, _ := json.Marshal(APIError{ErrorCode: code, ErrorMessage: message})
 	resp := APIResponse{Status: "ERROR", Answer: raw}
@@ -296,9 +436,7 @@ func (h *Handler) writeError(w http.ResponseWriter, code, message string) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// writeDomainError traduit une erreur sentinelle du domaine en code
-// Paysim. Concentre la traduction domain → protocol en un seul point,
-// evite que chaque handler ait a la refaire.
+// writeDomainError traduit une erreur sentinelle du domaine en code Paysim.
 func (h *Handler) writeDomainError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, domain.ErrInvalidAmount):
@@ -312,10 +450,27 @@ func (h *Handler) writeDomainError(w http.ResponseWriter, err error) {
 	}
 }
 
-// newFormToken genere un formToken opaque cote marchand : 32 caracteres
-// hexadecimaux issus de 16 octets aleatoires. Format arbitraire —
-// PayZen utilise du base64 URL-safe, mais le marchand traite ce token
-// comme une chaine opaque, il ne fait aucun controle de format.
+// writeSimulateSuccess emet une reponse JSON de succes pour les API
+// de controle Paysim (format plat, pas le wrapper PayZen).
+func (h *Handler) writeSimulateSuccess(w http.ResponseWriter, resp any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// writeSimulateError emet une reponse 400 pour les API de controle.
+// Les erreurs ici sont fonctionnelles (mauvaise requete, formToken
+// inconnu, HMAC manquant), pas des erreurs metier PayZen — un 4xx
+// HTTP est donc approprie, contrairement aux endpoints REST V4.
+func (h *Handler) writeSimulateError(w http.ResponseWriter, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+}
+
+// newFormToken genere un formToken opaque : 32 caracteres hexadecimaux
+// issus de 16 octets aleatoires. Format arbitraire — PayZen utilise du
+// base64 URL-safe, mais le marchand traite ce token comme une chaine
+// opaque, il ne fait aucun controle de format.
 func newFormToken() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -326,8 +481,7 @@ func newFormToken() (string, error) {
 
 // newUUID genere un identifiant UUID v4 conformement a la RFC 4122 :
 // 128 bits aleatoires avec bits de version et variant fixes. Format
-// canonique 8-4-4-4-12 en hexadecimal minuscule. Aucune dependance
-// externe — cohérent avec la preference stdlib du projet.
+// canonique 8-4-4-4-12 en hexadecimal minuscule.
 func newUUID() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {

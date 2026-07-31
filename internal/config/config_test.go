@@ -70,12 +70,13 @@ func TestLoadNominalMinimal(t *testing.T) {
 func TestLoadNominalComplet(t *testing.T) {
 	t.Parallel()
 	env := mockEnv{
-		"PAYSIM_PUBLIC_URL":   "https://paysim.example.com",
-		"PAYSIM_CALLBACK_URL": "http://paysim:8080",
-		"PAYSIM_BASE_PATH":    "/paysim/",
-		"PAYSIM_API_TOKEN":    "token-direct",
-		"PAYSIM_MAX_PAYMENTS": "500",
-		"PAYSIM_LOG_LEVEL":    "debug",
+		"PAYSIM_PUBLIC_URL":       "https://paysim.example.com",
+		"PAYSIM_CALLBACK_URL":     "http://paysim:8080",
+		"PAYSIM_BASE_PATH":        "/paysim/",
+		"PAYSIM_API_TOKEN":        "token-direct",
+		"PAYSIM_MAX_PAYMENTS":     "500",
+		"PAYSIM_LOG_LEVEL":        "debug",
+		"PAYSIM_PAYZEN_HMAC_KEY":  "hmac-key-test",
 	}
 	cfg, err := loadFrom(env.lookup, mockFS{}.read)
 	if err != nil {
@@ -92,6 +93,24 @@ func TestLoadNominalComplet(t *testing.T) {
 	}
 	if cfg.LogLevel != slog.LevelDebug {
 		t.Errorf("LogLevel = %s, veut debug", cfg.LogLevel)
+	}
+	if cfg.PayzenHMACKey != "hmac-key-test" {
+		t.Errorf("PayzenHMACKey = %q", cfg.PayzenHMACKey)
+	}
+}
+
+func TestLoadPayzenHMACKeyFromFile(t *testing.T) {
+	t.Parallel()
+	env := minEnv()
+	env["PAYSIM_PAYZEN_HMAC_KEY_FILE"] = "/run/secrets/hmac"
+	fs := mockFS{"/run/secrets/hmac": "clef-depuis-fichier\n"}
+
+	cfg, err := loadFrom(env.lookup, fs.read)
+	if err != nil {
+		t.Fatalf("erreur: %v", err)
+	}
+	if cfg.PayzenHMACKey != "clef-depuis-fichier" {
+		t.Errorf("PayzenHMACKey = %q, veut clef-depuis-fichier (sans saut de ligne)", cfg.PayzenHMACKey)
 	}
 }
 
