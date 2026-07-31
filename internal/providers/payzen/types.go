@@ -83,8 +83,8 @@ type TransactionGetAnswer struct {
 	Metadata          map[string]string `json:"metadata,omitempty"`
 }
 
-// Customer et BillingDetails miroir de ce que TopWeb/PayZen echangent —
-// aucun champ obligatoire cote domain, on stocke pour le rendre dans les
+// Customer et BillingDetails miroir de la structure PayZen — aucun
+// champ obligatoire cote domain, on stocke pour le rendre dans les
 // retours. Les noms conservent la casse PayZen.
 type Customer struct {
 	Email          string         `json:"email,omitempty"`

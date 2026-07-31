@@ -10,11 +10,9 @@ import (
 )
 
 // rfc4231Cases contient les vecteurs de reference IETF pour HMAC-SHA-256.
-// Ils sont publics, calcules independamment de notre code, et valident la
-// primitive HMAC en tant que telle — pas la compatibilite au format
-// kr-answer emis par PayZen, qui exige un vecteur reel capture depuis la
-// sandbox (invariant 4, voir la memoire reference-payzen-sandbox-topdata
-// pour la marche a suivre).
+// Ils sont publics, calcules independamment de notre code, et valident
+// la primitive HMAC en tant que telle. La validation byte-pour-byte du
+// format Lyra est portee separement par lyraOfficialCases.
 //
 // Cas selectionnes : 1 (cle courte binaire), 2 (cle texte), 6 (cle plus
 // longue qu'un bloc SHA-256), 7 (cle et donnees plus longues qu'un bloc).
