@@ -13,3 +13,8 @@ CLAUDE.md
 
 # IDE JetBrains
 .idea/
+
+# Captures de back-office PSP (contiennent des credentials sandbox)
+internal/providers/*/testdata/*.png
+internal/providers/*/testdata/*.jpg
+internal/providers/*/testdata/*.jpeg
