@@ -53,17 +53,23 @@ type Handler struct {
 	cfg    HandlerConfig
 }
 
-// NewHandler assemble le multiplexeur complet : endpoints REST V4
-// PayZen (proteges par Basic Auth permissive) sous /api-payment/V4/*,
-// et endpoints de controle Paysim (Bearer conditionnel) sous
+// NewHandler instancie un Handler PayZen. Le multiplexeur HTTP est
+// obtenu ensuite via Routes() — deux étapes pour que les consommateurs
+// qui ont besoin d'un *Handler concret (ex. api.Handler pour Simulate)
+// puissent le récupérer sans caster un http.Handler.
+func NewHandler(store *Store, queue *delivery.Queue, logger *slog.Logger, cfg HandlerConfig) *Handler {
+	return &Handler{store: store, queue: queue, logger: logger, cfg: cfg}
+}
+
+// Routes assemble le multiplexeur complet : endpoints REST V4 PayZen
+// (proteges par Basic Auth permissive) sous /api-payment/V4/*, et
+// endpoints de controle Paysim (Bearer conditionnel) sous
 // /paysim/simulate/*.
 //
 // Le prefixe /api-payment/V4/ est celui de PayZen reel — les clients
 // doivent pouvoir pointer sur Paysim en changeant uniquement l'hote.
 // Le prefixe /paysim/simulate/ est propre a Paysim.
-func NewHandler(store *Store, queue *delivery.Queue, logger *slog.Logger, cfg HandlerConfig) http.Handler {
-	h := &Handler{store: store, queue: queue, logger: logger, cfg: cfg}
-
+func (h *Handler) Routes() http.Handler {
 	apiMux := http.NewServeMux()
 	apiMux.HandleFunc("POST /api-payment/V4/Charge/CreatePayment", h.createPayment)
 	apiMux.HandleFunc("POST /api-payment/V4/Charge/UpdatePayment", h.updatePayment)
@@ -78,11 +84,11 @@ func NewHandler(store *Store, queue *delivery.Queue, logger *slog.Logger, cfg Ha
 	// Chaos s'applique uniquement sur les endpoints REST V4 (ce que
 	// PayZen exposerait vraiment) — pas sur l'API de contrôle Paysim,
 	// dont les défauts ne sont pas ce qu'on veut simuler.
-	apiWithChaos := cfg.Chaos.Middleware(withBasicAuth(apiMux, logger))
+	apiWithChaos := h.cfg.Chaos.Middleware(withBasicAuth(apiMux, h.logger))
 
 	mainMux := http.NewServeMux()
 	mainMux.Handle("/api-payment/V4/", apiWithChaos)
-	mainMux.Handle("/paysim/simulate/", withBearerToken(simMux, cfg.APIToken, logger))
+	mainMux.Handle("/paysim/simulate/", withBearerToken(simMux, h.cfg.APIToken, h.logger))
 
 	return mainMux
 }
@@ -394,6 +400,27 @@ func (h *Handler) ipn(w http.ResponseWriter, r *http.Request) {
 	h.writeSimulateSuccess(w, IPNResponse{
 		Status: "SUCCESS", DeliveryID: deliveryID, KrHash: hash,
 	})
+}
+
+// SimulateInput regroupe les paramètres de Simulate. Passé en struct
+// (au lieu de 5 paramètres positionnels) pour rester lisible côté
+// appelants — les handlers HTTP internes et l'API UI.
+type SimulateInput struct {
+	FormToken   string
+	URLOverride string                    // vide = fallback sur la Transaction
+	AnswerType  string                    // "V4/Payment"
+	Opts        BrowserReturnOpts
+	FallbackURL func(*Transaction) string // ex : func(tx){return tx.ReturnURL}
+}
+
+// Simulate est la logique de simulation d'un retour signé. Exportée
+// pour que le paquet api puisse la consommer sans passer par un
+// self-loopback HTTP. Valide, fait transiter le domain.Payment,
+// construit le kr-answer, signe, enqueue le webhook via
+// internal/delivery. Retourne le hash calculé et l'id de livraison,
+// ou une erreur (convertie en 400 par les handlers HTTP).
+func (h *Handler) Simulate(in SimulateInput) (hash, deliveryID string, err error) {
+	return h.simulate(in.FormToken, in.URLOverride, in.Opts, in.AnswerType, in.FallbackURL)
 }
 
 // simulate est la logique commune aux deux endpoints de simulation :

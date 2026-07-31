@@ -98,12 +98,19 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		Chaos:     chaosInj,
 		Publisher: eventBus,
 	})
-	apiHandler := api.NewHandler(store, queue, eventBus, logger, cfg.APIToken)
+	apiHandler := api.NewHandler(api.Deps{
+		Store:         store,
+		Queue:         queue,
+		Publisher:     eventBus,
+		Logger:        logger,
+		Token:         cfg.APIToken,
+		PayzenHandler: payzenHandler,
+	})
 
 	var ready atomic.Bool
 	ready.Store(true)
 
-	mux := buildMux(payzenHandler, apiHandler, cfg.BasePath, &ready)
+	mux := buildMux(payzenHandler.Routes(), apiHandler, cfg.BasePath, &ready)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,

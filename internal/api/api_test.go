@@ -5,6 +5,7 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,7 +46,13 @@ func setup(t *testing.T, token string) (*httptest.Server, *payzen.Store, *delive
 		_ = queue.Run(ctx)
 	}()
 
-	handler := NewHandler(store, queue, b, logger, token)
+	handler := NewHandler(Deps{
+		Store:     store,
+		Queue:     queue,
+		Publisher: b,
+		Logger:    logger,
+		Token:     token,
+	})
 	server := httptest.NewServer(handler)
 	t.Cleanup(func() {
 		server.Close()
@@ -222,6 +230,184 @@ func TestBearerRequiredWhenTokenConfigured(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("avec bearer = %d, veut 200", resp.StatusCode)
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Tests des endpoints write (vertical 2 phase 3)
+// -----------------------------------------------------------------------------
+
+func TestReplayWebhookReEnqueues(t *testing.T) {
+	t.Parallel()
+	// Serveur aval qui compte les POSTs.
+	var count atomic.Int32
+	aval := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		count.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer aval.Close()
+
+	server, _, queue, _ := setup(t, "")
+
+	// 1. Enqueue initial + attente livraison.
+	origBody := []byte(`{"orderStatus":"PAID"}`)
+	_ = queue.Enqueue(delivery.Webhook{
+		ID:      "wh-original",
+		URL:     aval.URL,
+		Body:    origBody,
+		Headers: map[string]string{"Content-Type": "application/json"},
+	})
+	deadline := time.Now().Add(2 * time.Second)
+	for count.Load() < 1 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if count.Load() != 1 {
+		t.Fatalf("livraison initiale : count = %d", count.Load())
+	}
+
+	// 2. Rejeu via API.
+	req, _ := http.NewRequest(http.MethodPost,
+		server.URL+"/paysim/api/v1/webhooks/wh-original/replay", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("replay status = %d, veut 202", resp.StatusCode)
+	}
+	var body ReplayWebhookResponse
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	if !strings.HasPrefix(body.NewDeliveryID, "replay-wh-original-") {
+		t.Errorf("NewDeliveryID = %q, doit commencer par replay-wh-original-", body.NewDeliveryID)
+	}
+
+	// 3. Le POST doit arriver — count passe à 2.
+	deadline = time.Now().Add(2 * time.Second)
+	for count.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if count.Load() != 2 {
+		t.Errorf("apres replay : count = %d, veut 2", count.Load())
+	}
+}
+
+func TestReplayWebhookUnknown(t *testing.T) {
+	t.Parallel()
+	server, _, _, _ := setup(t, "")
+
+	req, _ := http.NewRequest(http.MethodPost,
+		server.URL+"/paysim/api/v1/webhooks/inexistant/replay", nil)
+	resp, _ := http.DefaultClient.Do(req)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, veut 404", resp.StatusCode)
+	}
+}
+
+func TestSimulatePaymentBrowserReturn(t *testing.T) {
+	t.Parallel()
+	// Setup avec un vrai payzenHandler (nécessaire pour Simulate).
+	logger := discardLogger()
+	store := payzen.NewStore()
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	b := bus.New()
+	queue.SetPublisher(b)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); _ = queue.Run(ctx) }()
+	t.Cleanup(func() { cancel(); wg.Wait() })
+
+	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{
+		HMACKey:   "test-hmac",
+		Publisher: b,
+	})
+
+	handler := NewHandler(Deps{
+		Store:         store,
+		Queue:         queue,
+		Publisher:     b,
+		Logger:        logger,
+		PayzenHandler: ph,
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	// Créer une transaction (avec ReturnURL stockée).
+	tx := addPayment(t, store, "uuid-sim", "order-sim", 500)
+	tx.ReturnURL = "http://localhost:1/discard" // URL bidon, on ne vérifie que la réponse API
+	store.Save(tx)
+
+	body, _ := json.Marshal(SimulatePaymentRequest{
+		Outcome: "PAID",
+	})
+	resp, err := http.Post(
+		server.URL+"/paysim/api/v1/payments/uuid-sim/simulate",
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("status = %d, veut 202", resp.StatusCode)
+	}
+	var out SimulatePaymentResponse
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if out.DeliveryID == "" || out.KrHash == "" {
+		t.Errorf("response incomplete = %+v", out)
+	}
+	if out.Channel != "browserReturn" {
+		t.Errorf("Channel = %q, veut browserReturn (défaut)", out.Channel)
+	}
+}
+
+func TestSimulatePaymentUnknownUUID(t *testing.T) {
+	t.Parallel()
+	logger := discardLogger()
+	store := payzen.NewStore()
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	b := bus.New()
+	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{HMACKey: "k", Publisher: b})
+	handler := NewHandler(Deps{
+		Store: store, Queue: queue, Publisher: b, Logger: logger, PayzenHandler: ph,
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	body, _ := json.Marshal(SimulatePaymentRequest{Outcome: "PAID"})
+	resp, _ := http.Post(
+		server.URL+"/paysim/api/v1/payments/inexistant/simulate",
+		"application/json", bytes.NewReader(body))
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, veut 404", resp.StatusCode)
+	}
+}
+
+func TestSimulatePaymentInvalidChannel(t *testing.T) {
+	t.Parallel()
+	logger := discardLogger()
+	store := payzen.NewStore()
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	b := bus.New()
+	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{HMACKey: "k", Publisher: b})
+	handler := NewHandler(Deps{
+		Store: store, Queue: queue, Publisher: b, Logger: logger, PayzenHandler: ph,
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	addPayment(t, store, "uuid-x", "order-x", 100)
+
+	body, _ := json.Marshal(SimulatePaymentRequest{Outcome: "PAID", Channel: "unknown-channel"})
+	resp, _ := http.Post(
+		server.URL+"/paysim/api/v1/payments/uuid-x/simulate",
+		"application/json", bytes.NewReader(body))
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, veut 400", resp.StatusCode)
 	}
 }
 

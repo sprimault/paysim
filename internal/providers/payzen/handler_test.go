@@ -47,7 +47,7 @@ func newTestServerFull(t *testing.T, cfg HandlerConfig) (*httptest.Server, *Stor
 		_ = queue.Run(ctx)
 	}()
 
-	server := httptest.NewServer(NewHandler(store, queue, logger, cfg))
+	server := httptest.NewServer(NewHandler(store, queue, logger, cfg).Routes())
 	t.Cleanup(func() {
 		server.Close()
 		cancel()

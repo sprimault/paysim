@@ -23,29 +23,51 @@ import (
 	"github.com/sprimault/paysim/internal/providers/payzen"
 )
 
+// Deps regroupe les dépendances de l'API UI. Struct plutôt que
+// 6 paramètres positionnels — plus lisible et extensible sans
+// breaking change côté cmd/paysim.
+type Deps struct {
+	Store         *payzen.Store
+	Queue         *delivery.Queue
+	Publisher     *bus.Bus
+	Logger        *slog.Logger
+	Token         string // Bearer requis si non vide, sinon API ouverte
+	PayzenHandler *payzen.Handler
+}
+
 // Handler regroupe les dépendances nécessaires pour servir les
 // endpoints API et SSE. Instancié dans cmd/paysim/main.go.
 type Handler struct {
-	store     *payzen.Store
-	queue     *delivery.Queue
-	publisher *bus.Bus
-	logger    *slog.Logger
-	token     string // vide = API ouverte
+	store         *payzen.Store
+	queue         *delivery.Queue
+	publisher     *bus.Bus
+	logger        *slog.Logger
+	token         string
+	payzenHandler *payzen.Handler
 }
 
 // NewHandler retourne un http.Handler qui multiplexe les endpoints
-// UI sous /paysim/api/v1/*, protégé par Bearer si token non vide.
-func NewHandler(store *payzen.Store, queue *delivery.Queue, publisher *bus.Bus, logger *slog.Logger, token string) http.Handler {
-	h := &Handler{store: store, queue: queue, publisher: publisher, logger: logger, token: token}
+// UI sous /paysim/api/v1/*, protégé par Bearer si Token non vide.
+func NewHandler(deps Deps) http.Handler {
+	h := &Handler{
+		store:         deps.Store,
+		queue:         deps.Queue,
+		publisher:     deps.Publisher,
+		logger:        deps.Logger,
+		token:         deps.Token,
+		payzenHandler: deps.PayzenHandler,
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /paysim/api/v1/payments", h.listPayments)
 	mux.HandleFunc("GET /paysim/api/v1/payments/{uuid}", h.getPayment)
+	mux.HandleFunc("POST /paysim/api/v1/payments/{uuid}/simulate", h.simulatePayment)
 	mux.HandleFunc("GET /paysim/api/v1/webhooks", h.listWebhooks)
 	mux.HandleFunc("GET /paysim/api/v1/webhooks/{id}", h.getWebhook)
+	mux.HandleFunc("POST /paysim/api/v1/webhooks/{id}/replay", h.replayWebhook)
 	mux.HandleFunc("GET /paysim/api/v1/events/stream", h.streamEvents)
 
-	return withBearer(mux, token, logger)
+	return withBearer(mux, deps.Token, deps.Logger)
 }
 
 // withBearer applique un contrôle Bearer si token != "". Cohérent
@@ -119,6 +141,35 @@ type WebhookDetail struct {
 	Body    string            `json:"body"`
 }
 
+// SimulatePaymentRequest est le corps de POST
+// /paysim/api/v1/payments/{uuid}/simulate. L'UI n'a pas à connaître
+// le formToken interne — Paysim le retrouve depuis l'uuid. Le champ
+// channel choisit entre retour navigateur (défaut) et IPN pur.
+type SimulatePaymentRequest struct {
+	Outcome           string `json:"outcome"` // PAID | AUTHORISED | UNPAID | EXPIRED | ABANDONED
+	Channel           string `json:"channel,omitempty"` // "browserReturn" (défaut) | "ipn"
+	ReturnURL         string `json:"returnUrl,omitempty"`
+	NotificationURL   string `json:"notificationUrl,omitempty"`
+	CardBrand         string `json:"cardBrand,omitempty"`
+	ThreeDSStatus     string `json:"threeDSStatus,omitempty"`
+	ErrorCode         string `json:"errorCode,omitempty"`
+	ErrorMessage      string `json:"errorMessage,omitempty"`
+}
+
+// SimulatePaymentResponse retourne le deliveryId et le hash calculé.
+type SimulatePaymentResponse struct {
+	DeliveryID string `json:"deliveryId"`
+	KrHash     string `json:"krHash"`
+	Channel    string `json:"channel"`
+}
+
+// ReplayWebhookResponse retourne l'identifiant du nouveau webhook
+// enqueue. L'original reste dans l'historique — le rejeu est une
+// nouvelle tentative distincte.
+type ReplayWebhookResponse struct {
+	NewDeliveryID string `json:"newDeliveryId"`
+}
+
 // -----------------------------------------------------------------------------
 // Endpoints
 // -----------------------------------------------------------------------------
@@ -161,6 +212,94 @@ func (h *Handler) getWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	http.Error(w, "not found", http.StatusNotFound)
+}
+
+// replayWebhook re-enqueue un webhook existant. Le body est renvoyé
+// tel quel (byte-pour-byte, avec la même signature) — le marchand
+// reçoit exactement ce qu'il aurait reçu la première fois. Un nouvel
+// ID de livraison est attribué pour distinguer les tentatives dans
+// l'historique.
+func (h *Handler) replayWebhook(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	records := h.queue.Recent(200)
+	for _, rec := range records {
+		if rec.Webhook.ID != id {
+			continue
+		}
+		wh := rec.Webhook
+		wh.ID = "replay-" + id + "-" + time.Now().UTC().Format("150405.000000")
+		wh.Attempts = 0
+		wh.Delay = 0
+		wh.CreatedAt = time.Now().UTC()
+		wh.LastTryAt = time.Time{}
+		if err := h.queue.Enqueue(wh); err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, ReplayWebhookResponse{NewDeliveryID: wh.ID})
+		return
+	}
+	http.Error(w, "webhook not found", http.StatusNotFound)
+}
+
+// simulatePayment déclenche une simulation de retour navigateur ou
+// d'IPN sur un paiement identifié par son UUID. L'UI n'a pas besoin
+// du formToken (privé). Wrapper de payzen.Handler.Simulate.
+func (h *Handler) simulatePayment(w http.ResponseWriter, r *http.Request) {
+	if h.payzenHandler == nil {
+		http.Error(w, "payzen handler not configured", http.StatusServiceUnavailable)
+		return
+	}
+	uuid := r.PathValue("uuid")
+	tx := h.store.ByUUID(uuid)
+	if tx == nil {
+		http.Error(w, "payment not found", http.StatusNotFound)
+		return
+	}
+
+	var req SimulatePaymentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Channel == "" {
+		req.Channel = "browserReturn"
+	}
+	if req.Channel != "browserReturn" && req.Channel != "ipn" {
+		http.Error(w, "channel doit être browserReturn ou ipn", http.StatusBadRequest)
+		return
+	}
+
+	opts := payzen.BrowserReturnOpts{
+		Outcome:       req.Outcome,
+		CardBrand:     req.CardBrand,
+		ThreeDSStatus: req.ThreeDSStatus,
+		ErrorCode:     req.ErrorCode,
+		ErrorMessage:  req.ErrorMessage,
+	}
+
+	input := payzen.SimulateInput{
+		FormToken:  tx.FormToken,
+		AnswerType: "V4/Payment",
+		Opts:       opts,
+	}
+	switch req.Channel {
+	case "browserReturn":
+		input.URLOverride = req.ReturnURL
+		input.FallbackURL = func(tx *payzen.Transaction) string { return tx.ReturnURL }
+	case "ipn":
+		input.URLOverride = req.NotificationURL
+		input.FallbackURL = func(tx *payzen.Transaction) string { return tx.NotificationURL }
+	}
+
+	hash, deliveryID, err := h.payzenHandler.Simulate(input)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, SimulatePaymentResponse{
+		DeliveryID: deliveryID, KrHash: hash, Channel: req.Channel,
+	})
 }
 
 // streamEvents ouvre un flux Server-Sent Events. Chaque événement du
