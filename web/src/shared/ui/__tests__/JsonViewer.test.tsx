@@ -3,7 +3,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { JsonViewer } from '../JsonViewer';
+import { JsonViewer } from '@/shared/ui/JsonViewer';
 
 describe('JsonViewer', () => {
   it('pretty-print un objet passé en valeur', () => {

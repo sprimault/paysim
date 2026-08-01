@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useState } from 'react';
-import { subscribeSSE, type SSEEvent } from '../api/sse';
+import { subscribeSSE, type SSEEvent } from '@/shared/api/sse';
 
 /**
  * useSSE souscrit à un flux SSE au montage, ferme au démontage, et

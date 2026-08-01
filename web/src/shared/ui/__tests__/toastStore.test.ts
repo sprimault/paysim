@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { toast, useToastStore } from '../toastStore';
+import { toast, useToastStore } from '@/shared/ui/toastStore';
 
 describe('toastStore', () => {
   beforeEach(() => {

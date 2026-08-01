@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { create } from 'zustand';
-import type { EventEntry, PaymentDetail, PaymentSummary } from '../../../shared/model';
+import type { EventEntry, PaymentDetail, PaymentSummary } from '@/shared/model';
 
 /**
  * Store de l'entité Payment. Un seul objet par UUID : le détail

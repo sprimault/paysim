@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from 'vitest';
-import { formatInt, formatAmount } from '../numbers';
+import { formatInt, formatAmount } from '@/shared/lib/numbers';
 
 // Espace insécable U+00A0 — écrit en séquence d'échappement pour
 // éviter tout piège d'encodage source.

@@ -2,18 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { CreditCard } from 'lucide-react';
-import { Link } from 'react-router';
-import { EmptyState } from '../../../shared/ui/EmptyState';
-import { mockPayments } from '../../../shared/lib/mocks';
+import { EmptyState } from '@/shared/ui/EmptyState';
+import { Skeleton } from '@/shared/ui/Skeleton';
+import { usePaymentsList } from '@/entities/payment/model/usePayments';
 import { PaymentRow } from './PaymentRow';
 
 /**
  * Écran principal. Table dense — pas de cards ombrés. C'est ce qu'un
  * dev regarde en priorité pendant qu'il débogue autre chose (web.md).
- * Les données mock disparaissent en 3c quand on branche le SSE.
+ * Le SSE branché dans App.tsx alimente le store en continu ; ce
+ * composant ne fait que lire et rendre.
  */
 export function PaymentList() {
-  const payments = mockPayments;
+  const { payments, loading, error } = usePaymentsList();
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-6">
@@ -23,12 +24,24 @@ export function PaymentList() {
             Paiements
           </h1>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            {payments.length} paiement{payments.length > 1 ? 's' : ''} en mémoire
+            {loading && payments.length === 0
+              ? 'Chargement…'
+              : `${payments.length} paiement${payments.length > 1 ? 's' : ''} en mémoire`}
           </p>
         </div>
       </div>
 
-      {payments.length === 0 ? (
+      {error && (
+        <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
+          Impossible de charger les paiements : {error}
+        </div>
+      )}
+
+      {loading && payments.length === 0 ? (
+        <div className="rounded-panel border border-zinc-200 p-6 dark:border-zinc-800">
+          <Skeleton count={5} />
+        </div>
+      ) : payments.length === 0 ? (
         <EmptyState
           icon={CreditCard}
           title="Aucun paiement"
@@ -56,13 +69,6 @@ export function PaymentList() {
           </table>
         </div>
       )}
-
-      <div className="mt-3 text-xs text-zinc-400 dark:text-zinc-600">
-        <Link to="/webhooks" className="underline decoration-dotted underline-offset-4">
-          Voir aussi les webhooks
-        </Link>{' '}
-        (arrive en 3c)
-      </div>
     </div>
   );
 }

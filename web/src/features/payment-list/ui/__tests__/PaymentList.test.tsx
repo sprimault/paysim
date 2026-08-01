@@ -1,33 +1,78 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { PaymentList } from '../PaymentList';
-import { mockPayments } from '../../../../shared/lib/mocks';
+import { PaymentList } from '@/features/payment-list/ui/PaymentList';
+import { usePaymentStore } from '@/entities/payment/model/paymentStore';
+import type { PaymentSummary } from '@/shared/model';
+
+const originalFetch = globalThis.fetch;
+
+const samples: PaymentSummary[] = [
+  {
+    uuid: 'p1',
+    orderId: 'CMD-1',
+    amount: 4990,
+    currency: 'EUR',
+    state: 'captured',
+    createdAt: 't1',
+    updatedAt: 't2',
+  },
+  {
+    uuid: 'p2',
+    orderId: 'CMD-2',
+    amount: 1200,
+    currency: 'EUR',
+    state: 'declined',
+    createdAt: 't1',
+    updatedAt: 't3',
+  },
+];
 
 describe('PaymentList', () => {
-  it('rend le titre et le compteur de paiements mocks', () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn();
+    usePaymentStore.getState().clear();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('rend le titre et le compteur quand le store contient des paiements', () => {
+    usePaymentStore.getState().setList(samples);
     render(
       <MemoryRouter>
         <PaymentList />
       </MemoryRouter>,
     );
     expect(screen.getByRole('heading', { name: 'Paiements' })).toBeInTheDocument();
-    expect(
-      screen.getByText(`${mockPayments.length} paiements en mémoire`),
-    ).toBeInTheDocument();
+    expect(screen.getByText(`${samples.length} paiements en mémoire`)).toBeInTheDocument();
   });
 
-  it('rend une ligne par paiement mock', () => {
+  it('rend une ligne par paiement du store', () => {
+    usePaymentStore.getState().setList(samples);
     render(
       <MemoryRouter>
         <PaymentList />
       </MemoryRouter>,
     );
-    for (const p of mockPayments) {
+    for (const p of samples) {
       expect(screen.getByText(p.orderId)).toBeInTheDocument();
     }
+  });
+
+  it('affiche EmptyState quand store vide et fetch retourne []', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Response('[]', { status: 200 }),
+    );
+    render(
+      <MemoryRouter>
+        <PaymentList />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('Aucun paiement')).toBeInTheDocument();
   });
 });

@@ -3,18 +3,19 @@
 
 import { RotateCcw, Send } from 'lucide-react';
 import { Link } from 'react-router';
-import { Badge } from '../../../shared/ui/Badge';
-import { Button } from '../../../shared/ui/Button';
-import { Card } from '../../../shared/ui/Card';
-import { CopyButton } from '../../../shared/ui/CopyButton';
-import { EmptyState } from '../../../shared/ui/EmptyState';
-import { formatRelative, formatShort, humanDuration } from '../../../shared/lib/dates';
-import { webhookStatusMeta } from '../../../shared/lib/statusMeta';
-import { toast } from '../../../shared/ui/toastStore';
-import type { WebhookDetail } from '../../../shared/model';
+import { Badge } from '@/shared/ui/Badge';
+import { Button } from '@/shared/ui/Button';
+import { Card } from '@/shared/ui/Card';
+import { CopyButton } from '@/shared/ui/CopyButton';
+import { EmptyState } from '@/shared/ui/EmptyState';
+import { formatRelative, formatShort, humanDuration } from '@/shared/lib/dates';
+import { webhookStatusMeta } from '@/shared/lib/statusMeta';
+import { toast } from '@/shared/ui/toastStore';
+import { replayWebhook } from '@/entities/webhook/api/webhookApi';
+import type { WebhookInStore } from '@/entities/webhook/model/webhookStore';
 
 interface PaymentWebhooksProps {
-  webhooks: WebhookDetail[];
+  webhooks: WebhookInStore[];
 }
 
 export function PaymentWebhooks({ webhooks }: PaymentWebhooksProps) {
@@ -26,6 +27,15 @@ export function PaymentWebhooks({ webhooks }: PaymentWebhooksProps) {
         hint="Les tentatives de livraison apparaîtront ici."
       />
     );
+  }
+
+  async function handleReplay(id: string) {
+    try {
+      const { newDeliveryId } = await replayWebhook(id);
+      toast.success('Webhook rejoué', newDeliveryId);
+    } catch (e) {
+      toast.error('Rejeu échoué', (e as Error).message);
+    }
   }
 
   return (
@@ -79,7 +89,7 @@ export function PaymentWebhooks({ webhooks }: PaymentWebhooksProps) {
                   variant="ghost"
                   size="sm"
                   leftIcon={<RotateCcw size={14} />}
-                  onClick={() => toast.success('Webhook rejoué', 'Câblage API en 3c.')}
+                  onClick={() => void handleReplay(w.id)}
                 >
                   Rejouer
                 </Button>

@@ -1,8 +1,8 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { apiGetJson, apiPostJson } from '../../../shared/api/client';
-import type { ReplayWebhookResponse, WebhookDetail, WebhookEntry } from '../../../shared/model';
+import { apiGetJson, apiPostJson } from '@/shared/api/client';
+import type { ReplayWebhookResponse, WebhookDetail, WebhookEntry } from '@/shared/model';
 
 const BASE = '/paysim/api/v1/webhooks';
 

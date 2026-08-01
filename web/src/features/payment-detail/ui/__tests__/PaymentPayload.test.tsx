@@ -3,8 +3,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { PaymentPayload } from '../PaymentPayload';
-import type { WebhookDetail } from '../../../../shared/model';
+import { PaymentPayload } from '@/features/payment-detail/ui/PaymentPayload';
+import type { WebhookDetail } from '@/shared/model';
 
 const webhook: WebhookDetail = {
   id: 'wh-1',

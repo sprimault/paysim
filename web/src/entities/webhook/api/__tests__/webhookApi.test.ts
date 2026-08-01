@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fetchWebhook, fetchWebhooks, replayWebhook } from '../webhookApi';
+import { fetchWebhook, fetchWebhooks, replayWebhook } from '@/entities/webhook/api/webhookApi';
 
 const originalFetch = globalThis.fetch;
 

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from 'vitest';
-import { eventKindMeta, paymentStateMeta, webhookStatusMeta } from '../statusMeta';
-import type { EventKind, PaymentState, WebhookStatus } from '../../model/enums';
+import { eventKindMeta, paymentStateMeta, webhookStatusMeta } from '@/shared/lib/statusMeta';
+import type { EventKind, PaymentState, WebhookStatus } from '@/shared/model/enums';
 
 // Ces tests garantissent que chaque valeur d'enum a bien une entrée
 // dans les tables — filet de sécurité si on ajoute une valeur côté Go

@@ -3,9 +3,9 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
-import { usePayment, usePaymentsList } from '../usePayments';
-import { usePaymentStore } from '../paymentStore';
-import type { PaymentDetail, PaymentSummary } from '../../../../shared/model';
+import { usePayment, usePaymentsList } from '@/entities/payment/model/usePayments';
+import { usePaymentStore } from '@/entities/payment/model/paymentStore';
+import type { PaymentDetail, PaymentSummary } from '@/shared/model';
 
 const originalFetch = globalThis.fetch;
 

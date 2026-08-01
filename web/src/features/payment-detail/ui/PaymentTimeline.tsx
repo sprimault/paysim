@@ -1,11 +1,11 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { Card } from '../../../shared/ui/Card';
-import { formatAmount } from '../../../shared/lib/numbers';
-import { formatShort } from '../../../shared/lib/dates';
-import { eventKindMeta } from '../../../shared/lib/statusMeta';
-import type { EventEntry } from '../../../shared/model';
+import { Card } from '@/shared/ui/Card';
+import { formatAmount } from '@/shared/lib/numbers';
+import { formatShort } from '@/shared/lib/dates';
+import { eventKindMeta } from '@/shared/lib/statusMeta';
+import type { EventEntry } from '@/shared/model';
 
 interface PaymentTimelineProps {
   events: EventEntry[];

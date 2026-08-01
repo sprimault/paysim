@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { paymentListSelector, usePaymentStore } from '../paymentStore';
-import type { PaymentDetail, PaymentSummary } from '../../../../shared/model';
+import { paymentListSelector, usePaymentStore } from '@/entities/payment/model/paymentStore';
+import type { PaymentDetail, PaymentSummary } from '@/shared/model';
 
 const summary = (uuid: string, updatedAt: string): PaymentSummary => ({
   uuid,

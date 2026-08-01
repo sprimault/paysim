@@ -2,9 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useMemo, useState } from 'react';
-import { useSSE } from '../../../shared/hooks/useSSE';
-import { isPaysimEvent } from '../../../shared/model/events';
-import { fetchWebhook, fetchWebhooks } from '../api/webhookApi';
+import { fetchWebhook, fetchWebhooks } from '@/entities/webhook/api/webhookApi';
 import { useWebhookStore, type WebhookInStore } from './webhookStore';
 
 /**
@@ -87,29 +85,4 @@ export function useWebhook(id: string): {
   }, [id, webhook?.body, setDetail]);
 
   return { webhook, loading: state.loading, error: state.error };
-}
-
-/**
- * useWebhookEvents branche le SSE sur le store webhook. Sur chaque
- * event webhook_*, refetch la liste (le payload est trop léger pour
- * reconstruire un WebhookEntry complet et l'entrée peut apparaître
- * ou changer de statut). Refetch de la liste plutôt qu'un fetch
- * unitaire évite un cascade d'appels en cas de rafale d'events.
- */
-export function useWebhookEvents(streamPath = '/paysim/api/v1/events/stream'): {
-  connected: boolean;
-} {
-  const setList = useWebhookStore((s) => s.setList);
-
-  return useSSE(streamPath, (raw) => {
-    if (!isPaysimEvent(raw)) return;
-    if (
-      raw.type !== 'webhook_enqueued' &&
-      raw.type !== 'webhook_delivered' &&
-      raw.type !== 'webhook_failed'
-    ) {
-      return;
-    }
-    void fetchWebhooks().then(setList).catch(() => undefined);
-  });
 }

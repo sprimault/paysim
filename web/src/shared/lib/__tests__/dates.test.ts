@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from 'vitest';
-import { formatShort, humanDuration, formatRelative } from '../dates';
+import { formatShort, humanDuration, formatRelative } from '@/shared/lib/dates';
 
 describe('formatShort', () => {
   it('rend un timestamp UTC au format DD/MM/YYYY HH:mm', () => {

@@ -1,25 +1,54 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
+import { useState } from 'react';
 import { ArrowLeft, RotateCcw } from 'lucide-react';
 import { Link, useParams } from 'react-router';
-import { Badge } from '../../../shared/ui/Badge';
-import { Button } from '../../../shared/ui/Button';
-import { Card } from '../../../shared/ui/Card';
-import { CopyButton } from '../../../shared/ui/CopyButton';
-import { formatShort, humanDuration } from '../../../shared/lib/dates';
-import { mockWebhooks } from '../../../shared/lib/mocks';
-import { webhookStatusMeta } from '../../../shared/lib/statusMeta';
-import { toast } from '../../../shared/ui/toastStore';
+import { Badge } from '@/shared/ui/Badge';
+import { Button } from '@/shared/ui/Button';
+import { Card } from '@/shared/ui/Card';
+import { CopyButton } from '@/shared/ui/CopyButton';
+import { Skeleton } from '@/shared/ui/Skeleton';
+import { formatShort, humanDuration } from '@/shared/lib/dates';
+import { webhookStatusMeta } from '@/shared/lib/statusMeta';
+import { toast } from '@/shared/ui/toastStore';
+import { replayWebhook } from '@/entities/webhook/api/webhookApi';
+import { useWebhook } from '@/entities/webhook/model/useWebhooks';
 
 export function WebhookDetail() {
   const { id = '' } = useParams();
-  const wh = mockWebhooks.find((w) => w.id === id);
+  const { webhook: wh, loading, error } = useWebhook(id);
+  const [replaying, setReplaying] = useState(false);
 
-  if (!wh) {
+  async function handleReplay() {
+    if (!wh) return;
+    setReplaying(true);
+    try {
+      const { newDeliveryId } = await replayWebhook(wh.id);
+      toast.success('Webhook rejoué', newDeliveryId);
+    } catch (e) {
+      toast.error('Rejeu échoué', (e as Error).message);
+    } finally {
+      setReplaying(false);
+    }
+  }
+
+  if (loading && !wh) {
+    return (
+      <div className="mx-auto max-w-6xl px-6 py-6">
+        <Skeleton className="mb-3 h-4 w-32" />
+        <Skeleton className="mb-6 h-6 w-96" />
+        <Skeleton count={4} />
+      </div>
+    );
+  }
+
+  if (error || !wh) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-16 text-center">
-        <p className="text-sm text-zinc-500">Webhook introuvable : {id}</p>
+        <p className="text-sm text-zinc-500">
+          {error ? `Erreur : ${error}` : `Webhook introuvable : ${id}`}
+        </p>
         <Link
           to="/"
           className="mt-4 inline-flex items-center gap-1 text-sm text-brand-600 hover:underline"
@@ -67,7 +96,8 @@ export function WebhookDetail() {
         <Button
           variant="primary"
           leftIcon={<RotateCcw size={14} />}
-          onClick={() => toast.success('Webhook rejoué', 'Câblage API en 3c.')}
+          loading={replaying}
+          onClick={() => void handleReplay()}
         >
           Rejouer
         </Button>
@@ -89,12 +119,12 @@ export function WebhookDetail() {
             <dt className="text-zinc-500">Créé</dt>
             <dd className="text-zinc-800 dark:text-zinc-200">{formatShort(wh.createdAt)}</dd>
           </dl>
-          <HeadersBlock headers={wh.headers} />
+          {wh.headers && <HeadersBlock headers={wh.headers} />}
           <div className="mt-3">
             <h4 className="mb-1 text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
               Corps
             </h4>
-            <BodyBlock body={wh.body} />
+            <BodyBlock body={wh.body ?? ''} />
           </div>
         </Card>
 

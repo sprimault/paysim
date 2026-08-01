@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { create } from 'zustand';
-import type { WebhookDetail, WebhookEntry } from '../../../shared/model';
+import type { WebhookDetail, WebhookEntry } from '@/shared/model';
 
 /**
  * Store de l'entité Webhook. Même pattern que paymentStore : un

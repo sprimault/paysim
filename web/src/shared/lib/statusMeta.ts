@@ -12,7 +12,7 @@ import {
   Undo2,
   XCircle,
 } from 'lucide-react';
-import type { EventKind, PaymentState, WebhookStatus } from '../model/enums';
+import type { EventKind, PaymentState, WebhookStatus } from '@/shared/model/enums';
 
 // Tables uniques status/kind → (libellé français, tone Badge, icône). Toute
 // nouvelle valeur ajoutée côté Go doit être répercutée ici — sans quoi le

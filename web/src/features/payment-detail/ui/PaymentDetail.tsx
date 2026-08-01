@@ -4,14 +4,16 @@
 import { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Link, useParams } from 'react-router';
-import { Badge } from '../../../shared/ui/Badge';
-import { CopyButton } from '../../../shared/ui/CopyButton';
-import { Tabs } from '../../../shared/ui/Tabs';
-import { formatAmount } from '../../../shared/lib/numbers';
-import { formatShort } from '../../../shared/lib/dates';
-import { mockPaymentDetail, mockWebhooks } from '../../../shared/lib/mocks';
-import { paymentStateMeta } from '../../../shared/lib/statusMeta';
-import { TAB_IDS, TAB_LABELS, TAB_WITH_COUNTER, type TabId } from '../model/tabs';
+import { Badge } from '@/shared/ui/Badge';
+import { CopyButton } from '@/shared/ui/CopyButton';
+import { Skeleton } from '@/shared/ui/Skeleton';
+import { Tabs } from '@/shared/ui/Tabs';
+import { formatAmount } from '@/shared/lib/numbers';
+import { formatShort } from '@/shared/lib/dates';
+import { paymentStateMeta } from '@/shared/lib/statusMeta';
+import { usePayment } from '@/entities/payment/model/usePayments';
+import { useWebhooksList } from '@/entities/webhook/model/useWebhooks';
+import { TAB_IDS, TAB_LABELS, TAB_WITH_COUNTER, type TabId } from '@/features/payment-detail/model/tabs';
 import { PaymentOverview } from './PaymentOverview';
 import { PaymentTimeline } from './PaymentTimeline';
 import { PaymentWebhooks } from './PaymentWebhooks';
@@ -19,13 +21,28 @@ import { PaymentPayload } from './PaymentPayload';
 
 export function PaymentDetail() {
   const { uuid = '' } = useParams();
-  const payment = mockPaymentDetail(uuid);
+  const { payment, loading, error } = usePayment(uuid);
+  // Toute la liste des webhooks — pas de filtre par uuid côté API v1.
+  // Le tab Webhooks affiche l'ensemble avec une note explicite.
+  const { webhooks } = useWebhooksList();
   const [tab, setTab] = useState<TabId>('overview');
 
-  if (!payment) {
+  if (loading && !payment) {
+    return (
+      <div className="mx-auto max-w-6xl px-6 py-6">
+        <Skeleton className="mb-3 h-4 w-32" />
+        <Skeleton className="mb-6 h-10 w-64" />
+        <Skeleton count={3} />
+      </div>
+    );
+  }
+
+  if (error || !payment) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-16 text-center">
-        <p className="text-sm text-zinc-500">Paiement introuvable : {uuid}</p>
+        <p className="text-sm text-zinc-500">
+          {error ? `Erreur : ${error}` : `Paiement introuvable : ${uuid}`}
+        </p>
         <Link
           to="/"
           className="mt-4 inline-flex items-center gap-1 text-sm text-brand-600 hover:underline"
@@ -38,10 +55,9 @@ export function PaymentDetail() {
 
   const meta = paymentStateMeta[payment.state];
   const StateIcon = meta.icon;
-  const webhooks = mockWebhooks; // filtré par UUID en 3c
-
+  const events = payment.events ?? [];
   const counts: Partial<Record<TabId, number>> = {
-    timeline: payment.events.length,
+    timeline: events.length,
     webhooks: webhooks.length,
   };
   const tabs = TAB_IDS.map((id) => ({
@@ -86,8 +102,8 @@ export function PaymentDetail() {
 
       <Tabs tabs={tabs} active={tab} onChange={(id) => setTab(id as TabId)} className="mb-4" />
 
-      {tab === 'overview' && <PaymentOverview payment={payment} />}
-      {tab === 'timeline' && <PaymentTimeline events={payment.events} />}
+      {tab === 'overview' && <PaymentOverview payment={{ ...payment, events }} />}
+      {tab === 'timeline' && <PaymentTimeline events={events} />}
       {tab === 'webhooks' && <PaymentWebhooks webhooks={webhooks} />}
       {tab === 'payload' && <PaymentPayload webhook={webhooks[0]} />}
     </div>

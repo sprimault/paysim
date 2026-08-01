@@ -3,13 +3,13 @@
 
 import { ChevronRight } from 'lucide-react';
 import { Link } from 'react-router';
-import { Badge } from '../../../shared/ui/Badge';
-import { CopyButton } from '../../../shared/ui/CopyButton';
-import { formatAmount } from '../../../shared/lib/numbers';
-import { formatRelative, formatShort } from '../../../shared/lib/dates';
-import { truncate } from '../../../shared/lib/strings';
-import { paymentStateMeta } from '../../../shared/lib/statusMeta';
-import type { PaymentSummary } from '../../../shared/model';
+import { Badge } from '@/shared/ui/Badge';
+import { CopyButton } from '@/shared/ui/CopyButton';
+import { formatAmount } from '@/shared/lib/numbers';
+import { formatRelative, formatShort } from '@/shared/lib/dates';
+import { truncate } from '@/shared/lib/strings';
+import { paymentStateMeta } from '@/shared/lib/statusMeta';
+import type { PaymentSummary } from '@/shared/model';
 
 interface PaymentRowProps {
   payment: PaymentSummary;

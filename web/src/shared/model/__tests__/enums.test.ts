@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from 'vitest';
-import { isTerminal, type PaymentState } from '../enums';
+import { isTerminal, type PaymentState } from '@/shared/model/enums';
 
 describe('isTerminal', () => {
   it.each<[PaymentState, boolean]>([

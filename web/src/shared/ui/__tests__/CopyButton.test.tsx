@@ -3,7 +3,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { CopyButton } from '../CopyButton';
+import { CopyButton } from '@/shared/ui/CopyButton';
 
 const writeText = vi.fn().mockResolvedValue(undefined);
 

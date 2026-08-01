@@ -1,21 +1,38 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
+import { useState } from 'react';
 import { Play, RefreshCw } from 'lucide-react';
-import { Button } from '../../../shared/ui/Button';
-import { Card } from '../../../shared/ui/Card';
-import { formatAmount } from '../../../shared/lib/numbers';
-import { formatShort } from '../../../shared/lib/dates';
-import { isTerminal } from '../../../shared/model';
-import { toast } from '../../../shared/ui/toastStore';
-import type { PaymentDetail } from '../../../shared/model';
+import { Button } from '@/shared/ui/Button';
+import { Card } from '@/shared/ui/Card';
+import { formatAmount } from '@/shared/lib/numbers';
+import { formatShort } from '@/shared/lib/dates';
+import { isTerminal } from '@/shared/model';
+import { toast } from '@/shared/ui/toastStore';
+import { simulatePayment } from '@/entities/payment/api/paymentApi';
+import type { PaymentInStore } from '@/entities/payment/model/paymentStore';
 
 /**
  * PaymentOverview — grille infos + panneau d'actions. Les actions
- * appellent l'API en 3c ; en 3b on toast pour valider l'UX.
+ * appellent l'API réelle. La mise à jour du store est déclenchée
+ * indirectement via l'event SSE payment_state_changed qui se
+ * propage par usePaysimEvents dans App.
  */
-export function PaymentOverview({ payment }: { payment: PaymentDetail }) {
+export function PaymentOverview({ payment }: { payment: PaymentInStore }) {
   const terminal = isTerminal(payment.state);
+  const [pending, setPending] = useState<string | null>(null);
+
+  async function simulate(outcome: 'PAID' | 'UNPAID') {
+    setPending(outcome);
+    try {
+      await simulatePayment(payment.uuid, { outcome });
+      toast.success(`Simulation ${outcome} envoyée`, 'Le webhook part vers le marchand.');
+    } catch (e) {
+      toast.error(`Simulation ${outcome} échouée`, (e as Error).message);
+    } finally {
+      setPending(null);
+    }
+  }
 
   return (
     <div className="grid gap-4 lg:grid-cols-3">
@@ -46,14 +63,18 @@ export function PaymentOverview({ payment }: { payment: PaymentDetail }) {
             <Button
               variant="primary"
               leftIcon={<Play size={14} />}
-              onClick={() => toast.success('Simulation demandée', 'Câblage API en 3c.')}
+              loading={pending === 'PAID'}
+              disabled={pending !== null}
+              onClick={() => void simulate('PAID')}
             >
               Simuler PAID
             </Button>
             <Button
               variant="ghost"
               leftIcon={<RefreshCw size={14} />}
-              onClick={() => toast.info('Simulation UNPAID', 'Câblage API en 3c.')}
+              loading={pending === 'UNPAID'}
+              disabled={pending !== null}
+              onClick={() => void simulate('UNPAID')}
             >
               Simuler UNPAID
             </Button>

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useWebhookStore, webhookListSelector } from '../webhookStore';
-import type { WebhookDetail, WebhookEntry } from '../../../../shared/model';
+import { useWebhookStore, webhookListSelector } from '@/entities/webhook/model/webhookStore';
+import type { WebhookDetail, WebhookEntry } from '@/shared/model';
 
 const entry = (id: string, createdAt: string): WebhookEntry => ({
   id,

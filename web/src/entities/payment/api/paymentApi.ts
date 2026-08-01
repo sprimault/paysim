@@ -1,13 +1,13 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { apiGetJson, apiPostJson } from '../../../shared/api/client';
+import { apiGetJson, apiPostJson } from '@/shared/api/client';
 import type {
   PaymentDetail,
   PaymentSummary,
   SimulatePaymentRequest,
   SimulatePaymentResponse,
-} from '../../../shared/model';
+} from '@/shared/model';
 
 /**
  * Client REST pour l'entité Payment. Wrappers typés au-dessus des

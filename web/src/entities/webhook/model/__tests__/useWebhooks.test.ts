@@ -3,9 +3,9 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
-import { useWebhook, useWebhooksList } from '../useWebhooks';
-import { useWebhookStore } from '../webhookStore';
-import type { WebhookDetail, WebhookEntry } from '../../../../shared/model';
+import { useWebhook, useWebhooksList } from '@/entities/webhook/model/useWebhooks';
+import { useWebhookStore } from '@/entities/webhook/model/webhookStore';
+import type { WebhookDetail, WebhookEntry } from '@/shared/model';
 
 const originalFetch = globalThis.fetch;
 

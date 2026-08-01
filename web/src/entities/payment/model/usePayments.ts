@@ -2,9 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useMemo, useState } from 'react';
-import { useSSE } from '../../../shared/hooks/useSSE';
-import { isPaysimEvent } from '../../../shared/model/events';
-import { fetchPayment, fetchPayments } from '../api/paymentApi';
+import { fetchPayment, fetchPayments } from '@/entities/payment/api/paymentApi';
 import { usePaymentStore, type PaymentInStore } from './paymentStore';
 
 /**
@@ -101,37 +99,4 @@ export function usePayment(uuid: string): {
   }, [uuid, payment?.events, setDetail]);
 
   return { payment, loading: state.loading, error: state.error };
-}
-
-/**
- * usePaymentEvents monte l'écoute SSE et met à jour le store à
- * chaque événement payment_*. Stratégie : refetch le paiement
- * concerné (payload SSE trop pauvre pour reconstruire un
- * PaymentSummary complet — le refetch garantit un état cohérent
- * sans surcompliquer le côté serveur).
- *
- * Retourne l'état de connexion pour l'indicateur du Header.
- */
-export function usePaymentEvents(streamPath = '/paysim/api/v1/events/stream'): {
-  connected: boolean;
-} {
-  const upsert = usePaymentStore((s) => s.upsert);
-  const setDetail = usePaymentStore((s) => s.setDetail);
-
-  return useSSE(streamPath, (raw) => {
-    if (!isPaysimEvent(raw)) return;
-    if (raw.type !== 'payment_created' && raw.type !== 'payment_state_changed') return;
-    const uuid = raw.data.uuid;
-    fetchPayment(uuid)
-      .then(setDetail)
-      .catch(() => {
-        // Si le détail échoue (404 par ex), on tente au moins un
-        // upsert résumé — évite qu'un event orphelin fasse
-        // disparaître le paiement du store.
-        void fetchPayments().then((list) => {
-          const p = list.find((x) => x.uuid === uuid);
-          if (p) upsert(p);
-        });
-      });
-  });
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fetchPayment, fetchPayments, simulatePayment } from '../paymentApi';
+import { fetchPayment, fetchPayments, simulatePayment } from '@/entities/payment/api/paymentApi';
 
 const originalFetch = globalThis.fetch;
 

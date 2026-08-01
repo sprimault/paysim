@@ -3,7 +3,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { Skeleton } from '../Skeleton';
+import { Skeleton } from '@/shared/ui/Skeleton';
 
 describe('Skeleton', () => {
   it('rend un seul bloc par défaut', () => {

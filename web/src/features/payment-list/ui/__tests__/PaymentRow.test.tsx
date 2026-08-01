@@ -4,8 +4,8 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { PaymentRow } from '../PaymentRow';
-import type { PaymentSummary } from '../../../../shared/model';
+import { PaymentRow } from '@/features/payment-list/ui/PaymentRow';
+import type { PaymentSummary } from '@/shared/model';
 
 const p: PaymentSummary = {
   uuid: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',

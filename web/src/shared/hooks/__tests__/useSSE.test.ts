@@ -3,8 +3,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { useSSE } from '../useSSE';
-import type { SSEEvent } from '../../api/sse';
+import { useSSE } from '@/shared/hooks/useSSE';
+import type { SSEEvent } from '@/shared/api/sse';
 
 // Même mock EventSource que sse.test.ts — dupliqué ici pour ne pas
 // coupler les fichiers de test. Un mock global dans setup.ts serait

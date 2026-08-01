@@ -2,24 +2,29 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useMemo } from 'react';
-import { Card } from '../../../shared/ui/Card';
-import { EmptyState } from '../../../shared/ui/EmptyState';
-import { JsonViewer } from '../../../shared/ui/JsonViewer';
+import { Card } from '@/shared/ui/Card';
+import { EmptyState } from '@/shared/ui/EmptyState';
+import { JsonViewer } from '@/shared/ui/JsonViewer';
 import { FileJson } from 'lucide-react';
-import { parsePayzenBody } from '../../../shared/lib/payzen';
-import type { WebhookDetail } from '../../../shared/model';
+import { parsePayzenBody } from '@/shared/lib/payzen';
+import { useWebhook } from '@/entities/webhook/model/useWebhooks';
+import type { WebhookInStore } from '@/entities/webhook/model/webhookStore';
 
 interface PaymentPayloadProps {
-  webhook?: WebhookDetail;
+  webhook?: WebhookInStore;
 }
 
 /**
  * PaymentPayload — extrait le kr-answer d'un body PayZen form-encoded
- * et l'affiche pretty-printé. Les autres champs (kr-hash, kr-hash-key)
- * restent visibles dans une liste plate à côté.
+ * et l'affiche pretty-printé. Fetch le détail du webhook (body +
+ * headers) si seul le résumé est en cache.
  */
 export function PaymentPayload({ webhook }: PaymentPayloadProps) {
-  const parsed = useMemo(() => parsePayzenBody(webhook?.body ?? ''), [webhook?.body]);
+  // Trigger le fetch du détail si body absent ; l'entrée mise à jour
+  // arrive naturellement dans `webhook` par le store partagé.
+  const fetched = useWebhook(webhook?.id ?? '');
+  const effective = webhook?.body !== undefined ? webhook : fetched.webhook;
+  const parsed = useMemo(() => parsePayzenBody(effective?.body ?? ''), [effective?.body]);
 
   if (!webhook) {
     return (

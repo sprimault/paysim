@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { apiUrl, getBasePath } from '../basePath';
+import { apiUrl, getBasePath } from '@/shared/api/basePath';
 
 describe('getBasePath', () => {
   const original = window.__PAYSIM_BASE_PATH__;

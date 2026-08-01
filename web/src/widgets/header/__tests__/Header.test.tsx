@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { Header } from '../Header';
+import { Header } from '@/widgets/header/Header';
 
 function renderHeader(props: Parameters<typeof Header>[0] = {}) {
   return render(

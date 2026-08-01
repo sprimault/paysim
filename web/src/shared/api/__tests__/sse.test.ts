@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { subscribeSSE, type SSEEvent } from '../sse';
+import { subscribeSSE, type SSEEvent } from '@/shared/api/sse';
 
 // Mock EventSource — jsdom ne l'implémente pas. Le mock enregistre
 // les instances créées pour que les tests puissent déclencher

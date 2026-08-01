@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { CreditCard } from 'lucide-react';
-import { EmptyState } from '../EmptyState';
+import { EmptyState } from '@/shared/ui/EmptyState';
 
 describe('EmptyState', () => {
   it('rend le titre et le hint', () => {

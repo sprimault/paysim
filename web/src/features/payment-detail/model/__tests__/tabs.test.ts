@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from 'vitest';
-import { TAB_IDS, TAB_LABELS, TAB_WITH_COUNTER, type TabId } from '../tabs';
+import { TAB_IDS, TAB_LABELS, TAB_WITH_COUNTER, type TabId } from '@/features/payment-detail/model/tabs';
 
 describe('tabs', () => {
   it('TAB_LABELS a une entrée pour chaque TabId de TAB_IDS', () => {
