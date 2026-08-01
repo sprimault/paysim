@@ -24,7 +24,7 @@ import (
 // newTestServer construit un serveur Paysim avec queue interne, config
 // vide (Basic Auth permissive, pas de HMAC, pas de bearer). Suffit
 // pour les tests des endpoints REST V4 qui n'utilisent pas la queue.
-func newTestServer(t *testing.T) (*httptest.Server, *Store) {
+func newTestServer(t *testing.T) (*httptest.Server, Store) {
 	t.Helper()
 	server, store, _ := newTestServerFull(t, HandlerConfig{})
 	return server, store
@@ -33,9 +33,9 @@ func newTestServer(t *testing.T) (*httptest.Server, *Store) {
 // newTestServerFull expose aussi la queue delivery, utile pour les
 // tests d'endpoints de simulation qui verifient le POST sortant. Le
 // worker de la queue est lance en background et arrete par le cleanup.
-func newTestServerFull(t *testing.T, cfg HandlerConfig) (*httptest.Server, *Store, *delivery.Queue) {
+func newTestServerFull(t *testing.T, cfg HandlerConfig) (*httptest.Server, Store, *delivery.Queue) {
 	t.Helper()
-	store := NewStore()
+	store := NewMemoryStore()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
 
@@ -113,7 +113,7 @@ func TestCreatePaymentSuccess(t *testing.T) {
 	if len(answer.FormToken) != 32 {
 		t.Errorf("FormToken longueur = %d, veut 32", len(answer.FormToken))
 	}
-	if store.ByToken(answer.FormToken) == nil {
+	if tx, _ := store.ByToken(answer.FormToken); tx == nil {
 		t.Error("transaction non stockee apres CreatePayment")
 	}
 }
@@ -128,7 +128,7 @@ func TestCreatePaymentPersistsDomainState(t *testing.T) {
 	var answer CreatePaymentAnswer
 	_ = json.Unmarshal(resp.Answer, &answer)
 
-	tx := store.ByToken(answer.FormToken)
+	tx, _ := store.ByToken(answer.FormToken)
 	if tx == nil {
 		t.Fatal("transaction absente")
 	}
@@ -152,7 +152,7 @@ func TestCreatePaymentUUIDIsV4(t *testing.T) {
 	var answer CreatePaymentAnswer
 	_ = json.Unmarshal(resp.Answer, &answer)
 
-	tx := store.ByToken(answer.FormToken)
+	tx, _ := store.ByToken(answer.FormToken)
 	if tx == nil {
 		t.Fatal("transaction absente")
 	}
@@ -273,7 +273,7 @@ func TestTransactionGetKnown(t *testing.T) {
 		CreatePaymentRequest{OrderID: "o-1", Amount: 500, Currency: "EUR"}, "u", "p")
 	var ca CreatePaymentAnswer
 	_ = json.Unmarshal(create.Answer, &ca)
-	tx := store.ByToken(ca.FormToken)
+	tx, _ := store.ByToken(ca.FormToken)
 	if tx == nil {
 		t.Fatal("transaction absente apres CreatePayment")
 	}
@@ -350,7 +350,7 @@ func TestUpdatePaymentUpdatesCustomer(t *testing.T) {
 		t.Fatalf("Status = %q, veut SUCCESS", update.Status)
 	}
 
-	tx := store.ByToken(ca.FormToken)
+	tx, _ := store.ByToken(ca.FormToken)
 	if tx == nil || tx.Customer.Email != "test@example.com" {
 		t.Errorf("Customer.Email = %v, veut test@example.com", tx)
 	}
@@ -410,7 +410,7 @@ func TestCreateSubscriptionSuccess(t *testing.T) {
 	if a.SubscriptionID == "" {
 		t.Error("SubscriptionID vide")
 	}
-	if store.SubscriptionByID(a.SubscriptionID) == nil {
+	if sub, _ := store.SubscriptionByID(a.SubscriptionID); sub == nil {
 		t.Error("abonnement non stocke apres CreateSubscription")
 	}
 }

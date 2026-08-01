@@ -42,6 +42,7 @@ const (
 	// #nosec G101 -- code d'erreur, pas un secret.
 	ErrCodeTokenUnknown        = "PAYSIM_TOKEN_UNKNOWN"
 	ErrCodeSubscriptionUnknown = "PAYSIM_SUBSCRIPTION_UNKNOWN"
+	ErrCodeStoreFailure        = "PAYSIM_STORE_FAILURE"
 )
 
 // CreatePaymentRequest est le corps JSON attendu par POST

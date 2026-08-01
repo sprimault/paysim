@@ -80,12 +80,37 @@ type Config struct {
 	// /api-payment/V4/* qui reçoivent une 500 injectée. Zéro = pas
 	// d'erreur.
 	ChaosErrorRate int
+
+	// StoreBackend choisit l'implémentation de persistance :
+	//   - "memory" (défaut) : maps en mémoire, aucun état entre
+	//     redémarrages ; cohérent avec un système de fichiers en
+	//     lecture seule (contrat de conteneur par défaut).
+	//   - "sqlite" : persistance sur disque au chemin SQLitePath.
+	//     Nécessite un volume writable dans le conteneur.
+	StoreBackend string
+
+	// SQLitePath est le chemin du fichier SQLite quand StoreBackend
+	// vaut "sqlite". Défaut "/data/paysim.db" — un volume monté à
+	// /data côté conteneur suffit. Ignoré en backend "memory".
+	SQLitePath string
 }
 
 // defaultHTTPAddr est l'adresse d'écoute par défaut si PAYSIM_HTTP_ADDR
 // n'est pas fournie. Cohérent avec l'exemple documenté "localhost:8080"
 // dans CLAUDE.md.
 const defaultHTTPAddr = ":8080"
+
+// defaultSQLitePath est le chemin par défaut du fichier SQLite quand
+// StoreBackend=sqlite. Un rep /data est le point de montage standard
+// pour un volume K8s / Docker.
+const defaultSQLitePath = "/data/paysim.db"
+
+// storeBackendMemory / storeBackendSQLite sont les seules valeurs
+// acceptées pour PAYSIM_STORE.
+const (
+	StoreBackendMemory = "memory"
+	StoreBackendSQLite = "sqlite"
+)
 
 // Load lit la configuration depuis les variables d'environnement du
 // processus et retourne une struct validée. Toute erreur est unique et
@@ -170,6 +195,24 @@ func loadFrom(
 			return nil, err
 		}
 		cfg.LogLevel = lvl
+	}
+
+	cfg.StoreBackend = StoreBackendMemory
+	if raw, ok := lookup("PAYSIM_STORE"); ok && raw != "" {
+		switch raw {
+		case StoreBackendMemory, StoreBackendSQLite:
+			cfg.StoreBackend = raw
+		default:
+			return nil, fmt.Errorf("configuration: PAYSIM_STORE invalide (%q), attendu %q ou %q",
+				raw, StoreBackendMemory, StoreBackendSQLite)
+		}
+	}
+
+	if cfg.StoreBackend == StoreBackendSQLite {
+		cfg.SQLitePath = defaultSQLitePath
+		if raw, ok := lookup("PAYSIM_SQLITE_PATH"); ok && raw != "" {
+			cfg.SQLitePath = raw
+		}
 	}
 
 	return cfg, nil

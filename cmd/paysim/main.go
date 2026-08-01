@@ -91,7 +91,25 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 	}
 
 	eventBus := bus.New()
-	store := payzen.NewStore()
+
+	// StoreBackend gouverne memory vs sqlite. En sqlite, on defer
+	// Close pour un shutdown propre du fichier (checkpoint WAL,
+	// libération du lock).
+	var store payzen.Store
+	switch cfg.StoreBackend {
+	case config.StoreBackendSQLite:
+		s, err := payzen.NewSQLiteStore(cfg.SQLitePath)
+		if err != nil {
+			return fmt.Errorf("ouverture store SQLite %s: %w", cfg.SQLitePath, err)
+		}
+		defer func() { _ = s.Close() }()
+		store = s
+		logger.Info("store_backend", "backend", "sqlite", "path", cfg.SQLitePath)
+	default:
+		store = payzen.NewMemoryStore()
+		logger.Info("store_backend", "backend", "memory")
+	}
+
 	queue := delivery.New(&http.Client{Timeout: httpClientTimeout}, logger, cfg.MaxPayments)
 	queue.SetPublisher(eventBus)
 	payzenHandler := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{

@@ -56,7 +56,7 @@ type HandlerConfig struct {
 // de PayZen et les endpoints de controle Paysim. Construit dans
 // cmd/paysim/main.go, injecte au serveur HTTP.
 type Handler struct {
-	store  *Store
+	store  Store
 	queue  *delivery.Queue
 	logger *slog.Logger
 	cfg    HandlerConfig
@@ -66,8 +66,16 @@ type Handler struct {
 // obtenu ensuite via Routes() — deux étapes pour que les consommateurs
 // qui ont besoin d'un *Handler concret (ex. api.Handler pour Simulate)
 // puissent le récupérer sans caster un http.Handler.
-func NewHandler(store *Store, queue *delivery.Queue, logger *slog.Logger, cfg HandlerConfig) *Handler {
+func NewHandler(store Store, queue *delivery.Queue, logger *slog.Logger, cfg HandlerConfig) *Handler {
 	return &Handler{store: store, queue: queue, logger: logger, cfg: cfg}
+}
+
+// storeErr traduit une erreur de persistance en réponse PayZen —
+// status=ERROR + PAYSIM_STORE_FAILURE. Logue au niveau Error côté
+// serveur pour tracer la vraie cause.
+func (h *Handler) storeErr(w http.ResponseWriter, op string, err error) {
+	h.logger.Error("payzen_store_failure", "op", op, "err", err)
+	h.writeError(w, ErrCodeStoreFailure, "erreur de persistance")
 }
 
 // Routes assemble le multiplexeur complet : endpoints REST V4 PayZen
@@ -191,7 +199,10 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
-	h.store.Save(tx)
+	if err := h.store.Save(tx); err != nil {
+		h.storeErr(w, "createPayment.Save", err)
+		return
+	}
 
 	h.cfg.Publisher.Publish(bus.Event{
 		Type: "payment_created",
@@ -220,7 +231,11 @@ func (h *Handler) updatePayment(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, ErrCodeInvalidRequest, "formToken manquant")
 		return
 	}
-	tx := h.store.ByToken(req.FormToken)
+	tx, err := h.store.ByToken(req.FormToken)
+	if err != nil {
+		h.storeErr(w, "updatePayment.ByToken", err)
+		return
+	}
 	if tx == nil {
 		h.writeError(w, ErrCodeTokenUnknown, "formToken inconnu")
 		return
@@ -233,7 +248,10 @@ func (h *Handler) updatePayment(w http.ResponseWriter, r *http.Request) {
 		tx.Metadata = req.Metadata
 	}
 	tx.UpdatedAt = time.Now().UTC()
-	h.store.Save(tx)
+	if err := h.store.Save(tx); err != nil {
+		h.storeErr(w, "updatePayment.Save", err)
+		return
+	}
 
 	h.writeSuccess(w, UpdatePaymentAnswer{FormToken: tx.FormToken})
 }
@@ -277,7 +295,10 @@ func (h *Handler) createSubscription(w http.ResponseWriter, r *http.Request) {
 		Metadata:           req.Metadata,
 		CreatedAt:          time.Now().UTC(),
 	}
-	h.store.SaveSubscription(sub)
+	if err := h.store.SaveSubscription(sub); err != nil {
+		h.storeErr(w, "createSubscription.SaveSubscription", err)
+		return
+	}
 
 	h.writeSuccess(w, CreateSubscriptionAnswer{SubscriptionID: subID})
 }
@@ -293,7 +314,11 @@ func (h *Handler) getSubscription(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, ErrCodeInvalidRequest, "subscriptionId manquant")
 		return
 	}
-	sub := h.store.SubscriptionByID(req.SubscriptionID)
+	sub, err := h.store.SubscriptionByID(req.SubscriptionID)
+	if err != nil {
+		h.storeErr(w, "getSubscription.SubscriptionByID", err)
+		return
+	}
 	if sub == nil {
 		h.writeError(w, ErrCodeSubscriptionUnknown, "abonnement introuvable")
 		return
@@ -328,7 +353,11 @@ func (h *Handler) getTransaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx := h.store.ByUUID(req.UUID)
+	tx, err := h.store.ByUUID(req.UUID)
+	if err != nil {
+		h.storeErr(w, "getTransaction.ByUUID", err)
+		return
+	}
 	if tx == nil {
 		h.writeError(w, ErrCodeUUIDUnknown, fmt.Sprintf("transaction %q introuvable", req.UUID))
 		return
@@ -452,7 +481,10 @@ func (h *Handler) simulate(
 	if _, ok := outcomeSpecs[opts.Outcome]; !ok {
 		return "", "", fmt.Errorf("outcome %q inconnu", opts.Outcome)
 	}
-	tx := h.store.ByToken(formToken)
+	tx, err := h.store.ByToken(formToken)
+	if err != nil {
+		return "", "", fmt.Errorf("store ByToken: %w", err)
+	}
 	if tx == nil {
 		return "", "", errors.New("formToken inconnu")
 	}
@@ -481,7 +513,9 @@ func (h *Handler) simulate(
 		return "", "", fmt.Errorf("transition domain: %w", err)
 	}
 	tx.UpdatedAt = time.Now().UTC()
-	h.store.Save(tx)
+	if err := h.store.Save(tx); err != nil {
+		return "", "", fmt.Errorf("store Save: %w", err)
+	}
 
 	h.cfg.Publisher.Publish(bus.Event{
 		Type: "payment_state_changed",

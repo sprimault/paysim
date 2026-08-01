@@ -197,6 +197,37 @@ func (p *Payment) record(kind EventKind, amount format.Amount, note string) {
 	p.updatedAt = now
 }
 
+// Load reconstruit un Payment depuis un état persisté, sans passer
+// par les vérifications de transition de New/Authorize/Capture/etc.
+// À utiliser exclusivement depuis les backends de persistance quand
+// on relit une transaction depuis SQLite ou tout autre stockage
+// durable.
+//
+// Les invariants (state cohérente, cumul refunded ≤ amount) sont
+// supposés respectés par les données stockées ; ils l'ont été au
+// moment de l'écriture. Si la base a été corrompue manuellement,
+// cette fonction ne s'en rend pas compte — c'est un choix conscient :
+// re-vérifier ici doublerait la logique du domaine et masquerait le
+// vrai problème (corruption externe).
+//
+// Les slices sont recopiées pour éviter de partager la propriété
+// avec l'appelant.
+func Load(id string, amount format.Amount, currency string, state State,
+	refunded format.Amount, events []Event, createdAt, updatedAt time.Time) *Payment {
+	eventsCopy := make([]Event, len(events))
+	copy(eventsCopy, events)
+	return &Payment{
+		id:        id,
+		amount:    amount,
+		currency:  currency,
+		state:     state,
+		refunded:  refunded,
+		events:    eventsCopy,
+		createdAt: createdAt,
+		updatedAt: updatedAt,
+	}
+}
+
 // IsCurrencyCode vérifie qu'une chaîne a la forme d'un code ISO 4217 :
 // exactement trois lettres majuscules ASCII. Comparer les octets suffit
 // puisqu'un code valide est nécessairement ASCII — un caractère non-ASCII

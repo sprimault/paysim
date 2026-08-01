@@ -25,7 +25,7 @@ import (
 func buildTestServer(t *testing.T, basePath string) (*httptest.Server, *atomic.Bool) {
 	t.Helper()
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	store := payzen.NewStore()
+	store := payzen.NewMemoryStore()
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
 
 	ctx, cancel := context.WithCancel(context.Background())

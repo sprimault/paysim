@@ -29,7 +29,7 @@ import (
 // 6 paramètres positionnels — plus lisible et extensible sans
 // breaking change côté cmd/paysim.
 type Deps struct {
-	Store         *payzen.Store
+	Store         payzen.Store
 	Queue         *delivery.Queue
 	Publisher     *bus.Bus
 	Logger        *slog.Logger
@@ -40,7 +40,7 @@ type Deps struct {
 // Handler regroupe les dépendances nécessaires pour servir les
 // endpoints API et SSE. Instancié dans cmd/paysim/main.go.
 type Handler struct {
-	store         *payzen.Store
+	store         payzen.Store
 	queue         *delivery.Queue
 	publisher     *bus.Bus
 	logger        *slog.Logger
@@ -177,7 +177,12 @@ type ReplayWebhookResponse struct {
 // -----------------------------------------------------------------------------
 
 func (h *Handler) listPayments(w http.ResponseWriter, _ *http.Request) {
-	txs := h.store.AllTransactions()
+	txs, err := h.store.AllTransactions()
+	if err != nil {
+		h.logger.Error("api_store_failure", "op", "AllTransactions", "err", err)
+		http.Error(w, "store failure", http.StatusInternalServerError)
+		return
+	}
 	out := make([]PaymentSummary, 0, len(txs))
 	for _, tx := range txs {
 		out = append(out, toPaymentSummary(tx))
@@ -187,7 +192,12 @@ func (h *Handler) listPayments(w http.ResponseWriter, _ *http.Request) {
 
 func (h *Handler) getPayment(w http.ResponseWriter, r *http.Request) {
 	uuid := r.PathValue("uuid")
-	tx := h.store.ByUUID(uuid)
+	tx, err := h.store.ByUUID(uuid)
+	if err != nil {
+		h.logger.Error("api_store_failure", "op", "ByUUID", "err", err)
+		http.Error(w, "store failure", http.StatusInternalServerError)
+		return
+	}
 	if tx == nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -253,7 +263,12 @@ func (h *Handler) simulatePayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uuid := r.PathValue("uuid")
-	tx := h.store.ByUUID(uuid)
+	tx, err := h.store.ByUUID(uuid)
+	if err != nil {
+		h.logger.Error("api_store_failure", "op", "ByUUID", "err", err)
+		http.Error(w, "store failure", http.StatusInternalServerError)
+		return
+	}
 	if tx == nil {
 		http.Error(w, "payment not found", http.StatusNotFound)
 		return
