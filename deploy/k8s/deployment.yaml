@@ -1,0 +1,98 @@
+# Déploiement de Paysim. Invariant fort : replicas: 1 et strategy
+# Recreate — l'état vit en mémoire, deux réplicas verraient chacune
+# la moitié des paiements. Ne pas relever ce nombre sans avoir
+# implémenté un backend persistant partagé (SQLite phase 4, ou plus).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paysim
+  namespace: paysim
+  labels:
+    app.kubernetes.io/name: paysim
+    app.kubernetes.io/component: simulator
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: paysim
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: paysim
+        app.kubernetes.io/component: simulator
+    spec:
+      # runAsNonRoot au niveau pod, dupliqué au niveau conteneur pour
+      # que kubectl le voie explicitement.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532        # nonroot user du base image distroless
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+
+      # 30s : cohérent avec shutdownTimeout Go (voir cmd/paysim/main.go).
+      # Laisse le temps aux probes de basculer readyz KO, aux LB de
+      # router ailleurs, et à la file de webhooks de se vider.
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: paysim
+          image: ghcr.io/sprimault/paysim:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          envFrom:
+            - configMapRef:
+                name: paysim
+            - secretRef:
+                name: paysim
+
+          # Contrat de conteneur : rien à écrire au disque, aucune
+          # escalade de privilège, aucune capability nécessaire.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+
+          # /healthz : le processus est vivant (vérifie juste que le
+          # binaire répond). /readyz : le processus est prêt à
+          # accepter du trafic (bascule à 503 pendant le shutdown pour
+          # que le Service arrête de router avant fermeture).
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 1
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+
+          # Ressources minimalistes — simulateur en mémoire, peu
+          # coûteux. Ajuster selon votre volume de test.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

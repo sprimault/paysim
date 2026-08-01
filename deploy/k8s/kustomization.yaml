@@ -1,0 +1,24 @@
+# Agrège les manifests Paysim dans l'ordre correct :
+#   kubectl apply -k deploy/k8s/
+#
+# Ou individuellement avec `kubectl apply -f deploy/k8s/` (l'ordre
+# alphabétique des fichiers n'est pas garanti — kustomize résout ça
+# proprement).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: paysim
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+
+# Pour overrider certaines valeurs sans modifier les manifests :
+#   kustomize edit set image ghcr.io/sprimault/paysim:latest=ghcr.io/sprimault/paysim:v1.2.3
+images:
+  - name: ghcr.io/sprimault/paysim
+    newTag: latest

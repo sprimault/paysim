@@ -1,0 +1,39 @@
+# Exemple d'ingress. Adapter ingressClassName, host, et annotations
+# à votre cluster. Si vous ne voulez pas exposer Paysim en dehors du
+# cluster (usage interne uniquement), ce manifest peut être omis —
+# le Service ClusterIP suffit pour les appels internes.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: paysim
+  namespace: paysim
+  annotations:
+    # Décommenter pour émettre le certificat TLS via cert-manager :
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+    # Si votre ingress nécessite une taille de body plus grande
+    # (uploads d'exemples de fixtures, corps de webhook…) :
+    # nginx.ingress.kubernetes.io/proxy-body-size: "5m"
+    {}
+spec:
+  # Adapter à votre cluster : nginx, traefik, gce, alb… selon ce qui
+  # est installé.
+  ingressClassName: nginx
+  rules:
+    - host: paysim.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: paysim
+                port:
+                  name: http
+  # Décommenter pour activer TLS. Le secret paysim-tls sera créé
+  # automatiquement par cert-manager si l'annotation ci-dessus est
+  # définie.
+  # tls:
+  #   - hosts:
+  #       - paysim.example.com
+  #     secretName: paysim-tls

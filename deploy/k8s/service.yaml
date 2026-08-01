@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: paysim
+  namespace: paysim
+  labels:
+    app.kubernetes.io/name: paysim
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: paysim
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

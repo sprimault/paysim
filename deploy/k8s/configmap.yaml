@@ -1,0 +1,33 @@
+# Variables d'environnement non-sensibles. Adapter les valeurs à votre
+# cluster puis appliquer avec le reste des manifests (voir README).
+#
+# Les secrets (PAYSIM_PAYZEN_HMAC_KEY, PAYSIM_API_TOKEN) sont dans
+# secret.yaml — surtout pas ici.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: paysim
+  namespace: paysim
+data:
+  # URL vue par un navigateur : hôte d'ingress externe. Adapter au
+  # domaine que vous exposez via l'ingress.
+  PAYSIM_PUBLIC_URL: "https://paysim.example.com"
+
+  # URL vers laquelle Paysim livre les webhooks. Nom de service DNS
+  # interne du marchand test (ex. cluster.local). Pointer sur un vrai
+  # marchand pour valider le parcours signature end-to-end.
+  PAYSIM_CALLBACK_URL: "http://merchant.default.svc.cluster.local/return.php"
+
+  # Préfixe si Paysim est servi sous un sous-chemin par l'ingress
+  # (ex. /paysim). Laisser vide sinon.
+  PAYSIM_BASE_PATH: ""
+
+  # Niveau de log : debug | info | warn | error.
+  PAYSIM_LOG_LEVEL: "info"
+
+  # Plafond de rétention en mémoire — Paysim est sans état par défaut.
+  PAYSIM_MAX_PAYMENTS: "10000"
+
+  # Chaos engineering, désactivé par défaut. Décommenter pour activer :
+  # PAYSIM_CHAOS_LATENCY_MS: "200"
+  # PAYSIM_CHAOS_ERROR_RATE: "0.1"
