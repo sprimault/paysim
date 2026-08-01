@@ -1,0 +1,17 @@
+name: nominal-payment
+description: Un paiement PayZen nominal aboutit en captured avec un webhook PAID.
+steps:
+  - action: create_payment
+    provider: payzen
+    amount: 1000
+    currency: EUR
+    order_id: ORDER-001
+  - action: simulate
+    status: captured
+  - action: wait
+    duration: 100ms
+  - action: assert_webhook
+    count: 1
+    status: PAID
+  - action: assert_state
+    state: captured

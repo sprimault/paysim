@@ -90,9 +90,12 @@ panne injectée. Ce GIF est l'actif principal du projet — il vaut plus que le 
 ## Phase 4 — Scénarios, conteneur et cluster
 
 État au 2026-08-01 : conteneur, cluster (avec overlay Kustomize SQLite optionnel validé
-end-to-end sur k3d), plafond de rétention en ring buffer, protection API par jeton, et
-`docs/install.md` bilingue — faits. Restent : scénarios YAML avec `paysim run` + code
-retour CI, et la matrice des deux URL dans `docs/install.md` à compléter.
+end-to-end sur k3d), plafond de rétention en ring buffer, protection API par jeton,
+`docs/install.md` bilingue et **loader YAML des scénarios** (`internal/scenarios`, format
+impératif à discriminant `action:`, six actions, validation agrégée) — faits. Restent :
+moteur d'exécution + sous-commande `paysim run scenario.yml` avec code retour CI,
+scénarios canoniques d'exemple, `docs/scenarios.md` bilingue, et la matrice des deux URL
+dans `docs/install.md`.
 
 - Définition de scénarios en YAML, commités dans le dépôt de l'utilisateur.
 - `paysim run scenario.yml` avec un code de retour exploitable en CI.
