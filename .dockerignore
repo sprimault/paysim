@@ -1,0 +1,45 @@
+# Exclusions du contexte de build Docker. Sans ce fichier, `docker build`
+# envoie tout le rep au démon (~100+ MB à cause de node_modules), et
+# certains chemins « privés » (mémoires, CLAUDE.md, notes) partent dans
+# l'image intermédiaire même si le Dockerfile ne les COPY pas.
+
+# Artefacts de build
+/paysim
+/paysim.exe
+/paysim-record
+/paysim-record.exe
+/internal/webui/dist/
+/web/dist/
+/web/node_modules/
+/web/.eslintcache
+/web/coverage/
+
+# VCS et IDE
+.git/
+.gitignore
+.gitattributes
+.idea/
+.vscode/
+
+# Fichiers privés du dépôt (déjà gitignored, mais on double la ceinture
+# pour ne pas les envoyer au démon Docker qui les stockerait en cache
+# intermédiaire)
+.claude/
+CLAUDE.md
+/memory
+/memory/
+
+# Captures et fixtures brutes (peuvent contenir des credentials sandbox)
+/internal/providers/*/testdata/*.png
+/internal/providers/*/testdata/*.jpg
+/internal/providers/*/testdata/*.jpeg
+
+# Logs applicatifs et exemples
+/examples/php/*.log
+/*.log
+
+# Documentation source déjà bâtie dans le binaire
+/docs/
+
+# Scratchpad et outputs de tâches
+.tasks/

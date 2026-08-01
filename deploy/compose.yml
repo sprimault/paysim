@@ -1,0 +1,61 @@
+# Exemple minimal — Paysim comme microservice de test dans un stack
+# docker-compose existant. Copier ce service dans le compose d'un
+# projet marchand et relancer : `docker compose up -d paysim`.
+#
+# Le marchand appelle Paysim via son nom de service DNS (`paysim`)
+# depuis le réseau interne. Depuis l'hôte, Paysim est joignable sur
+# `http://localhost:8080/`.
+#
+# Pour tester Paysim seul (sans stack marchand), ajouter le fichier
+# compose.demo.yml qui monte un serveur PHP recevant les webhooks :
+#   docker compose -f compose.yml -f compose.demo.yml up
+
+services:
+  paysim:
+    image: ghcr.io/sprimault/paysim:latest
+    # Décommenter pour builder depuis les sources plutôt que tirer
+    # l'image publique (utile en dev sur une branche non taguée) :
+    # build:
+    #   context: ..
+    #   dockerfile: deploy/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      # URL vue par un navigateur (redirects PayZen, formulaires).
+      # Adapter à l'ingress qui expose Paysim en prod-lite.
+      PAYSIM_PUBLIC_URL: "http://localhost:8080"
+
+      # URL vers laquelle Paysim livre les webhooks. Pour un stack de
+      # test, pointer sur le service marchand du même compose
+      # (résolution DNS interne). En prod-lite, adapter au marchand
+      # réel.
+      PAYSIM_CALLBACK_URL: "http://merchant:80/return.php"
+
+      # Clé HMAC-SHA-256 pour signer les kr-answer. La même valeur doit
+      # être configurée côté marchand pour vérifier la signature.
+      PAYSIM_PAYZEN_HMAC_KEY: "cle-hmac-de-test"
+
+      # Décommenter pour protéger l'API de contrôle (/paysim/simulate/*
+      # et /paysim/api/v1/*). Vide = API ouverte, mode local explicite.
+      # PAYSIM_API_TOKEN: "un-token-bearer-a-generer"
+
+      # Décommenter pour activer le chaos (latence + taux d'erreur).
+      # PAYSIM_CHAOS_LATENCY_MS: "200"
+      # PAYSIM_CHAOS_ERROR_RATE: "0.1"
+
+    # Contrat de conteneur : système de fichiers en lecture seule, pas
+    # de process root, capacités minimales. Paysim ne persiste rien par
+    # défaut, aucun besoin d'un volume writable.
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    # Le healthcheck HTTP standard (GET /healthz) nécessite un client
+    # HTTP dans l'image ; distroless static n'a ni curl ni wget. Deux
+    # options si tu veux un healthcheck :
+    #   - Ajouter un flag `-healthcheck` au binaire (à faire dans un
+    #     prochain incrément si le besoin se confirme).
+    #   - Confier le check au proxy/ingress au-dessus (nginx, Traefik,
+    #     Kubernetes probes en /healthz et /readyz — voir deploy/k8s/).

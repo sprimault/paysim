@@ -1,0 +1,31 @@
+# Extension de compose.yml pour tester Paysim en autonomie : ajoute un
+# serveur PHP qui reçoit les webhooks et vérifie leur signature. À
+# combiner avec le compose principal :
+#
+#   docker compose -f compose.yml -f compose.demo.yml up
+#
+# Le marchand PHP monte examples/php/ en volume et sert return.php +
+# notification.php. Ses logs stdout montrent chaque webhook reçu, et
+# retours.log contient la trace des signatures vérifiées.
+#
+# Ce fichier n'est PAS destiné à être copié dans un stack marchand
+# réel — il illustre seulement le contrat de communication entre
+# Paysim et le marchand.
+
+services:
+  merchant:
+    image: php:8.4-cli-alpine
+    working_dir: /app
+    command:
+      - php
+      - -S
+      - "0.0.0.0:80"
+    volumes:
+      # examples/php/ contient return.php, notification.php et le script
+      # de vérification kr-hash — voir examples/php/README.md.
+      - ../examples/php:/app:ro
+    ports:
+      - "9000:80"
+    environment:
+      # Même clé HMAC que Paysim, sinon la vérification kr-hash échoue.
+      HMAC_KEY: "cle-hmac-de-test"

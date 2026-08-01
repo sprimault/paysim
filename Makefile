@@ -1,4 +1,4 @@
-.PHONY: dev test lint vulncheck sec build fixtures web-types web-build web-test web-lint
+.PHONY: dev test lint vulncheck sec build fixtures web-types web-build web-test web-lint image image-push
 
 dev:
 	@echo "dev: pas encore implémenté (phase 3)" && exit 1
@@ -49,3 +49,21 @@ web-test:
 
 web-lint:
 	cd web && npm run lint
+
+# ── Image OCI multi-arch ────────────────────────────────────────────
+# Nécessite Docker Buildx et un builder buildkit actif (typiquement
+# `docker buildx create --use --name paysim-builder` une fois pour
+# toutes). L'image est construite pour amd64 et arm64 en un seul appel.
+#
+# `make image`      → build local, tag ghcr.io/sprimault/paysim:latest
+# `make image-push` → build + push vers ghcr.io (nécessite `docker login ghcr.io`)
+IMAGE_TAG ?= ghcr.io/sprimault/paysim:latest
+PLATFORMS ?= linux/amd64,linux/arm64
+
+image:
+	docker buildx build --platform $(PLATFORMS) \
+		-t $(IMAGE_TAG) -f deploy/Dockerfile .
+
+image-push:
+	docker buildx build --platform $(PLATFORMS) --push \
+		-t $(IMAGE_TAG) -f deploy/Dockerfile .
