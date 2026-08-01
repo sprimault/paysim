@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#4f46e5" />
     <title>Paysim</title>
+    <!-- __PAYSIM_BASE_PATH__ est remplacé par le binaire Go au moment
+         du serve. Cette ligne reste telle quelle en dev (Vite ne la
+         touche pas) — getBasePath() retombe alors sur "" et le proxy
+         Vite gère la redirection vers l'API. -->
+    <script>window.__PAYSIM_BASE_PATH__ = "__PAYSIM_BASE_PATH__";</script>
   </head>
   <body class="antialiased">
     <div id="root"></div>

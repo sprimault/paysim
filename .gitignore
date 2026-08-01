@@ -2,7 +2,15 @@
 /paysim
 /paysim.exe
 
-# front
+# binaire de build
+/paysim
+/paysim.exe
+/paysim-record
+/paysim-record.exe
+
+# front — bundle Vite embarqué par internal/webui via go:embed
+internal/webui/dist/
+# résidu possible de l'ancien outDir Vite avant 3d — plus généré, mais gardé ignoré par sécurité
 web/dist/
 web/node_modules/
 web/.eslintcache

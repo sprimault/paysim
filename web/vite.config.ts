@@ -26,8 +26,17 @@ export default defineConfig({
       '/paysim': 'http://localhost:8080',
     },
   },
+  // base: './' — chemins d'assets relatifs à index.html. Permet au
+  // même bundle de fonctionner quel que soit le PAYSIM_BASE_PATH sous
+  // lequel le binaire Go sert le SPA, sans rebuild.
+  base: './',
   build: {
-    outDir: 'dist',
+    // Sort le bundle dans internal/webui/dist où le paquet Go
+    // //go:embed le récupère. Évite d'avoir du .go dans web/ (qui
+    // héberge node_modules — go test ./... embarquerait des paquets
+    // Go transitifs de npm).
+    outDir: '../internal/webui/dist',
+    emptyOutDir: true,
     chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {

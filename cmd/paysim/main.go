@@ -27,6 +27,7 @@ import (
 	"github.com/sprimault/paysim/internal/config"
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/providers/payzen"
+	"github.com/sprimault/paysim/internal/webui"
 )
 
 // httpClientTimeout est le timeout du client HTTP qui livre les
@@ -110,7 +111,12 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 	var ready atomic.Bool
 	ready.Store(true)
 
-	mux := buildMux(payzenHandler.Routes(), apiHandler, cfg.BasePath, &ready)
+	spaHandler, err := webui.Handler(cfg.BasePath)
+	if err != nil {
+		return fmt.Errorf("chargement du SPA embarqué: %w", err)
+	}
+
+	mux := buildMux(payzenHandler.Routes(), apiHandler, spaHandler, cfg.BasePath, &ready)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -170,19 +176,18 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 	return nil
 }
 
-// buildMux assemble le multiplexeur principal : /healthz et /readyz au
-// niveau racine (hors de tout auth, hors de BasePath — les kubelet
-// probes n'envoient rien de spécial), l'API UI sous /paysim/api/v1/*,
-// le reste (endpoints PayZen simulés) sous BasePath si configuré, ou
-// à la racine sinon.
+// buildMux assemble le multiplexeur principal.
 //
-// L'API UI est TOUJOURS à la racine, même avec BasePath — cohérent
-// avec l'usage kubelet et permet aux dashboards de rester
-// accessibles à un chemin stable.
+// Découpage des routes :
+//   - /healthz, /readyz : à la racine, hors BasePath (kubelet probes).
+//   - /paysim/api/v1/*  : à la racine, hors BasePath (dashboards stables).
+//   - /api-payment/V4/* et /paysim/simulate/* : sous BasePath si non-vide,
+//     à la racine sinon. Le payzenHandler porte ses propres middlewares.
+//   - Tout le reste sous BasePath : le SPA — assets statiques + fallback
+//     index.html pour les routes react-router (/payments/:uuid, etc.).
 //
-// Le payzenHandler porte déjà ses propres middlewares (Basic Auth pour
-// /api-payment/V4/*, Bearer pour /paysim/simulate/*).
-func buildMux(payzenHandler http.Handler, apiHandler http.Handler, basePath string, ready *atomic.Bool) http.Handler {
+// spaHandler peut être nil dans les tests qui n'ont pas besoin du SPA.
+func buildMux(payzenHandler http.Handler, apiHandler http.Handler, spaHandler http.Handler, basePath string, ready *atomic.Bool) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -204,10 +209,24 @@ func buildMux(payzenHandler http.Handler, apiHandler http.Handler, basePath stri
 		mux.Handle("/paysim/api/v1/", apiHandler)
 	}
 
-	if basePath != "" {
-		mux.Handle(basePath+"/", http.StripPrefix(basePath, payzenHandler))
-	} else {
-		mux.Handle("/", payzenHandler)
+	// PayZen à ses prefixes précis : le sous-mux interne du payzenHandler
+	// matche déjà /api-payment/V4/ et /paysim/simulate/ — le monter sur
+	// ces mêmes prefixes délègue proprement sans capturer la racine.
+	payzenPrefixes := []string{"/api-payment/V4/", "/paysim/simulate/"}
+	for _, p := range payzenPrefixes {
+		if basePath != "" {
+			mux.Handle(basePath+p, http.StripPrefix(basePath, payzenHandler))
+		} else {
+			mux.Handle(p, payzenHandler)
+		}
+	}
+
+	if spaHandler != nil {
+		if basePath != "" {
+			mux.Handle(basePath+"/", spaHandler)
+		} else {
+			mux.Handle("/", spaHandler)
+		}
 	}
 
 	return mux
