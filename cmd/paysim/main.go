@@ -26,6 +26,7 @@ import (
 	"github.com/sprimault/paysim/internal/chaos"
 	"github.com/sprimault/paysim/internal/config"
 	"github.com/sprimault/paysim/internal/delivery"
+	"github.com/sprimault/paysim/internal/httplog"
 	"github.com/sprimault/paysim/internal/providers/payzen"
 	"github.com/sprimault/paysim/internal/webui"
 )
@@ -120,7 +121,7 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           mux,
+		Handler:           httplog.Middleware(mux, logger),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
