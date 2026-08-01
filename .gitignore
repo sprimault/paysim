@@ -16,9 +16,12 @@ web/node_modules/
 web/.eslintcache
 web/coverage/
 
-# configuration de travail
+# configuration de travail — CLAUDE.md est désormais publié
+# (assume-and-document : le projet est fait avec Claude Code, autant
+# être transparent sur les règles internes que Claude suit). .claude/
+# reste privé (règles opérationnelles Claude Code) et memory/ aussi
+# (mémoire projet locale au poste).
 .claude/
-CLAUDE.md
 /memory
 
 # IDE JetBrains
