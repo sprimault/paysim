@@ -297,14 +297,12 @@ func (h *Handler) listWebhooks(w http.ResponseWriter, _ *http.Request) {
 
 func (h *Handler) getWebhook(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	records := h.queue.Recent(200)
-	for _, rec := range records {
-		if rec.Webhook.ID == id {
-			writeJSON(w, http.StatusOK, toWebhookDetail(rec))
-			return
-		}
+	rec, ok := h.queue.WebhookByID(id)
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
 	}
-	http.Error(w, "not found", http.StatusNotFound)
+	writeJSON(w, http.StatusOK, toWebhookDetail(rec))
 }
 
 // replayWebhook re-enqueue un webhook existant. Le body est renvoyé
@@ -314,25 +312,22 @@ func (h *Handler) getWebhook(w http.ResponseWriter, r *http.Request) {
 // l'historique.
 func (h *Handler) replayWebhook(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	records := h.queue.Recent(200)
-	for _, rec := range records {
-		if rec.Webhook.ID != id {
-			continue
-		}
-		wh := rec.Webhook
-		wh.ID = "replay-" + id + "-" + time.Now().UTC().Format("150405.000000")
-		wh.Attempts = 0
-		wh.Delay = 0
-		wh.CreatedAt = time.Now().UTC()
-		wh.LastTryAt = time.Time{}
-		if err := h.queue.Enqueue(wh); err != nil {
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
-			return
-		}
-		writeJSON(w, http.StatusAccepted, ReplayWebhookResponse{NewDeliveryID: wh.ID})
+	rec, ok := h.queue.WebhookByID(id)
+	if !ok {
+		http.Error(w, "webhook not found", http.StatusNotFound)
 		return
 	}
-	http.Error(w, "webhook not found", http.StatusNotFound)
+	wh := rec.Webhook
+	wh.ID = "replay-" + id + "-" + time.Now().UTC().Format("150405.000000")
+	wh.Attempts = 0
+	wh.Delay = 0
+	wh.CreatedAt = time.Now().UTC()
+	wh.LastTryAt = time.Time{}
+	if err := h.queue.Enqueue(wh); err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, ReplayWebhookResponse{NewDeliveryID: wh.ID})
 }
 
 // simulatePayment déclenche une simulation de retour navigateur ou

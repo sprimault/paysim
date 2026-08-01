@@ -31,11 +31,6 @@ var (
 	ErrAlreadyRunning = errors.New("worker deja en cours")
 )
 
-// historySize borne l'historique circulaire des webhooks. 200 couvre
-// largement l'usage interactif ; passer au-delà nécessiterait un
-// stockage persistant (phase 4).
-const historySize = 200
-
 // WebhookRecord est une entrée d'historique : le webhook enqueue plus
 // le résultat effectif de la tentative. Consommé par l'API UI pour
 // afficher le journal de livraison avec bouton de rejeu.
@@ -62,10 +57,12 @@ type Queue struct {
 	running   atomic.Bool
 	inflight  sync.WaitGroup // livraisons en cours (goroutines lancées, non terminées)
 
-	histMu   sync.RWMutex
-	history  [historySize]WebhookRecord
-	histIdx  int // prochaine position d'écriture
-	histFull bool
+	// history stocke les enregistrements de livraison. Injecté par
+	// SetHistory — par défaut MemoryHistory (ring buffer 200), peut
+	// être remplacé par un SQLiteHistory pour persistance sur disque.
+	// Nil safe : Recent/ByID/DeleteAll retournent vide/false, Add
+	// est un no-op.
+	history HistoryStore
 
 	publisher *bus.Bus // optionnel — publie webhook_delivered/failed
 }
@@ -89,10 +86,22 @@ func New(client *http.Client, logger *slog.Logger, capacity int) *Queue {
 		capacity = 1
 	}
 	return &Queue{
-		client: client,
-		logger: logger,
-		jobs:   make(chan Webhook, capacity),
+		client:  client,
+		logger:  logger,
+		jobs:    make(chan Webhook, capacity),
+		history: NewMemoryHistory(),
 	}
+}
+
+// SetHistory remplace le HistoryStore. À appeler avant Run pour
+// substituer MemoryHistory par SQLiteHistory (persistance disque).
+// Un nil est refusé : on garde le default mémoire plutôt que de
+// désactiver silencieusement l'historique.
+func (q *Queue) SetHistory(h HistoryStore) {
+	if h == nil {
+		return
+	}
+	q.history = h
 }
 
 // Enqueue pousse un webhook dans la file. Non-bloquant : retourne
@@ -194,43 +203,43 @@ func (q *Queue) SetPublisher(b *bus.Bus) {
 }
 
 // Recent retourne les n derniers enregistrements (les plus récents
-// d'abord). Si n dépasse la capacité de l'historique ou le nombre
-// d'entrées, tout est retourné. Snapshot indépendant — l'appelant
-// peut modifier le slice sans affecter le buffer interne.
+// d'abord). Délégué au HistoryStore configuré — MemoryHistory
+// (défaut) ou SQLiteHistory selon la config PAYSIM_STORE.
 func (q *Queue) Recent(n int) []WebhookRecord {
-	q.histMu.RLock()
-	defer q.histMu.RUnlock()
-
-	total := q.histIdx
-	if q.histFull {
-		total = historySize
-	}
-	if n > total {
-		n = total
-	}
-	if n <= 0 {
+	if q.history == nil {
 		return nil
 	}
-
-	out := make([]WebhookRecord, n)
-	// Parcours à l'envers depuis histIdx-1 (le plus récent).
-	for i := 0; i < n; i++ {
-		pos := (q.histIdx - 1 - i + historySize) % historySize
-		out[i] = q.history[pos]
-	}
-	return out
+	return q.history.Recent(n)
 }
 
-// recordHistory ajoute une entrée à l'anneau circulaire. Appelée en
-// fin de deliver().
-func (q *Queue) recordHistory(rec WebhookRecord) {
-	q.histMu.Lock()
-	q.history[q.histIdx] = rec
-	q.histIdx = (q.histIdx + 1) % historySize
-	if q.histIdx == 0 {
-		q.histFull = true
+// WebhookByID retourne un WebhookRecord par son ID, ou zero+false
+// si inconnu. Délégué au HistoryStore.
+func (q *Queue) WebhookByID(id string) (WebhookRecord, bool) {
+	if q.history == nil {
+		return WebhookRecord{}, false
 	}
-	q.histMu.Unlock()
+	return q.history.ByID(id)
+}
+
+// PurgeWebhooks vide l'historique et retourne le nombre supprimé.
+func (q *Queue) PurgeWebhooks() (int, error) {
+	if q.history == nil {
+		return 0, nil
+	}
+	return q.history.DeleteAll()
+}
+
+// recordHistory ajoute une entrée à l'historique. Erreurs de
+// persistance loguées mais non-bloquantes — un webhook livré ne doit
+// pas échouer côté marchand si l'historique disque flanche.
+func (q *Queue) recordHistory(rec WebhookRecord) {
+	if q.history == nil {
+		return
+	}
+	if err := q.history.Add(rec); err != nil {
+		q.logger.Error("history_add_failed",
+			"id", rec.Webhook.ID, "err", err)
+	}
 }
 
 // deliver traite un webhook : respecte le Delay éventuel, construit

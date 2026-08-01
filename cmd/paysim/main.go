@@ -104,6 +104,7 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		payzenStore  payzen.Store
 		paymentRepo  store.PaymentRepository
 	)
+	queue := delivery.New(&http.Client{Timeout: httpClientTimeout}, logger, cfg.MaxPayments)
 	switch cfg.StoreBackend {
 	case config.StoreBackendSQLite:
 		db, err := sqlitepkg.Open(cfg.SQLitePath)
@@ -113,17 +114,21 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		defer func() { _ = db.Close() }()
 		repo, err := sqlitepkg.NewPaymentsRepository(db)
 		if err != nil {
-			return fmt.Errorf("initialisation repository SQLite: %w", err)
+			return fmt.Errorf("initialisation repository SQLite payments: %w", err)
 		}
 		paymentRepo = repo
 		payzenStore = payzen.NewSQLiteStore(repo)
+
+		webhookRepo, err := sqlitepkg.NewWebhooksRepository(db)
+		if err != nil {
+			return fmt.Errorf("initialisation repository SQLite webhooks: %w", err)
+		}
+		queue.SetHistory(delivery.NewSQLiteHistory(webhookRepo))
 		logger.Info("store_backend", "backend", "sqlite", "path", cfg.SQLitePath)
 	default:
 		payzenStore = payzen.NewMemoryStore()
 		logger.Info("store_backend", "backend", "memory")
 	}
-
-	queue := delivery.New(&http.Client{Timeout: httpClientTimeout}, logger, cfg.MaxPayments)
 	queue.SetPublisher(eventBus)
 	payzenHandler := payzen.NewHandler(payzenStore, queue, logger, payzen.HandlerConfig{
 		HMACKey:            cfg.PayzenHMACKey,
