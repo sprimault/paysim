@@ -87,7 +87,7 @@ To pull from a public/private registry instead (see the “From a registry” se
 
 ### 2. Update the image reference
 
-Edit [`deploy/k8s/kustomization.yaml`](../deploy/k8s/kustomization.yaml) to point at the locally-imported image:
+Edit [`deploy/k8s/base/kustomization.yaml`](../deploy/k8s/base/kustomization.yaml) to point at the locally-imported image:
 
 ```yaml
 images:
@@ -98,7 +98,7 @@ images:
 
 ### 3. Fill in the Secret
 
-Edit [`deploy/k8s/secret.yaml`](../deploy/k8s/secret.yaml) with your HMAC key:
+Edit [`deploy/k8s/base/secret.yaml`](../deploy/k8s/base/secret.yaml) with your HMAC key:
 
 ```yaml
 stringData:
@@ -124,6 +124,8 @@ control, enable the ingress:
 
 ### 1. Uncomment the ingress line in kustomization
 
+Edit [`deploy/k8s/base/kustomization.yaml`](../deploy/k8s/base/kustomization.yaml):
+
 ```yaml
 resources:
   - namespace.yaml
@@ -134,7 +136,7 @@ resources:
   - ingress.yaml    # enabled
 ```
 
-### 2. Edit `deploy/k8s/ingress.yaml`
+### 2. Edit `deploy/k8s/base/ingress.yaml`
 
 Set the hostname and uncomment the annotations you need:
 
@@ -203,18 +205,31 @@ release — for now, local build + import is the recommended path.
 ## SQLite persistence (optional)
 
 By default Paysim keeps everything in memory — the read-only root
-filesystem in the Deployment reflects this. To persist payments
-across restarts:
+filesystem in the Deployment reflects this. To persist payments,
+webhook history and bus events across restarts, apply the SQLite
+overlay:
 
-1. Set `PAYSIM_STORE=sqlite` and `PAYSIM_SQLITE_PATH=/data/paysim.db`
-   in the ConfigMap.
-2. Add a `PersistentVolumeClaim` mounted at `/data` in the Deployment.
-3. Set `readOnlyRootFilesystem: false` (or use a subPath emptyDir for
-   `/data` if you want to keep the root read-only).
+```bash
+kubectl apply -k deploy/k8s/overlays/sqlite/
+kubectl -n paysim rollout status deployment/paysim
+```
 
-A Kustomize overlay that applies these changes automatically is
-provided in `deploy/k8s/overlays/sqlite/` (upcoming, section
-placeholder until 4.3.7).
+The overlay adds:
+
+- a `PersistentVolumeClaim` named `paysim-data` (1Gi, RWO) mounted at
+  `/data`. Adjust the size in
+  [`deploy/k8s/overlays/sqlite/pvc.yaml`](../deploy/k8s/overlays/sqlite/pvc.yaml)
+  before applying if needed.
+- `PAYSIM_STORE=sqlite` injected as an env var (defaults to
+  `/data/paysim.db` — no need to set `PAYSIM_SQLITE_PATH` explicitly).
+
+`readOnlyRootFilesystem` stays `true`: only `/data` is writable, via
+the mounted volume. The rest of the container filesystem remains
+immutable — same security posture as the memory-mode default.
+
+The single-replica invariant is preserved (an RWO PVC can only be
+bound to one pod at a time, and Paysim's in-memory state would not
+be consistent across replicas anyway).
 
 ## Troubleshooting
 

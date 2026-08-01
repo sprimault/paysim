@@ -1,0 +1,27 @@
+# Patch strategic merge : ajoute PAYSIM_STORE=sqlite et le montage du
+# PVC sur /data. Le chemin par défaut du fichier SQLite est
+# /data/paysim.db (voir internal/config, defaultSQLitePath) — inutile
+# de le repréciser explicitement.
+#
+# Note : env ici s'ajoute à envFrom du ConfigMap et Secret hérités de
+# la base — Kubernetes concatène les deux sources, PAYSIM_STORE prime
+# sur toute valeur qui viendrait du ConfigMap (ordre : env last wins).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paysim
+spec:
+  template:
+    spec:
+      containers:
+        - name: paysim
+          env:
+            - name: PAYSIM_STORE
+              value: sqlite
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: paysim-data

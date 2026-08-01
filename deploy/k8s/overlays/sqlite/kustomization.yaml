@@ -1,0 +1,33 @@
+# Overlay Kustomize : persistance SQLite.
+#
+# Étend la base deploy/k8s/ avec un PVC monté sur /data et bascule
+# PAYSIM_STORE=sqlite. À utiliser quand on veut conserver l'état des
+# paiements et l'historique des webhooks entre redémarrages du pod.
+#
+# Contraintes structurantes rappelées :
+#   - replicas: 1 et strategy: Recreate (invariant, hérité de la base).
+#     Un PVC RWO ne survit pas à un rolling update de deux pods.
+#   - readOnlyRootFilesystem reste true — seul /data est monté en RW
+#     via le PVC. Le reste du FS conteneur reste immuable.
+#
+# Utilisation :
+#   kubectl apply -k deploy/k8s/overlays/sqlite/
+#
+# Pour ajuster la taille du volume, éditer pvc.yaml. La storage class
+# est celle par défaut du cluster (K3s = local-path, cluster managé =
+# dépend du provider) — préciser storageClassName dans pvc.yaml si
+# besoin d'une classe particulière.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: paysim
+
+resources:
+  - ../../base
+  - pvc.yaml
+
+patches:
+  - path: patch-deployment.yaml
+    target:
+      kind: Deployment
+      name: paysim

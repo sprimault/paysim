@@ -91,7 +91,7 @@ section « Depuis un registre » ci-dessous.
 
 ### 2. Ajuster la référence d'image
 
-Éditer [`deploy/k8s/kustomization.yaml`](../deploy/k8s/kustomization.yaml)
+Éditer [`deploy/k8s/base/kustomization.yaml`](../deploy/k8s/base/kustomization.yaml)
 pour pointer sur l'image importée localement :
 
 ```yaml
@@ -103,8 +103,8 @@ images:
 
 ### 3. Renseigner le Secret
 
-Éditer [`deploy/k8s/secret.yaml`](../deploy/k8s/secret.yaml) avec la
-clé HMAC :
+Éditer [`deploy/k8s/base/secret.yaml`](../deploy/k8s/base/secret.yaml)
+avec la clé HMAC :
 
 ```yaml
 stringData:
@@ -131,6 +131,8 @@ d'accès optionnel, activer l'ingress :
 
 ### 1. Décommenter l'ingress dans kustomization
 
+Éditer [`deploy/k8s/base/kustomization.yaml`](../deploy/k8s/base/kustomization.yaml) :
+
 ```yaml
 resources:
   - namespace.yaml
@@ -141,7 +143,7 @@ resources:
   - ingress.yaml    # activé
 ```
 
-### 2. Éditer `deploy/k8s/ingress.yaml`
+### 2. Éditer `deploy/k8s/base/ingress.yaml`
 
 Fixer le hostname et décommenter les annotations utiles :
 
@@ -212,19 +214,32 @@ recommandé.
 ## Persistance SQLite (optionnelle)
 
 Par défaut Paysim garde tout en mémoire — le rootFS en lecture seule
-du Deployment reflète ce choix. Pour persister les paiements entre
-redémarrages :
+du Deployment reflète ce choix. Pour persister les paiements,
+l'historique des webhooks et les events du bus entre redémarrages,
+appliquer l'overlay SQLite :
 
-1. Fixer `PAYSIM_STORE=sqlite` et `PAYSIM_SQLITE_PATH=/data/paysim.db`
-   dans le ConfigMap.
-2. Ajouter un `PersistentVolumeClaim` monté sur `/data` dans le
-   Deployment.
-3. Passer `readOnlyRootFilesystem: false` (ou monter un emptyDir en
-   subPath pour `/data` si le root doit rester read-only).
+```bash
+kubectl apply -k deploy/k8s/overlays/sqlite/
+kubectl -n paysim rollout status deployment/paysim
+```
 
-Un overlay Kustomize qui applique ces changements automatiquement
-sera fourni dans `deploy/k8s/overlays/sqlite/` (à venir en 4.3.7,
-placeholder de section en attendant).
+L'overlay ajoute :
+
+- un `PersistentVolumeClaim` nommé `paysim-data` (1Gi, RWO) monté
+  sur `/data`. Ajuster la taille dans
+  [`deploy/k8s/overlays/sqlite/pvc.yaml`](../deploy/k8s/overlays/sqlite/pvc.yaml)
+  avant application si besoin ;
+- `PAYSIM_STORE=sqlite` injecté comme variable d'env (le chemin par
+  défaut étant `/data/paysim.db`, pas besoin de fixer explicitement
+  `PAYSIM_SQLITE_PATH`).
+
+`readOnlyRootFilesystem` reste `true` : seul `/data` est en écriture
+via le volume monté. Le reste du filesystem conteneur demeure
+immuable — même posture de sécurité que le mode mémoire par défaut.
+
+L'invariant réplique unique est préservé (un PVC RWO ne peut être
+lié qu'à un pod à la fois, et l'état en mémoire de Paysim ne serait
+de toute façon pas cohérent entre plusieurs répliques).
 
 ## Dépannage
 

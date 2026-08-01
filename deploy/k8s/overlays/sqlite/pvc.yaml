@@ -1,0 +1,19 @@
+# Volume persistant pour le fichier SQLite. RWO suffit — un seul pod
+# écrit (invariant réplique unique). 1Gi couvre largement l'usage de
+# simulateur : les paiements en centaines de bytes, les webhooks en
+# quelques Ko chacun, les events du bus quelques dizaines de bytes.
+# Ajuster à la hausse pour des campagnes de test long-running.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: paysim-data
+  labels:
+    app.kubernetes.io/name: paysim
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  # storageClassName: local-path   # décommenter pour forcer une classe
