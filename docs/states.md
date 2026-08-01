@@ -1,10 +1,12 @@
-# Machine à états du paiement
+> [🇬🇧 English](states.md) · [🇫🇷 Français](states.fr.md)
 
-Ce document est la source unique pour la machine à états implémentée dans
-`internal/domain`. Toute divergence entre le code et ce document est un bug à
-corriger — au cas par cas, mais le graphe canonique reste ci-dessous.
+# Payment state machine
 
-## Diagramme
+This document is the single source of truth for the state machine implemented
+in `internal/domain`. Any divergence between the code and this document is a
+bug to fix — case by case, but the canonical graph stays here.
+
+## Diagram
 
 ```mermaid
 stateDiagram-v2
@@ -19,12 +21,12 @@ stateDiagram-v2
     authorized --> declined : Decline
     authorized --> expired  : Expire
 
-    captured --> refunded           : Refund (total)
-    captured --> partially_refunded : Refund (partiel)
+    captured --> refunded           : Refund (full)
+    captured --> partially_refunded : Refund (partial)
     captured --> chargeback         : Chargeback
 
-    partially_refunded --> partially_refunded : Refund (cumul < total)
-    partially_refunded --> refunded           : Refund (cumul = total)
+    partially_refunded --> partially_refunded : Refund (cumulative < total)
+    partially_refunded --> refunded           : Refund (cumulative = total)
     partially_refunded --> chargeback         : Chargeback
 
     refunded --> chargeback : Chargeback
@@ -35,83 +37,84 @@ stateDiagram-v2
     chargeback --> [*]
 ```
 
-## États
+## States
 
-| État                 | Terminal | Description                                                       |
-| -------------------- | :------: | ----------------------------------------------------------------- |
-| `initiated`          |    non   | Paiement créé, aucune interaction PSP encore.                     |
-| `authorized`         |    non   | Fonds réservés (mode 3DS + capture différée), non débités.        |
-| `captured`           |    non   | Fonds effectivement débités.                                      |
-| `partially_refunded` |    non   | Un ou plusieurs remboursements partiels, cumul strictement < total. |
-| `refunded`           |  **oui** | Remboursements intégraux, cumul égal au total.                    |
-| `declined`           |  **oui** | Refus (banque, 3DS échoué, risque, autorisation annulée).         |
-| `expired`            |  **oui** | Délai dépassé (formulaire non complété, autorisation expirée).    |
-| `chargeback`         |  **oui** | Rétrofacturation reçue depuis un état où des fonds étaient débités. |
+| State                | Terminal | Description                                                          |
+| -------------------- | :------: | -------------------------------------------------------------------- |
+| `initiated`          |    no    | Payment created, no PSP interaction yet.                             |
+| `authorized`         |    no    | Funds reserved (3DS + delayed capture mode), not debited.            |
+| `captured`           |    no    | Funds effectively debited.                                           |
+| `partially_refunded` |    no    | One or more partial refunds, cumulative strictly < total.            |
+| `refunded`           |  **yes** | Full refunds, cumulative equals the total.                           |
+| `declined`           |  **yes** | Rejected (bank, failed 3DS, risk score, authorization voided).       |
+| `expired`            |  **yes** | Timeout (form not completed, authorization expired).                 |
+| `chargeback`         |  **yes** | Chargeback received from a state where funds had been debited.       |
 
-## Table des transitions valides
+## Valid transitions table
 
-Lecture : ligne = état source, colonne = action, cellule = état d'arrivée
-(`—` = transition interdite, renvoie `ErrInvalidTransition`).
+How to read: row = source state, column = action, cell = destination state
+(`—` = forbidden transition, returns `ErrInvalidTransition`).
 
-|                        | Authorize    | Capture   | Refund                          | Decline    | Expire    | Chargeback   |
-| ---------------------- | ------------ | --------- | ------------------------------- | ---------- | --------- | ------------ |
-| **initiated**          | `authorized` | `captured` | —                               | `declined` | `expired` | —            |
-| **authorized**         | —            | `captured` | —                               | `declined` | `expired` | —            |
+|                        | Authorize    | Capture   | Refund                            | Decline    | Expire    | Chargeback   |
+| ---------------------- | ------------ | --------- | --------------------------------- | ---------- | --------- | ------------ |
+| **initiated**          | `authorized` | `captured` | —                                 | `declined` | `expired` | —            |
+| **authorized**         | —            | `captured` | —                                 | `declined` | `expired` | —            |
 | **captured**           | —            | —         | `partially_refunded` / `refunded` | —          | —         | `chargeback` |
 | **partially_refunded** | —            | —         | `partially_refunded` / `refunded` | —          | —         | `chargeback` |
-| **refunded**           | —            | —         | —                               | —          | —         | `chargeback` |
-| **declined**           | —            | —         | —                               | —          | —         | —            |
-| **expired**            | —            | —         | —                               | —          | —         | —            |
-| **chargeback**         | —            | —         | —                               | —          | —         | —            |
+| **refunded**           | —            | —         | —                                 | —          | —         | `chargeback` |
+| **declined**           | —            | —         | —                                 | —          | —         | —            |
+| **expired**            | —            | —         | —                                 | —          | —         | —            |
+| **chargeback**         | —            | —         | —                                 | —          | —         | —            |
 
-L'état d'arrivée de `Refund` dépend du cumul : `refunded` si le cumul atteint
-exactement le total, `partially_refunded` sinon.
+The destination state of `Refund` depends on the cumulative amount: `refunded`
+if it reaches the total exactly, `partially_refunded` otherwise.
 
-## Points subtils
+## Subtle points
 
-**Auto-transition `partially_refunded → partially_refunded`.** Un remboursement
-partiel supplémentaire n'est pas un changement d'état, mais c'est un événement
-métier qui doit apparaître à la chronologie. Le journal d'événements est donc
-la source de vérité : chaque appel réussi à `Refund` produit exactement un
-événement `refunded`, y compris quand l'état reste identique.
+**Self-transition `partially_refunded → partially_refunded`.** An additional
+partial refund is not a state change, but it is a business event that must
+appear on the timeline. The event journal is therefore the source of truth:
+every successful call to `Refund` produces exactly one `refunded` event, even
+when the state stays the same.
 
-**`chargeback` depuis `refunded`.** C'est contre-intuitif — pourquoi contester
-après avoir été remboursé ? Parce que c'est un scénario de fraude documenté :
-le fraudeur reçoit le remboursement du commerçant, puis déclenche la
-rétrofacturation auprès de sa banque pour être payé une seconde fois. La
-transition est autorisée, elle porte un vrai signal métier.
+**`chargeback` from `refunded`.** Counter-intuitive — why dispute after having
+been refunded? Because it's a documented fraud scenario: the fraudster
+receives the merchant's refund, then triggers a chargeback with their bank to
+get paid a second time. The transition is allowed and carries a real business
+signal.
 
-**Distinction événement / changement d'état.** L'état résume ; le journal
-raconte. Toute méthode qui réussit inscrit un événement au journal, même si
-l'état ne bouge pas (cas ci-dessus). Toute méthode qui échoue (transition
-interdite, montant invalide) ne modifie rien — ni l'état, ni le journal.
+**Event vs. state change distinction.** State summarises; the journal tells
+the story. Any method that succeeds records an event in the journal, even
+when the state doesn't move (see above). Any method that fails (forbidden
+transition, invalid amount) changes nothing — neither the state, nor the
+journal.
 
-**Pas de capture partielle.** `Capture` transfère toujours l'intégralité du
-montant demandé. La capture partielle existe chez certains PSP (notamment pour
-les commandes expédiées en plusieurs colis) mais elle est **hors périmètre
-phase 0**. Si elle devient nécessaire, elle s'ajoutera comme un mode de
-`Capture(amount format.Amount)` — et il faudra revoir le contrat de `Refund`
-dont la borne haute deviendra le montant capturé, plus le montant demandé.
+**No partial capture.** `Capture` always transfers the full requested amount.
+Partial capture exists in some PSPs (notably for orders shipped in several
+parcels) but it is **out of scope for phase 0**. If it becomes necessary, it
+will be added as a mode of `Capture(amount format.Amount)` — and the contract
+of `Refund` will need revisiting, since its upper bound would become the
+captured amount rather than the requested one.
 
-**Erreurs et invariants.**
-- `ErrInvalidTransition` : la méthode n'est pas autorisée depuis l'état
-  courant. L'état et le journal sont laissés strictement inchangés.
-- `ErrInvalidAmount` : montant nul, négatif, ou cumul de remboursements qui
-  dépasserait le total capturé. Idem, rien n'est modifié.
-- Un paiement dans un état terminal est **irrémédiablement inerte** — sauf
-  `refunded` qui peut encore recevoir un `Chargeback`.
+**Errors and invariants.**
+- `ErrInvalidTransition`: the method is not allowed from the current state.
+  State and journal are left strictly unchanged.
+- `ErrInvalidAmount`: zero, negative, or cumulative refunds that would exceed
+  the captured total. Same behaviour, nothing is modified.
+- A payment in a terminal state is **irremediably inert** — except `refunded`
+  which can still receive a `Chargeback`.
 
-## Implémentation
+## Implementation
 
-Le code est dans `internal/domain/` :
+The code lives in `internal/domain/`:
 
-- `state.go` — type `State` et constantes.
-- `event.go` — type `Event`, `EventKind` et constantes.
-- `payment.go` — struct `Payment`, constructeur `New`, méthodes de transition.
-- `errors.go` — sentinelles.
-- `payment_test.go` — matrice exhaustive des transitions valides et interdites.
+- `state.go` — `State` type and constants.
+- `event.go` — `Event` and `EventKind` types with constants.
+- `payment.go` — `Payment` struct, `New` constructor, transition methods.
+- `errors.go` — sentinel errors.
+- `payment_test.go` — exhaustive matrix of valid and forbidden transitions.
 
-Un test d'architecture (`internal/arch/arch_test.go`) vérifie que `domain`
-n'importe aucun paquet fournisseur : cette machine à états est indépendante de
-tout PSP, c'est ce qui rend le moteur de chaos et l'ajout d'un fournisseur
-mécaniques.
+An architecture test (`internal/arch/arch_test.go`) checks that `domain`
+imports no provider package: this state machine is independent of any PSP,
+which is what makes the chaos engine and the addition of a provider
+mechanical.
