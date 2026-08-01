@@ -80,3 +80,20 @@ export async function apiPostJson<TReq, TRes>(
   }
   return JSON.parse(text) as TRes;
 }
+
+/**
+ * apiDelete envoie un DELETE et parse la réponse JSON si présente.
+ * Retourne undefined sur 204 No Content (delete unitaire) ou corps
+ * vide ; sinon parse le JSON (bulk delete renvoie `{deleted: n}`).
+ */
+export async function apiDelete<TRes>(path: string, signal?: AbortSignal): Promise<TRes> {
+  const resp = await apiFetch(path, { method: 'DELETE', signal });
+  if (resp.status === 204) {
+    return undefined as TRes;
+  }
+  const text = await resp.text();
+  if (text.length === 0) {
+    return undefined as TRes;
+  }
+  return JSON.parse(text) as TRes;
+}

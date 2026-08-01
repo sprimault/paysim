@@ -1,20 +1,75 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { CreditCard } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { CreditCard, Trash2 } from 'lucide-react';
+import { Button } from '@/shared/ui/Button';
+import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
 import { EmptyState } from '@/shared/ui/EmptyState';
 import { Skeleton } from '@/shared/ui/Skeleton';
+import { toast } from '@/shared/ui/toastStore';
+import { deletePayment, purgePayments } from '@/entities/payment/api/paymentApi';
 import { usePaymentsList } from '@/entities/payment/model/usePayments';
+import { usePaymentStore } from '@/entities/payment/model/paymentStore';
+import type { PaymentSummary } from '@/shared/model';
 import { PaymentRow } from './PaymentRow';
+
+// Providers connus côté UI. Ajouter Stripe ici quand la feature
+// arrivera (phase 5). Le tab « Tous » n'est qu'un filtre vide côté
+// front — le backend renvoie déjà tous les paiements.
+const KNOWN_PROVIDERS: readonly string[] = ['payzen'];
 
 /**
  * Écran principal. Table dense — pas de cards ombrés. C'est ce qu'un
  * dev regarde en priorité pendant qu'il débogue autre chose (web.md).
- * Le SSE branché dans App.tsx alimente le store en continu ; ce
- * composant ne fait que lire et rendre.
+ * Tabs de provider en tête pour préparer l'arrivée de Stripe : même
+ * si un seul provider existe côté v1, l'UI signale l'extension.
  */
 export function PaymentList() {
-  const { payments, loading, error } = usePaymentsList();
+  const { payments, loading, error, refresh } = usePaymentsList();
+  const removeFromStore = usePaymentStore((s) => s.remove);
+  const [providerFilter, setProviderFilter] = useState<string>('');
+  const [toDelete, setToDelete] = useState<PaymentSummary | null>(null);
+  const [purgeOpen, setPurgeOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const filtered = useMemo(() => {
+    if (!providerFilter) return payments;
+    return payments.filter((p) => p.provider === providerFilter);
+  }, [payments, providerFilter]);
+
+  async function handleDelete() {
+    if (!toDelete) return;
+    setBusy(true);
+    try {
+      await deletePayment(toDelete.uuid);
+      // Optimiste : on retire du store tout de suite. L'event SSE
+      // payment_deleted fera la même chose, no-op idempotent.
+      removeFromStore(toDelete.uuid);
+      toast.success('Paiement supprimé', toDelete.orderId);
+    } catch (e) {
+      toast.error('Suppression échouée', (e as Error).message);
+    } finally {
+      setBusy(false);
+      setToDelete(null);
+    }
+  }
+
+  async function handlePurge() {
+    setBusy(true);
+    try {
+      const res = await purgePayments(providerFilter || undefined);
+      toast.success(`${res.deleted} paiement${res.deleted > 1 ? 's' : ''} supprimé${res.deleted > 1 ? 's' : ''}`);
+      // L'event SSE payments_purged refetch la liste — pas de trim
+      // local nécessaire.
+      await refresh();
+    } catch (e) {
+      toast.error('Purge échouée', (e as Error).message);
+    } finally {
+      setBusy(false);
+      setPurgeOpen(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-6">
@@ -24,11 +79,38 @@ export function PaymentList() {
             Paiements
           </h1>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            {loading && payments.length === 0
+            {loading && filtered.length === 0
               ? 'Chargement…'
-              : `${payments.length} paiement${payments.length > 1 ? 's' : ''} en mémoire`}
+              : `${filtered.length} paiement${filtered.length > 1 ? 's' : ''} en mémoire`}
           </p>
         </div>
+        {filtered.length > 0 && (
+          <Button
+            variant="danger"
+            size="sm"
+            leftIcon={<Trash2 size={14} />}
+            onClick={() => setPurgeOpen(true)}
+          >
+            {providerFilter ? `Vider ${providerFilter}` : 'Vider tout'}
+          </Button>
+        )}
+      </div>
+
+      {/* Tabs de provider — extensibles pour Stripe (phase 5). */}
+      <div className="mb-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800" role="tablist">
+        <ProviderTab
+          label="Tous"
+          active={providerFilter === ''}
+          onClick={() => setProviderFilter('')}
+        />
+        {KNOWN_PROVIDERS.map((prov) => (
+          <ProviderTab
+            key={prov}
+            label={prov}
+            active={providerFilter === prov}
+            onClick={() => setProviderFilter(prov)}
+          />
+        ))}
       </div>
 
       {error && (
@@ -37,11 +119,11 @@ export function PaymentList() {
         </div>
       )}
 
-      {loading && payments.length === 0 ? (
+      {loading && filtered.length === 0 ? (
         <div className="rounded-panel border border-zinc-200 p-6 dark:border-zinc-800">
           <Skeleton count={5} />
         </div>
-      ) : payments.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <EmptyState
           icon={CreditCard}
           title="Aucun paiement"
@@ -58,17 +140,81 @@ export function PaymentList() {
                 <th className="px-4 py-2">UUID</th>
                 <th className="px-4 py-2">Créé</th>
                 <th className="px-4 py-2">Mis à jour</th>
-                <th className="px-4 py-2 sr-only">Ouvrir</th>
+                <th className="px-4 py-2 sr-only">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {payments.map((p) => (
-                <PaymentRow key={p.uuid} payment={p} />
+              {filtered.map((p) => (
+                <PaymentRow key={p.uuid} payment={p} onDelete={setToDelete} />
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      {/* Confirmations */}
+      <ConfirmDialog
+        open={!!toDelete}
+        danger
+        title="Supprimer ce paiement ?"
+        description={
+          <>
+            Le paiement <strong>{toDelete?.orderId}</strong> et ses événements seront
+            supprimés. Cette action est irréversible.
+          </>
+        }
+        confirmLabel="Supprimer"
+        loading={busy}
+        onConfirm={handleDelete}
+        onCancel={() => setToDelete(null)}
+      />
+      <ConfirmDialog
+        open={purgeOpen}
+        danger
+        title={providerFilter ? `Vider les paiements ${providerFilter} ?` : 'Vider tous les paiements ?'}
+        description={
+          providerFilter ? (
+            <>
+              Tous les paiements du provider <strong>{providerFilter}</strong> seront
+              supprimés, ainsi que leurs événements.
+            </>
+          ) : (
+            <>Tous les paiements de tous les providers seront supprimés.</>
+          )
+        }
+        confirmLabel="Vider"
+        loading={busy}
+        onConfirm={handlePurge}
+        onCancel={() => setPurgeOpen(false)}
+      />
     </div>
+  );
+}
+
+function ProviderTab({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={
+        'inline-flex items-center border-b-2 px-3 py-2 text-sm font-medium transition-colors ' +
+        (active
+          ? 'border-brand-600 text-brand-700 dark:border-brand-400 dark:text-brand-300'
+          : 'border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-800 ' +
+            'dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:text-zinc-200')
+      }
+    >
+      {label}
+    </button>
   );
 }

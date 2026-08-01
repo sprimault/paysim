@@ -11,6 +11,7 @@ const originalFetch = globalThis.fetch;
 
 const summary: PaymentSummary = {
   uuid: 'p1',
+  provider: 'payzen',
   orderId: 'CMD-1',
   amount: 1000,
   currency: 'EUR',

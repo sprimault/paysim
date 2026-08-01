@@ -17,6 +17,8 @@
 export type PaysimEventType =
   | 'payment_created'
   | 'payment_state_changed'
+  | 'payment_deleted'
+  | 'payments_purged'
   | 'webhook_enqueued'
   | 'webhook_delivered'
   | 'webhook_failed';
@@ -31,6 +33,18 @@ export interface PaymentStateChangedEvent {
   type: 'payment_state_changed';
   at: string;
   data: { uuid: string; orderId: string; state: string; outcome: string };
+}
+
+export interface PaymentDeletedEvent {
+  type: 'payment_deleted';
+  at: string;
+  data: { uuid: string };
+}
+
+export interface PaymentsPurgedEvent {
+  type: 'payments_purged';
+  at: string;
+  data: { provider: string; deleted: number };
 }
 
 export interface WebhookEnqueuedEvent {
@@ -54,6 +68,8 @@ export interface WebhookFailedEvent {
 export type PaysimEvent =
   | PaymentCreatedEvent
   | PaymentStateChangedEvent
+  | PaymentDeletedEvent
+  | PaymentsPurgedEvent
   | WebhookEnqueuedEvent
   | WebhookDeliveredEvent
   | WebhookFailedEvent;
@@ -61,6 +77,8 @@ export type PaysimEvent =
 const KNOWN_TYPES: readonly PaysimEventType[] = [
   'payment_created',
   'payment_state_changed',
+  'payment_deleted',
+  'payments_purged',
   'webhook_enqueued',
   'webhook_delivered',
   'webhook_failed',

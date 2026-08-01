@@ -24,7 +24,8 @@ endpoints /paysim/*).
  * breaking change côté cmd/paysim.
  */
 export interface Deps {
-  Store?: any /* payzen.Store */;
+  Store: any /* payzen.Store */;
+  PaymentRepo: any /* store.PaymentRepository */; // optionnel — nil en mode mémoire ; permet les endpoints DELETE cross-provider
   Queue?: any /* delivery.Queue */;
   Publisher?: any /* bus.Bus */;
   Logger?: any /* slog.Logger */;
@@ -42,6 +43,7 @@ export interface Handler {
  */
 export interface PaymentSummary {
   uuid: string;
+  provider: string;
   orderId: string;
   amount: number /* int64 */;
   currency: string;

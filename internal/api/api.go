@@ -107,6 +107,7 @@ func withBearer(next http.Handler, token string, logger *slog.Logger) http.Handl
 // PaymentSummary est le résumé d'un paiement pour les listes.
 type PaymentSummary struct {
 	UUID      string    `json:"uuid"`
+	Provider  string    `json:"provider"`
 	OrderID   string    `json:"orderId"`
 	Amount    int64     `json:"amount"`
 	Currency  string    `json:"currency"`
@@ -528,6 +529,7 @@ func writeEvent(w http.ResponseWriter, flusher http.Flusher, evt bus.Event, logg
 func toPaymentSummary(tx *payzen.Transaction) PaymentSummary {
 	return PaymentSummary{
 		UUID:      tx.UUID,
+		Provider:  "payzen",
 		OrderID:   tx.OrderID,
 		Amount:    int64(tx.Amount),
 		Currency:  tx.Currency,

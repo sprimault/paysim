@@ -1,7 +1,7 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, Trash2 } from 'lucide-react';
 import { Link } from 'react-router';
 import { Badge } from '@/shared/ui/Badge';
 import { CopyButton } from '@/shared/ui/CopyButton';
@@ -13,9 +13,10 @@ import type { PaymentSummary } from '@/shared/model';
 
 interface PaymentRowProps {
   payment: PaymentSummary;
+  onDelete?: (payment: PaymentSummary) => void;
 }
 
-export function PaymentRow({ payment: p }: PaymentRowProps) {
+export function PaymentRow({ payment: p, onDelete }: PaymentRowProps) {
   const meta = paymentStateMeta[p.state];
   const StateIcon = meta.icon;
 
@@ -52,13 +53,26 @@ export function PaymentRow({ payment: p }: PaymentRowProps) {
         {formatRelative(p.updatedAt)}
       </td>
       <td className="px-4 py-2.5 text-right">
-        <Link
-          to={`/payments/${p.uuid}`}
-          className="inline-flex items-center gap-0.5 rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-          aria-label="Ouvrir le paiement"
-        >
-          <ChevronRight size={16} />
-        </Link>
+        <div className="inline-flex items-center gap-0.5">
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete(p)}
+              aria-label="Supprimer le paiement"
+              title="Supprimer"
+              className="rounded p-1 text-zinc-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40 dark:hover:text-rose-400"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+          <Link
+            to={`/payments/${p.uuid}`}
+            className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            aria-label="Ouvrir le paiement"
+          >
+            <ChevronRight size={16} />
+          </Link>
+        </div>
       </td>
     </tr>
   );

@@ -9,6 +9,7 @@ import type { PaymentSummary } from '@/shared/model';
 
 const p: PaymentSummary = {
   uuid: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+  provider: 'payzen',
   orderId: 'CMD-42',
   amount: 1299,
   currency: 'EUR',

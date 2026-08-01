@@ -30,6 +30,9 @@ export function usePaysimEvents(
   const upsertPayment = usePaymentStore((s) => s.upsert);
   const setWebhookList = useWebhookStore((s) => s.setList);
 
+  const removePayment = usePaymentStore((s) => s.remove);
+  const setPaymentList = usePaymentStore((s) => s.setList);
+
   return useSSE(streamPath, (raw) => {
     if (!isPaysimEvent(raw)) return;
 
@@ -49,6 +52,16 @@ export function usePaysimEvents(
           });
         return;
       }
+      case 'payment_deleted':
+        // Retire directement du store — pas de refetch nécessaire.
+        removePayment(raw.data.uuid);
+        return;
+      case 'payments_purged':
+        // Refetch la liste plutôt qu'un clear local : après un bulk
+        // delete, on veut être sûr qu'aucune entrée ne survit du fait
+        // d'un race entre plusieurs clients.
+        void fetchPayments().then(setPaymentList).catch(() => undefined);
+        return;
       case 'webhook_enqueued':
       case 'webhook_delivered':
       case 'webhook_failed':

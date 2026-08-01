@@ -2,16 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
-import { Link, useParams } from 'react-router';
+import { ArrowLeft, Trash2 } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router';
 import { Badge } from '@/shared/ui/Badge';
+import { Button } from '@/shared/ui/Button';
+import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
 import { CopyButton } from '@/shared/ui/CopyButton';
 import { Skeleton } from '@/shared/ui/Skeleton';
 import { Tabs } from '@/shared/ui/Tabs';
+import { toast } from '@/shared/ui/toastStore';
 import { formatAmount } from '@/shared/lib/numbers';
 import { formatShort } from '@/shared/lib/dates';
 import { paymentStateMeta } from '@/shared/lib/statusMeta';
+import { deletePayment } from '@/entities/payment/api/paymentApi';
 import { usePayment } from '@/entities/payment/model/usePayments';
+import { usePaymentStore } from '@/entities/payment/model/paymentStore';
 import { useWebhooksList } from '@/entities/webhook/model/useWebhooks';
 import { TAB_IDS, TAB_LABELS, TAB_WITH_COUNTER, type TabId } from '@/features/payment-detail/model/tabs';
 import { PaymentOverview } from './PaymentOverview';
@@ -21,11 +26,29 @@ import { PaymentPayload } from './PaymentPayload';
 
 export function PaymentDetail() {
   const { uuid = '' } = useParams();
+  const navigate = useNavigate();
   const { payment, loading, error } = usePayment(uuid);
+  const removeFromStore = usePaymentStore((s) => s.remove);
   // Toute la liste des webhooks — pas de filtre par uuid côté API v1.
   // Le tab Webhooks affiche l'ensemble avec une note explicite.
   const { webhooks } = useWebhooksList();
   const [tab, setTab] = useState<TabId>('overview');
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await deletePayment(uuid);
+      removeFromStore(uuid);
+      toast.success('Paiement supprimé');
+      navigate('/', { replace: true });
+    } catch (e) {
+      toast.error('Suppression échouée', (e as Error).message);
+      setDeleting(false);
+      setDeleteOpen(false);
+    }
+  }
 
   if (loading && !payment) {
     return (
@@ -87,6 +110,14 @@ export function PaymentDetail() {
           <Badge tone={meta.tone} icon={<StateIcon size={12} />}>
             {meta.label}
           </Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            leftIcon={<Trash2 size={14} />}
+            onClick={() => setDeleteOpen(true)}
+          >
+            Supprimer
+          </Button>
         </div>
       </div>
 
@@ -106,6 +137,22 @@ export function PaymentDetail() {
       {tab === 'timeline' && <PaymentTimeline events={events} />}
       {tab === 'webhooks' && <PaymentWebhooks webhooks={webhooks} />}
       {tab === 'payload' && <PaymentPayload webhook={webhooks[0]} />}
+
+      <ConfirmDialog
+        open={deleteOpen}
+        danger
+        title="Supprimer ce paiement ?"
+        description={
+          <>
+            Le paiement <strong>{payment.orderId}</strong> et ses événements seront
+            supprimés. Cette action est irréversible.
+          </>
+        }
+        confirmLabel="Supprimer"
+        loading={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteOpen(false)}
+      />
     </div>
   );
 }

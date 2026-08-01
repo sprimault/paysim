@@ -13,6 +13,7 @@ const originalFetch = globalThis.fetch;
 const samples: PaymentSummary[] = [
   {
     uuid: 'p1',
+  provider: 'payzen',
     orderId: 'CMD-1',
     amount: 4990,
     currency: 'EUR',
@@ -22,6 +23,7 @@ const samples: PaymentSummary[] = [
   },
   {
     uuid: 'p2',
+  provider: 'payzen',
     orderId: 'CMD-2',
     amount: 1200,
     currency: 'EUR',

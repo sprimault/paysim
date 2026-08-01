@@ -1,7 +1,7 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { apiGetJson, apiPostJson } from '@/shared/api/client';
+import { apiDelete, apiGetJson, apiPostJson } from '@/shared/api/client';
 import type {
   PaymentDetail,
   PaymentSummary,
@@ -35,4 +35,33 @@ export function simulatePayment(
     req,
     signal,
   );
+}
+
+/**
+ * deletePayment supprime un paiement. Idempotent — un UUID inconnu
+ * renvoie 204 sans erreur.
+ */
+export function deletePayment(uuid: string, signal?: AbortSignal): Promise<void> {
+  return apiDelete<void>(`${BASE}/${encodeURIComponent(uuid)}`, signal);
+}
+
+/**
+ * PurgePaymentsResponse est la réponse du bulk delete.
+ */
+export interface PurgePaymentsResponse {
+  deleted: number;
+}
+
+/**
+ * purgePayments supprime tous les paiements, avec filtre provider
+ * optionnel. Sans `provider`, purge cross-provider complète.
+ */
+export function purgePayments(
+  provider?: string,
+  signal?: AbortSignal,
+): Promise<PurgePaymentsResponse> {
+  const path = provider
+    ? `${BASE}?provider=${encodeURIComponent(provider)}`
+    : BASE;
+  return apiDelete<PurgePaymentsResponse>(path, signal);
 }

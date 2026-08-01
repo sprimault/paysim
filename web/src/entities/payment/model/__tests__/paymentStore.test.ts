@@ -7,6 +7,7 @@ import type { PaymentDetail, PaymentSummary } from '@/shared/model';
 
 const summary = (uuid: string, updatedAt: string): PaymentSummary => ({
   uuid,
+  provider: 'payzen',
   orderId: `CMD-${uuid}`,
   amount: 1000,
   currency: 'EUR',
