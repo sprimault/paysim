@@ -18,7 +18,10 @@ RUN mkdir -p ../internal/webui/dist && npm run build
 # trimpath → chemins reproductibles, pas d'info sensible sur l'origine.
 FROM golang:1.26-alpine AS gobuild
 WORKDIR /src
-COPY go.mod go.sum ./
+# Paysim n'a aucune dépendance externe (biblio standard Go
+# uniquement) — pas de go.sum. Quand une dépendance sera ajoutée,
+# ajouter `go.sum` à la ligne COPY ci-dessous.
+COPY go.mod ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 # Le paquet internal/webui embed dist/ via //go:embed — il refuse de
