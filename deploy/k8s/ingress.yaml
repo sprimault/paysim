@@ -1,26 +1,43 @@
-# Exemple d'ingress. Adapter ingressClassName, host, et annotations
-# à votre cluster. Si vous ne voulez pas exposer Paysim en dehors du
-# cluster (usage interne uniquement), ce manifest peut être omis —
-# le Service ClusterIP suffit pour les appels internes.
+# Ingress OPTIONNEL. Par défaut Paysim est accessible via NodePort
+# (voir service.yaml) — cohérent avec l'usage « outil de dev sur le
+# LAN » à la MailHog.
+#
+# Activer cet ingress si vous voulez :
+#   - Exposer Paysim sur un domaine public ou un sous-domaine interne
+#   - Ajouter TLS (Let's Encrypt via cert-manager, ou secret manuel)
+#   - Ajouter du contrôle d'accès (basic auth, allow-list IP)
+#
+# Pour activer, décommenter la ligne "- ingress.yaml" dans
+# kustomization.yaml et adapter le host + les annotations.
+#
+# Snippets prêts à copier ci-dessous — décommenter ce qui est utile.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: paysim
   namespace: paysim
   annotations:
-    # Décommenter pour émettre le certificat TLS via cert-manager :
+    # ── TLS automatique via cert-manager (webhook DNS-01 ou HTTP-01)
     # cert-manager.io/cluster-issuer: "letsencrypt-prod"
 
-    # Si votre ingress nécessite une taille de body plus grande
-    # (uploads d'exemples de fixtures, corps de webhook…) :
+    # ── Basic auth (nginx-ingress) — génération du secret :
+    #   htpasswd -cB auth <user>
+    #   kubectl -n paysim create secret generic paysim-basic-auth --from-file=auth
+    # nginx.ingress.kubernetes.io/auth-type: basic
+    # nginx.ingress.kubernetes.io/auth-secret: paysim-basic-auth
+    # nginx.ingress.kubernetes.io/auth-realm: "Paysim - authentification requise"
+
+    # ── Allow-list IP (nginx-ingress) — restreindre à un CIDR :
+    # nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8,192.168.0.0/16"
+
+    # ── Taille max du corps (fixtures YAML volumineuses, etc.)
     # nginx.ingress.kubernetes.io/proxy-body-size: "5m"
     {}
 spec:
-  # Adapter à votre cluster : nginx, traefik, gce, alb… selon ce qui
-  # est installé.
+  # Adapter à votre cluster : nginx, traefik, gce, alb…
   ingressClassName: nginx
   rules:
-    - host: paysim.example.com
+    - host: paysim.example.com # à changer
       http:
         paths:
           - path: /
@@ -30,9 +47,9 @@ spec:
                 name: paysim
                 port:
                   name: http
-  # Décommenter pour activer TLS. Le secret paysim-tls sera créé
-  # automatiquement par cert-manager si l'annotation ci-dessus est
-  # définie.
+  # Décommenter pour activer TLS avec cert-manager. Le secret
+  # paysim-tls est créé automatiquement si l'annotation
+  # cluster-issuer ci-dessus est renseignée.
   # tls:
   #   - hosts:
   #       - paysim.example.com

@@ -6,11 +6,19 @@ metadata:
   labels:
     app.kubernetes.io/name: paysim
 spec:
-  type: ClusterIP
+  # NodePort pour un accès direct depuis le réseau du cluster, sans
+  # ingress — comme MailHog, OnlyOffice ou d'autres outils de dev
+  # qu'on ajoute au cluster et qu'on consomme depuis un poste sur le
+  # même LAN. Un dev qui veut exposer sur un domaine public active
+  # l'Ingress optionnel (voir ingress.yaml).
+  type: NodePort
   selector:
     app.kubernetes.io/name: paysim
   ports:
     - name: http
       port: 8080
       targetPort: http
+      # 30880 = 8080 avec préfixe 3, mémorisable. Modifiable ; K8s
+      # exige un port dans la plage 30000-32767 par défaut.
+      nodePort: 30880
       protocol: TCP

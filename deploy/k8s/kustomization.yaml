@@ -1,9 +1,10 @@
 # Agrège les manifests Paysim dans l'ordre correct :
 #   kubectl apply -k deploy/k8s/
 #
-# Ou individuellement avec `kubectl apply -f deploy/k8s/` (l'ordre
-# alphabétique des fichiers n'est pas garanti — kustomize résout ça
-# proprement).
+# Par défaut, Paysim est exposé en NodePort:30880 — pas besoin
+# d'ingress pour un usage dev interne. Pour activer l'ingress
+# (domaine, TLS, basic auth), décommenter la ligne "- ingress.yaml"
+# ci-dessous et adapter le fichier.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -15,7 +16,7 @@ resources:
   - secret.yaml
   - deployment.yaml
   - service.yaml
-  - ingress.yaml
+  # - ingress.yaml    # décommenter pour exposer via ingress-nginx
 
 # Pour overrider certaines valeurs sans modifier les manifests :
 #   kustomize edit set image ghcr.io/sprimault/paysim:latest=ghcr.io/sprimault/paysim:v1.2.3
