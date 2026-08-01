@@ -6,6 +6,8 @@ package arch
 import (
 	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -33,22 +35,38 @@ func TestDomainDoesNotImportProviders(t *testing.T) {
 // éventuels sous-paquets (internal/providers/payzen, internal/providers/stripe…).
 func assertNoImportMatch(t *testing.T, dir, forbiddenSubstring string) {
 	t.Helper()
+	// parser.ParseDir est déprécié depuis Go 1.25 (ignore les build
+	// tags). Ici on veut juste vérifier les imports statiques — pas
+	// d'impact des build tags sur ces vérifs d'architecture. On liste
+	// les fichiers .go à la main et on parse chacun individuellement.
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, nil, parser.ImportsOnly)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Fatalf("analyse de %s : %v", dir, err)
+		t.Fatalf("lecture de %s : %v", dir, err)
 	}
-	if len(pkgs) == 0 {
-		t.Fatalf("aucun paquet trouvé dans %s", dir)
-	}
-	for _, pkg := range pkgs {
-		for path, file := range pkg.Files {
-			for _, imp := range file.Imports {
-				p := strings.Trim(imp.Path.Value, `"`)
-				if strings.Contains(p, forbiddenSubstring) {
-					t.Errorf("%s importe %q — interdit (%s)", path, p, forbiddenSubstring)
-				}
+	found := 0
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		f, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatalf("analyse de %s : %v", path, err)
+		}
+		found++
+		for _, imp := range f.Imports {
+			p := strings.Trim(imp.Path.Value, `"`)
+			if strings.Contains(p, forbiddenSubstring) {
+				t.Errorf("%s importe %q — interdit (%s)", path, p, forbiddenSubstring)
 			}
 		}
+	}
+	if found == 0 {
+		t.Fatalf("aucun fichier .go trouvé dans %s", dir)
 	}
 }
