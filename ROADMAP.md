@@ -3,7 +3,7 @@
 Chaque phase est livrable seule et a un critère de fin vérifiable. On ne commence pas la
 suivante avant que le critère soit atteint.
 
-**Phase en cours : 3**
+**Phase en cours : 4**
 
 ---
 
@@ -89,29 +89,37 @@ panne injectée. Ce GIF est l'actif principal du projet — il vaut plus que le 
 
 ## Phase 4 — Scénarios, conteneur et cluster
 
+État au 2026-08-01 : conteneur, cluster (avec overlay Kustomize SQLite optionnel validé
+end-to-end sur k3d), plafond de rétention en ring buffer, protection API par jeton, et
+`docs/install.md` bilingue — faits. Restent : scénarios YAML avec `paysim run` + code
+retour CI, et la matrice des deux URL dans `docs/install.md` à compléter.
+
 - Définition de scénarios en YAML, commités dans le dépôt de l'utilisateur.
 - `paysim run scenario.yml` avec un code de retour exploitable en CI.
-- `deploy/Dockerfile` multi-étapes, image publiée en amd64 et arm64.
+- `deploy/Dockerfile` multi-étapes, image publiée en amd64 et arm64 — fait.
 - `deploy/compose.yml` montrant les deux URL correctement renseignées — c'est l'exemple que
-  les gens copieront sans le lire, il doit être juste.
+  les gens copieront sans le lire, il doit être juste. Fait.
 - `deploy/k8s/` : Deployment en `replicas: 1` et `strategy: Recreate`, sondes sur
   `/healthz` et `/readyz`, ConfigMap pour les URL, Secret pour `PAYSIM_API_TOKEN`, Ingress.
+  Fait (base + overlay SQLite).
 - Plafond de rétention `PAYSIM_MAX_PAYMENTS`, avec un stockage conçu en tampon circulaire.
   Sans lui, un pod qui tourne une semaine sature sa mémoire — c'est le défaut de MailHog
-  qu'on ne reproduit pas.
+  qu'on ne reproduit pas. Fait.
 - Persistance **SQLite optionnelle**, désactivée par défaut, activée par une variable
   dédiée qui pointe sur un fichier local. Un seul fichier, driver Go pur, aucun serveur
   externe. Sert à rejouer une session après redémarrage ; ne change ni l'invariant 8
-  (une seule réplique) ni le contrat d'ajout de Paysim comme conteneur autonome. À
-  livrer seulement si le besoin est confirmé au terme de la phase 3 ; sinon reporté.
+  (une seule réplique) ni le contrat d'ajout de Paysim comme conteneur autonome. Fait,
+  y compris la persistance des events bus pour le catch-up SSE post-restart et
+  l'overlay Kustomize.
 - Protection de l'API de contrôle par jeton, sur le modèle du `JWT_SECRET` d'OnlyOffice.
-  Inactive tant que la variable est vide, pour ne pas alourdir l'usage local.
+  Inactive tant que la variable est vide, pour ne pas alourdir l'usage local. Fait.
 - **`docs/install.md`**, avec dans cet ordre : binaire seul, `docker run`, `compose` à côté
   d'une application, K3s/Kubernetes. Puis le tableau complet des variables. Puis — c'est la
   section qui compte — **la matrice des deux URL selon le scénario** : tout en local, appli
   sur l'hôte et Paysim en conteneur (`host.docker.internal`), tout en `compose` (noms de
   services), cluster (nom de service interne et hôte d'ingress). C'est là que se posent
-  toutes les questions des utilisateurs ; le reste de la doc n'est que du confort.
+  toutes les questions des utilisateurs ; le reste de la doc n'est que du confort. Base
+  bilingue faite ; la matrice URL reste à ajouter.
 
 **Fini quand** : le même dépôt d'exemple passe ses tests en CI sans aucun identifiant, et
 tourne à l'identique en `compose` et sur un cluster K3s en suivant `docs/install.md` sans
