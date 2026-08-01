@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/sprimault/paysim/internal/bus"
 )
 
 // discardLogger renvoie un logger qui n'écrit rien — évite de polluer
@@ -389,6 +391,36 @@ func TestDrainWaitsForInflightWithDelay(t *testing.T) {
 	}
 	if q.Stats().Failed != 1 {
 		t.Errorf("Failed = %d, veut 1 (delay interrompu par cancel)", q.Stats().Failed)
+	}
+}
+
+func TestEnqueuePublishesWebhookEnqueuedEvent(t *testing.T) {
+	t.Parallel()
+	q := newQueue(t, 4)
+	b := bus.New()
+	q.SetPublisher(b)
+
+	ch, unsub := b.Subscribe(4)
+	defer unsub()
+
+	if err := q.Enqueue(Webhook{ID: "wh-1", URL: "http://example.local/cb"}); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	select {
+	case e := <-ch:
+		if e.Type != "webhook_enqueued" {
+			t.Errorf("type = %q, veut webhook_enqueued", e.Type)
+		}
+		data, ok := e.Data.(map[string]any)
+		if !ok {
+			t.Fatalf("Data pas map[string]any: %T", e.Data)
+		}
+		if data["id"] != "wh-1" {
+			t.Errorf("id = %v", data["id"])
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("event webhook_enqueued non reçu")
 	}
 }
 

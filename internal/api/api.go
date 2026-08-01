@@ -14,8 +14,10 @@ package api
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/sprimault/paysim/internal/bus"
@@ -304,8 +306,20 @@ func (h *Handler) simulatePayment(w http.ResponseWriter, r *http.Request) {
 
 // streamEvents ouvre un flux Server-Sent Events. Chaque événement du
 // bus est sérialisé en JSON et envoyé au format standard
-// "data: <json>\n\n". La connexion se ferme quand le client se
-// déconnecte (via r.Context()) ou quand le serveur s'arrête.
+//
+//	id: <N>\n
+//	data: <json>\n\n
+//
+// L'ID monotone permet au navigateur de renvoyer automatiquement
+// l'header Last-Event-ID lors d'une reconnexion — le handler relit
+// alors le ring buffer via bus.SnapshotSince pour rattraper ce que
+// le client a manqué pendant sa déconnexion.
+//
+// La séquence Subscribe → SnapshotSince → catchup → live avec filtre
+// e.ID > highWater garantit ni doublon ni trou (voir bus.SnapshotSince).
+//
+// La connexion se ferme quand le client se déconnecte (via
+// r.Context()) ou quand le serveur s'arrête.
 func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) {
 	if h.publisher == nil {
 		http.Error(w, "event bus not configured", http.StatusServiceUnavailable)
@@ -325,11 +339,23 @@ func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) {
 	events, unsub := h.publisher.Subscribe(32)
 	defer unsub()
 
+	// Catch-up : replay des events publiés après Last-Event-ID vu par
+	// le client. La séquence Subscribe puis SnapshotSince impose
+	// l'ordre nécessaire au filtrage anti-doublon plus bas.
+	lastID := parseLastEventID(r.Header.Get("Last-Event-ID"))
+	catchup, highWater := h.publisher.SnapshotSince(lastID)
+
 	// Envoi initial d'un commentaire SSE pour flusher les headers.
 	if _, err := w.Write([]byte(": stream open\n\n")); err != nil {
 		return
 	}
 	flusher.Flush()
+
+	for _, evt := range catchup {
+		if !writeEvent(w, flusher, evt, h.logger) {
+			return
+		}
+	}
 
 	// Heartbeat périodique pour maintenir la connexion vive à travers
 	// les proxies qui timeout les connexions idle (nginx = 60s par défaut).
@@ -349,28 +375,55 @@ func (h *Handler) streamEvents(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return // bus fermé
 			}
-			payload := map[string]any{
-				"type": evt.Type,
-				"at":   evt.At,
-				"data": evt.Data,
-			}
-			raw, err := json.Marshal(payload)
-			if err != nil {
-				h.logger.Warn("sse_marshal_failed", "err", err)
+			// Un event capturé par le channel avant/pendant SnapshotSince
+			// est déjà dans le catch-up : on le filtre ici.
+			if evt.ID <= highWater {
 				continue
 			}
-			if _, err := w.Write([]byte("data: ")); err != nil {
+			if !writeEvent(w, flusher, evt, h.logger) {
 				return
 			}
-			if _, err := w.Write(raw); err != nil {
-				return
-			}
-			if _, err := w.Write([]byte("\n\n")); err != nil {
-				return
-			}
-			flusher.Flush()
 		}
 	}
+}
+
+// parseLastEventID lit le header standard SSE "Last-Event-ID" et
+// retourne 0 (= tout envoyer) en cas d'absence ou de valeur invalide.
+// Pas d'erreur remontée : un client qui envoie une valeur cassée est
+// simplement traité comme un premier connect.
+func parseLastEventID(raw string) uint64 {
+	if raw == "" {
+		return 0
+	}
+	id, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
+// writeEvent sérialise et écrit un event au format SSE avec son ID.
+// Retourne false si l'écriture a échoué — le handler doit alors
+// abandonner la connexion (client parti).
+func writeEvent(w http.ResponseWriter, flusher http.Flusher, evt bus.Event, logger *slog.Logger) bool {
+	payload := map[string]any{
+		"type": evt.Type,
+		"at":   evt.At,
+		"data": evt.Data,
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		logger.Warn("sse_marshal_failed", "err", err)
+		return true
+	}
+	// Format standard SSE : "id: N\ndata: {...}\n\n". Le navigateur
+	// mémorise le dernier id vu et le renvoie automatiquement via
+	// Last-Event-ID à la prochaine (re)connexion EventSource.
+	if _, err := fmt.Fprintf(w, "id: %d\ndata: %s\n\n", evt.ID, raw); err != nil {
+		return false
+	}
+	flusher.Flush()
+	return true
 }
 
 // -----------------------------------------------------------------------------

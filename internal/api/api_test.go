@@ -257,12 +257,28 @@ func TestReplayWebhookReEnqueues(t *testing.T) {
 		Body:    origBody,
 		Headers: map[string]string{"Content-Type": "application/json"},
 	})
+	// count.Add(1) est fait dans le handler aval AVANT que finish()
+	// n'ajoute l'entrée à queue.Recent(). Attendre les deux
+	// conditions évite un race entre le POST /replay et la peuplement
+	// de l'historique.
 	deadline := time.Now().Add(2 * time.Second)
-	for count.Load() < 1 && time.Now().Before(deadline) {
+	found := false
+	for time.Now().Before(deadline) {
+		if count.Load() >= 1 {
+			for _, r := range queue.Recent(50) {
+				if r.Webhook.ID == "wh-original" {
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if count.Load() != 1 {
-		t.Fatalf("livraison initiale : count = %d", count.Load())
+	if !found {
+		t.Fatalf("livraison initiale : count=%d, historique non peuplé", count.Load())
 	}
 
 	// 2. Rejeu via API.
@@ -457,5 +473,64 @@ func TestSSEStreamReceivesEvents(t *testing.T) {
 	}
 	if got["type"] != "test_event" {
 		t.Errorf("type = %v", got["type"])
+	}
+}
+
+// TestSSELastEventIDReplay vérifie qu'un client reprenant contact
+// avec un header Last-Event-ID reçoit le catch-up depuis le ring
+// buffer sans doublon ni trou, puis continue en live.
+func TestSSELastEventIDReplay(t *testing.T) {
+	t.Parallel()
+	logger := discardLogger()
+	store := payzen.NewStore()
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	b := bus.New()
+	handler := NewHandler(Deps{Store: store, Queue: queue, Publisher: b, Logger: logger})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	// Publier 3 events AVANT la connexion : ils prendront IDs 1..3.
+	b.Publish(bus.Event{Type: "pre_1", At: time.Now()})
+	b.Publish(bus.Event{Type: "pre_2", At: time.Now()})
+	b.Publish(bus.Event{Type: "pre_3", At: time.Now()})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
+		server.URL+"/paysim/api/v1/events/stream", nil)
+	// Simule une reconnexion : le client a déjà vu jusqu'à l'ID 1.
+	req.Header.Set("Last-Event-ID", "1")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// Publier un event live après connexion — deviendra ID 4.
+	time.Sleep(150 * time.Millisecond)
+	b.Publish(bus.Event{Type: "live_4", At: time.Now()})
+
+	// Lire jusqu'à obtenir 3 lignes id: (attendus 2, 3, 4).
+	reader := bufio.NewReader(resp.Body)
+	deadline := time.Now().Add(1500 * time.Millisecond)
+	var ids []string
+	for len(ids) < 3 && time.Now().Before(deadline) {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+		if strings.HasPrefix(line, "id: ") {
+			ids = append(ids, strings.TrimSpace(strings.TrimPrefix(line, "id: ")))
+		}
+	}
+
+	want := []string{"2", "3", "4"}
+	if len(ids) != len(want) {
+		t.Fatalf("ids reçus = %v, veut %v (catch-up 2,3 puis live 4)", ids, want)
+	}
+	for i, id := range ids {
+		if id != want[i] {
+			t.Errorf("ids[%d] = %q, veut %q", i, id, want[i])
+		}
 	}
 }

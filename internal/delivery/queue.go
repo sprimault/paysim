@@ -106,6 +106,20 @@ func (q *Queue) Enqueue(w Webhook) error {
 	}
 	select {
 	case q.jobs <- w:
+		// Notifier l'UI en temps réel : un webhook "pending" apparaît
+		// immédiatement dans la timeline avant même sa livraison.
+		// Payload allégé — headers et body seront récupérés via
+		// GET /webhooks/{id} si le front en a besoin.
+		q.publisher.Publish(bus.Event{
+			Type: "webhook_enqueued",
+			At:   w.CreatedAt,
+			Data: map[string]any{
+				"id":        w.ID,
+				"url":       w.URL,
+				"attempts":  w.Attempts,
+				"createdAt": w.CreatedAt,
+			},
+		})
 		return nil
 	default:
 		q.logger.Warn("queue_full", "id", w.ID, "url", w.URL)
