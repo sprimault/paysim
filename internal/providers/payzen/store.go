@@ -52,6 +52,14 @@ type Store interface {
 	// LenSubscriptions retourne le nombre d'abonnements indexés.
 	LenSubscriptions() (int, error)
 
+	// Delete supprime une transaction identifiée par son UUID.
+	// Idempotent : un UUID inconnu ne remonte pas d'erreur.
+	Delete(uuid string) error
+
+	// DeleteAllTransactions supprime toutes les transactions PayZen
+	// (pas les abonnements). Retourne le nombre supprimé.
+	DeleteAllTransactions() (int, error)
+
 	// Close libère les ressources (utile pour SQLiteStore ; no-op
 	// pour MemoryStore). L'appelant doit toujours l'appeler à
 	// l'arrêt propre.

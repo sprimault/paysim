@@ -114,6 +114,20 @@ type PaymentRepository interface {
 	// Count retourne le nombre total de paiements. Cross-provider.
 	Count() (int, error)
 
+	// DeleteByUUID supprime un paiement (et ses events en cascade).
+	// Silencieusement no-op si l'UUID est inconnu — cohérent avec
+	// une opération idempotente ; l'appelant qui veut différencier
+	// « supprimé » de « inexistant » doit ByUUID avant.
+	DeleteByUUID(uuid string) error
+
+	// DeleteByProvider supprime tous les paiements d'un provider.
+	// Retourne le nombre effectivement supprimé pour l'observabilité.
+	DeleteByProvider(provider string) (int, error)
+
+	// DeleteAll supprime tous les paiements, quel que soit le provider.
+	// Retourne le nombre supprimé.
+	DeleteAll() (int, error)
+
 	// Close libère les ressources sous-jacentes (SQLite : ferme le
 	// fichier, checkpoint WAL). No-op pour l'impl mémoire.
 	Close() error

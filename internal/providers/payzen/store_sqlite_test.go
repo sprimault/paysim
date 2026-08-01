@@ -9,7 +9,26 @@ import (
 	"time"
 
 	"github.com/sprimault/paysim/internal/domain"
+	sqlitepkg "github.com/sprimault/paysim/internal/store/sqlite"
 )
+
+// openTestStore construit un SQLiteStore end-to-end : ouvre la base
+// SQLite, prépare le repository, wrappe dans un SQLiteStore.
+// Cleanup automatique via t.Cleanup.
+func openTestStore(t *testing.T, path string) *SQLiteStore {
+	t.Helper()
+	db, err := sqlitepkg.Open(path)
+	if err != nil {
+		t.Fatalf("sqlite Open: %v", err)
+	}
+	repo, err := sqlitepkg.NewPaymentsRepository(db)
+	if err != nil {
+		_ = db.Close()
+		t.Fatalf("NewPaymentsRepository: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return NewSQLiteStore(repo)
+}
 
 // runContract lance le même scénario sur une Store — vérifie que
 // MemoryStore et SQLiteStore respectent tous deux le contrat au bit
@@ -97,13 +116,7 @@ func buildSampleTx(t *testing.T) *Transaction {
 
 func TestSQLiteStoreContract(t *testing.T) {
 	t.Parallel()
-	path := filepath.Join(t.TempDir(), "test.db")
-	s, err := NewSQLiteStore(path)
-	if err != nil {
-		t.Fatalf("NewSQLiteStore: %v", err)
-	}
-	defer func() { _ = s.Close() }()
-
+	s := openTestStore(t, filepath.Join(t.TempDir(), "test.db"))
 	runContract(t, s)
 }
 
@@ -116,23 +129,25 @@ func TestSQLiteStoreSurvivesReopen(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "persist.db")
 
-	// Écriture initiale.
-	s1, err := NewSQLiteStore(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s1.Save(buildSampleTx(t)); err != nil {
-		t.Fatal(err)
-	}
-	_ = s1.Close()
+	// Écriture initiale — le db est fermé après cette portée.
+	func() {
+		db, err := sqlitepkg.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = db.Close() }()
+		repo, err := sqlitepkg.NewPaymentsRepository(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s1 := NewSQLiteStore(repo)
+		if err := s1.Save(buildSampleTx(t)); err != nil {
+			t.Fatal(err)
+		}
+	}()
 
 	// Ré-ouverture : les données sont là.
-	s2, err := NewSQLiteStore(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s2.Close() }()
-
+	s2 := openTestStore(t, path)
 	tx, err := s2.ByToken("form-token-42")
 	if err != nil {
 		t.Fatal(err)

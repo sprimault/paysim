@@ -204,6 +204,42 @@ func (r *PaymentsRepository) Count() (int, error) {
 	return n, err
 }
 
+// DeleteByUUID supprime un paiement — les payment_events tombent par
+// ON DELETE CASCADE. Idempotent : un UUID inconnu ne remonte pas
+// d'erreur.
+func (r *PaymentsRepository) DeleteByUUID(uuid string) error {
+	if uuid == "" {
+		return nil
+	}
+	_, err := r.db.Exec(`DELETE FROM payments WHERE uuid = ?`, uuid)
+	return err
+}
+
+// DeleteByProvider supprime tous les paiements d'un provider. Retourne
+// le nombre effectivement supprimé.
+func (r *PaymentsRepository) DeleteByProvider(provider string) (int, error) {
+	if provider == "" {
+		return 0, nil
+	}
+	res, err := r.db.Exec(`DELETE FROM payments WHERE provider = ?`, provider)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
+}
+
+// DeleteAll purge la table. Utile pour un reset côté UI (« vider les
+// paiements ») ou pour un dev qui veut repartir de zéro sans redémarrer.
+func (r *PaymentsRepository) DeleteAll() (int, error) {
+	res, err := r.db.Exec(`DELETE FROM payments`)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
+}
+
 // Close ferme la DB sous-jacente.
 func (r *PaymentsRepository) Close() error {
 	return r.db.Close()

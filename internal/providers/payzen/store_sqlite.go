@@ -11,7 +11,6 @@ import (
 
 	"github.com/sprimault/paysim/internal/domain"
 	"github.com/sprimault/paysim/internal/store"
-	sqlitepkg "github.com/sprimault/paysim/internal/store/sqlite"
 )
 
 // SQLiteStore est l'impl PayZen du contrat Store — wrapper sur
@@ -21,12 +20,16 @@ import (
 // PaymentRecord ; les converters payzenToRecord / recordToPayzen
 // concentrent la mécanique.
 //
+// Le PaymentRepository est fourni par l'appelant (typiquement
+// cmd/paysim/main.go) — il peut être partagé avec d'autres providers
+// et avec l'API UI cross-provider.
+//
 // Les abonnements PayZen sont stub côté v1 : conservés dans une map
 // en mémoire au sein du SQLiteStore, non persistés. Quand un vrai
 // besoin de persistance d'abonnements se manifestera, un
 // SubscriptionRepository générique s'ajoutera à internal/store/.
 type SQLiteStore struct {
-	repo *sqlitepkg.PaymentsRepository
+	repo store.PaymentRepository
 
 	// Abonnements en mémoire — stub v1.
 	subMu sync.RWMutex
@@ -36,27 +39,21 @@ type SQLiteStore struct {
 // providerName identifie PayZen dans la colonne payments.provider.
 const providerName = "payzen"
 
-// NewSQLiteStore ouvre la base au chemin donné et prépare le
-// repository. Close doit être appelé à l'arrêt propre.
-func NewSQLiteStore(path string) (*SQLiteStore, error) {
-	db, err := sqlitepkg.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("payzen sqlite open: %w", err)
-	}
-	repo, err := sqlitepkg.NewPaymentsRepository(db)
-	if err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("payzen sqlite repo: %w", err)
-	}
+// NewSQLiteStore construit un SQLiteStore autour du PaymentRepository
+// fourni. L'appelant garde la propriété du repository (et donc la
+// responsabilité de sa fermeture) — un SQLiteStore.Close() ne ferme
+// pas le repo partagé.
+func NewSQLiteStore(repo store.PaymentRepository) *SQLiteStore {
 	return &SQLiteStore{
 		repo: repo,
 		subs: make(map[string]*Subscription),
-	}, nil
+	}
 }
 
-// Close ferme la base sous-jacente.
+// Close est un no-op — le PaymentRepository sous-jacent est possédé
+// par l'appelant (main.go) qui le ferme à shutdown.
 func (s *SQLiteStore) Close() error {
-	return s.repo.Close()
+	return nil
 }
 
 // -----------------------------------------------------------------------------
@@ -157,6 +154,18 @@ func (s *SQLiteStore) LenSubscriptions() (int, error) {
 	s.subMu.RLock()
 	defer s.subMu.RUnlock()
 	return len(s.subs), nil
+}
+
+// Delete supprime une transaction PayZen. Le repo cross-provider est
+// scoped par UUID unique, aucune ambiguïté possible.
+func (s *SQLiteStore) Delete(uuid string) error {
+	return s.repo.DeleteByUUID(uuid)
+}
+
+// DeleteAllTransactions supprime toutes les transactions PayZen —
+// délègue au repo générique avec le filtre provider.
+func (s *SQLiteStore) DeleteAllTransactions() (int, error) {
+	return s.repo.DeleteByProvider(providerName)
 }
 
 // -----------------------------------------------------------------------------

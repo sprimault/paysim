@@ -162,6 +162,118 @@ func TestGetPaymentUnknown(t *testing.T) {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// DELETE endpoints — 4.3.3
+// -----------------------------------------------------------------------------
+
+// doDelete envoie une requête DELETE sur l'URL donnée.
+func doDelete(t *testing.T, url string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
+func TestDeletePaymentRemovesFromStore(t *testing.T) {
+	t.Parallel()
+	server, store, _, _ := setup(t, "")
+	addPayment(t, store, "uuid-del", "order-x", 500)
+
+	resp := doDelete(t, server.URL+"/paysim/api/v1/payments/uuid-del")
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("status = %d, veut 204", resp.StatusCode)
+	}
+	// Verifier disparition côté store.
+	if got, _ := store.ByUUID("uuid-del"); got != nil {
+		t.Error("paiement toujours présent après DELETE")
+	}
+}
+
+func TestDeletePaymentUnknownReturns204(t *testing.T) {
+	t.Parallel()
+	// Idempotent : delete d'un UUID inconnu renvoie 204 (l'état
+	// demandé est atteint : ce paiement n'existe pas).
+	server, _, _, _ := setup(t, "")
+	resp := doDelete(t, server.URL+"/paysim/api/v1/payments/inexistant")
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("status = %d, veut 204", resp.StatusCode)
+	}
+}
+
+func TestDeletePaymentsAll(t *testing.T) {
+	t.Parallel()
+	server, store, _, _ := setup(t, "")
+	addPayment(t, store, "uuid-a", "order-a", 1000)
+	addPayment(t, store, "uuid-b", "order-b", 2000)
+
+	resp := doDelete(t, server.URL+"/paysim/api/v1/payments")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, veut 200", resp.StatusCode)
+	}
+	var body map[string]int
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	if body["deleted"] != 2 {
+		t.Errorf("deleted = %d, veut 2", body["deleted"])
+	}
+	// Store vide.
+	if n, _ := store.Len(); n != 0 {
+		t.Errorf("Len = %d apres purge, veut 0", n)
+	}
+}
+
+func TestDeletePaymentsFiltersByProviderInMemoryMode(t *testing.T) {
+	t.Parallel()
+	// En mode mémoire, seul PayZen est présent — un filtre autre
+	// que payzen doit être un no-op (rien à supprimer).
+	server, store, _, _ := setup(t, "")
+	addPayment(t, store, "uuid-a", "order-a", 1000)
+
+	resp := doDelete(t, server.URL+"/paysim/api/v1/payments?provider=stripe")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, veut 200", resp.StatusCode)
+	}
+	var body map[string]int
+	_ = json.NewDecoder(resp.Body).Decode(&body)
+	if body["deleted"] != 0 {
+		t.Errorf("stripe filter en mémoire : deleted = %d, veut 0", body["deleted"])
+	}
+	// PayZen reste.
+	if n, _ := store.Len(); n != 1 {
+		t.Errorf("Len apres purge stripe = %d, veut 1", n)
+	}
+}
+
+func TestDeletePaymentPublishesEvent(t *testing.T) {
+	t.Parallel()
+	server, store, _, b := setup(t, "")
+	addPayment(t, store, "uuid-evt", "order-x", 500)
+
+	events, unsub := b.Subscribe(4)
+	defer unsub()
+
+	resp := doDelete(t, server.URL+"/paysim/api/v1/payments/uuid-evt")
+	_ = resp.Body.Close()
+
+	select {
+	case e := <-events:
+		if e.Type != "payment_deleted" {
+			t.Errorf("event.Type = %q, veut payment_deleted", e.Type)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Error("aucun event bus reçu apres delete")
+	}
+}
+
 func TestListWebhooksEmpty(t *testing.T) {
 	t.Parallel()
 	server, _, _, _ := setup(t, "")

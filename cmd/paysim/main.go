@@ -28,6 +28,8 @@ import (
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/httplog"
 	"github.com/sprimault/paysim/internal/providers/payzen"
+	"github.com/sprimault/paysim/internal/store"
+	sqlitepkg "github.com/sprimault/paysim/internal/store/sqlite"
 	"github.com/sprimault/paysim/internal/webui"
 )
 
@@ -92,27 +94,38 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 
 	eventBus := bus.New()
 
-	// StoreBackend gouverne memory vs sqlite. En sqlite, on defer
-	// Close pour un shutdown propre du fichier (checkpoint WAL,
-	// libération du lock).
-	var store payzen.Store
+	// StoreBackend gouverne memory vs sqlite. Le PaymentRepository
+	// cross-provider est construit ici et partagé entre le store
+	// payzen (via SQLiteStore) et l'API UI (endpoints DELETE
+	// cross-provider). En mode mémoire, l'API UI n'utilise pas de
+	// repo — les endpoints de suppression cross-provider retombent
+	// sur les Delete du store payzen.
+	var (
+		payzenStore  payzen.Store
+		paymentRepo  store.PaymentRepository
+	)
 	switch cfg.StoreBackend {
 	case config.StoreBackendSQLite:
-		s, err := payzen.NewSQLiteStore(cfg.SQLitePath)
+		db, err := sqlitepkg.Open(cfg.SQLitePath)
 		if err != nil {
-			return fmt.Errorf("ouverture store SQLite %s: %w", cfg.SQLitePath, err)
+			return fmt.Errorf("ouverture SQLite %s: %w", cfg.SQLitePath, err)
 		}
-		defer func() { _ = s.Close() }()
-		store = s
+		defer func() { _ = db.Close() }()
+		repo, err := sqlitepkg.NewPaymentsRepository(db)
+		if err != nil {
+			return fmt.Errorf("initialisation repository SQLite: %w", err)
+		}
+		paymentRepo = repo
+		payzenStore = payzen.NewSQLiteStore(repo)
 		logger.Info("store_backend", "backend", "sqlite", "path", cfg.SQLitePath)
 	default:
-		store = payzen.NewMemoryStore()
+		payzenStore = payzen.NewMemoryStore()
 		logger.Info("store_backend", "backend", "memory")
 	}
 
 	queue := delivery.New(&http.Client{Timeout: httpClientTimeout}, logger, cfg.MaxPayments)
 	queue.SetPublisher(eventBus)
-	payzenHandler := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{
+	payzenHandler := payzen.NewHandler(payzenStore, queue, logger, payzen.HandlerConfig{
 		HMACKey:            cfg.PayzenHMACKey,
 		APIToken:           cfg.APIToken,
 		Chaos:              chaosInj,
@@ -120,7 +133,8 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		DefaultCallbackURL: cfg.CallbackURL.String(),
 	})
 	apiHandler := api.NewHandler(api.Deps{
-		Store:         store,
+		Store:         payzenStore,
+		PaymentRepo:   paymentRepo,
 		Queue:         queue,
 		Publisher:     eventBus,
 		Logger:        logger,

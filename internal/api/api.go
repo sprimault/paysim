@@ -23,6 +23,7 @@ import (
 	"github.com/sprimault/paysim/internal/bus"
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/providers/payzen"
+	"github.com/sprimault/paysim/internal/store"
 )
 
 // Deps regroupe les dépendances de l'API UI. Struct plutôt que
@@ -30,6 +31,7 @@ import (
 // breaking change côté cmd/paysim.
 type Deps struct {
 	Store         payzen.Store
+	PaymentRepo   store.PaymentRepository // optionnel — nil en mode mémoire ; permet les endpoints DELETE cross-provider
 	Queue         *delivery.Queue
 	Publisher     *bus.Bus
 	Logger        *slog.Logger
@@ -41,6 +43,7 @@ type Deps struct {
 // endpoints API et SSE. Instancié dans cmd/paysim/main.go.
 type Handler struct {
 	store         payzen.Store
+	paymentRepo   store.PaymentRepository
 	queue         *delivery.Queue
 	publisher     *bus.Bus
 	logger        *slog.Logger
@@ -53,6 +56,7 @@ type Handler struct {
 func NewHandler(deps Deps) http.Handler {
 	h := &Handler{
 		store:         deps.Store,
+		paymentRepo:   deps.PaymentRepo,
 		queue:         deps.Queue,
 		publisher:     deps.Publisher,
 		logger:        deps.Logger,
@@ -62,7 +66,9 @@ func NewHandler(deps Deps) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /paysim/api/v1/payments", h.listPayments)
+	mux.HandleFunc("DELETE /paysim/api/v1/payments", h.deletePayments)
 	mux.HandleFunc("GET /paysim/api/v1/payments/{uuid}", h.getPayment)
+	mux.HandleFunc("DELETE /paysim/api/v1/payments/{uuid}", h.deletePayment)
 	mux.HandleFunc("POST /paysim/api/v1/payments/{uuid}/simulate", h.simulatePayment)
 	mux.HandleFunc("GET /paysim/api/v1/webhooks", h.listWebhooks)
 	mux.HandleFunc("GET /paysim/api/v1/webhooks/{id}", h.getWebhook)
@@ -203,6 +209,80 @@ func (h *Handler) getPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toPaymentDetail(tx))
+}
+
+// deletePayment supprime un paiement précis. Idempotent : un UUID
+// inconnu retourne 204 (l'état demandé est atteint : ce paiement
+// n'existe pas). 500 uniquement sur erreur d'infra.
+//
+// Utilise en priorité le PaymentRepository cross-provider (permet de
+// supprimer un paiement Stripe depuis la même route). Fallback sur
+// le store payzen si PaymentRepo n'est pas configuré (mode mémoire).
+func (h *Handler) deletePayment(w http.ResponseWriter, r *http.Request) {
+	uuid := r.PathValue("uuid")
+	if uuid == "" {
+		http.Error(w, "uuid manquant", http.StatusBadRequest)
+		return
+	}
+	var err error
+	if h.paymentRepo != nil {
+		err = h.paymentRepo.DeleteByUUID(uuid)
+	} else {
+		err = h.store.Delete(uuid)
+	}
+	if err != nil {
+		h.logger.Error("api_store_failure", "op", "Delete", "err", err, "uuid", uuid)
+		http.Error(w, "store failure", http.StatusInternalServerError)
+		return
+	}
+	h.publisher.Publish(bus.Event{
+		Type: "payment_deleted",
+		At:   time.Now().UTC(),
+		Data: map[string]any{"uuid": uuid},
+	})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// deletePayments supprime tous les paiements. Filtrable par provider
+// via le query param ?provider=payzen — sans filtre, purge complète
+// cross-provider.
+//
+// Retourne 200 avec le compteur du nombre supprimé, pour que l'UI
+// puisse afficher un feedback (« 42 paiements supprimés »).
+func (h *Handler) deletePayments(w http.ResponseWriter, r *http.Request) {
+	provider := r.URL.Query().Get("provider")
+
+	var (
+		deleted int
+		err     error
+	)
+	switch {
+	case h.paymentRepo != nil && provider != "":
+		deleted, err = h.paymentRepo.DeleteByProvider(provider)
+	case h.paymentRepo != nil:
+		deleted, err = h.paymentRepo.DeleteAll()
+	case provider == "payzen" || provider == "":
+		// Mode mémoire — seul le store payzen existe, DeleteAll s'y
+		// applique. Un provider différent est traité comme un no-op
+		// (aucune entrée à supprimer chez nous).
+		deleted, err = h.store.DeleteAllTransactions()
+	default:
+		deleted = 0
+	}
+	if err != nil {
+		h.logger.Error("api_store_failure", "op", "DeleteAll", "err", err, "provider", provider)
+		http.Error(w, "store failure", http.StatusInternalServerError)
+		return
+	}
+	h.publisher.Publish(bus.Event{
+		Type: "payments_purged",
+		At:   time.Now().UTC(),
+		Data: map[string]any{
+			"provider": provider,
+			"deleted":  deleted,
+		},
+	})
+	writeJSON(w, http.StatusOK, map[string]int{"deleted": deleted})
 }
 
 func (h *Handler) listWebhooks(w http.ResponseWriter, _ *http.Request) {

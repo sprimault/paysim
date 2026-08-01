@@ -114,6 +114,36 @@ func (s *MemoryStore) LenSubscriptions() (int, error) {
 	return len(s.bySubscription), nil
 }
 
+// Delete retire une transaction de ses deux index (byToken + byUUID).
+// Idempotent — l'UUID inconnu n'est pas une erreur.
+func (s *MemoryStore) Delete(uuid string) error {
+	if uuid == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tx := s.byUUID[uuid]
+	if tx == nil {
+		return nil
+	}
+	delete(s.byUUID, uuid)
+	if tx.FormToken != "" {
+		delete(s.byToken, tx.FormToken)
+	}
+	return nil
+}
+
+// DeleteAllTransactions vide les deux maps de transactions. Ne touche
+// pas aux abonnements.
+func (s *MemoryStore) DeleteAllTransactions() (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := len(s.byUUID)
+	s.byUUID = make(map[string]*Transaction)
+	s.byToken = make(map[string]*Transaction)
+	return n, nil
+}
+
 // Close est un no-op pour MemoryStore — implémenté pour respecter
 // le contrat Store.
 func (s *MemoryStore) Close() error {
