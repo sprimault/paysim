@@ -41,6 +41,15 @@ type HandlerConfig struct {
 	// Publisher est le bus d'evenements pour alimenter l'UI et les
 	// abonnes SSE. Nil = pas de publication, comportement inchange.
 	Publisher *bus.Bus
+
+	// DefaultCallbackURL est l'URL utilisee par simulate() quand ni la
+	// requete ni la transaction ne fournissent d'URL cible. Alimente
+	// depuis PAYSIM_CALLBACK_URL par cmd/paysim/main.go — c'est le sens
+	// meme de cette variable, un endroit ou envoyer les webhooks par
+	// defaut quand un marchand de test ne configure rien. Un warn est
+	// logue chaque fois que ce fallback declenche pour que le dev sache
+	// ou part le webhook.
+	DefaultCallbackURL string
 }
 
 // Handler regroupe l'etat necessaire pour servir les endpoints REST V4
@@ -458,8 +467,15 @@ func (h *Handler) simulate(
 	if targetURL == "" {
 		targetURL = fallbackURL(tx)
 	}
+	if targetURL == "" && h.cfg.DefaultCallbackURL != "" {
+		targetURL = h.cfg.DefaultCallbackURL
+		h.logger.Warn("simulate_fallback_callback_url",
+			"uuid", tx.UUID,
+			"url", targetURL,
+		)
+	}
 	if targetURL == "" {
-		return "", "", errors.New("URL cible manquante : ni fournie dans la requete, ni stockee dans la transaction")
+		return "", "", errors.New("URL cible manquante : ni fournie dans la requete, ni stockee dans la transaction, ni PAYSIM_CALLBACK_URL configuree")
 	}
 	if err := applyOutcome(tx, opts.Outcome, opts.ErrorMessage); err != nil {
 		return "", "", fmt.Errorf("transition domain: %w", err)

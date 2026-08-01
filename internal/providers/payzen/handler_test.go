@@ -712,6 +712,39 @@ func TestBrowserReturnMissingURL(t *testing.T) {
 	}
 }
 
+// TestBrowserReturnFallbackDefaultCallbackURL vérifie que la
+// simulation utilise HandlerConfig.DefaultCallbackURL quand ni la
+// requête ni la transaction ne fournissent d'URL — c'est le
+// comportement que le simulateur doit avoir en mode dev pour ne pas
+// obliger le marchand à câbler returnUrl à chaque paiement.
+func TestBrowserReturnFallbackDefaultCallbackURL(t *testing.T) {
+	t.Parallel()
+	merchant, hits := newMerchantServer(t)
+	server, _, _ := newTestServerFull(t, HandlerConfig{
+		HMACKey:            "k",
+		DefaultCallbackURL: merchant.URL,
+	})
+
+	// createPayment sans ReturnURL — la transaction ne l'aura pas.
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{OrderID: "o", Amount: 100, Currency: "EUR"}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	// Simulate sans ReturnURL non plus — doit tomber sur le fallback.
+	_, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{FormToken: ca.FormToken, Outcome: OutcomePaid}, "")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, veut 200 (fallback config utilisé)", status)
+	}
+	// Le marchand doit avoir reçu la livraison.
+	select {
+	case <-hits:
+	case <-time.After(2 * time.Second):
+		t.Fatal("aucune livraison au marchand — le fallback DefaultCallbackURL n'a pas déclenché")
+	}
+}
+
 func TestBrowserReturnMissingHMAC(t *testing.T) {
 	t.Parallel()
 	server, _, _ := newTestServerFull(t, HandlerConfig{}) // pas de HMACKey

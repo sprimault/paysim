@@ -95,10 +95,11 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 	queue := delivery.New(&http.Client{Timeout: httpClientTimeout}, logger, cfg.MaxPayments)
 	queue.SetPublisher(eventBus)
 	payzenHandler := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{
-		HMACKey:   cfg.PayzenHMACKey,
-		APIToken:  cfg.APIToken,
-		Chaos:     chaosInj,
-		Publisher: eventBus,
+		HMACKey:            cfg.PayzenHMACKey,
+		APIToken:           cfg.APIToken,
+		Chaos:              chaosInj,
+		Publisher:          eventBus,
+		DefaultCallbackURL: cfg.CallbackURL.String(),
 	})
 	apiHandler := api.NewHandler(api.Deps{
 		Store:         store,
