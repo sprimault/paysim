@@ -1,0 +1,12 @@
+packages:
+  - path: "github.com/sprimault/paysim/internal/api"
+    output_path: "web/src/shared/model/api.ts"
+    type_mappings:
+      "time.Time": "string /* RFC 3339 */"
+      "map[string]string": "Record<string, string>"
+    frontmatter: |
+      // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
+      // SPDX-License-Identifier: Apache-2.0
+      //
+      // Types générés depuis internal/api via `make web-types` (tygo).
+      // Ne pas modifier à la main.

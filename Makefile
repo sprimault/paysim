@@ -1,4 +1,4 @@
-.PHONY: dev test lint vulncheck sec build fixtures
+.PHONY: dev test lint vulncheck sec build fixtures web-types web-build web-test web-lint
 
 dev:
 	@echo "dev: pas encore implémenté (phase 3)" && exit 1
@@ -28,3 +28,19 @@ build:
 
 fixtures:
 	@echo "fixtures: pas encore implémenté (phase 2)" && exit 1
+
+# web-types régénère les types TypeScript de l'API à partir des DTOs
+# Go de internal/api via tygo. À relancer après tout changement de
+# signature JSON exposée à l'UI.
+web-types:
+	@command -v tygo >/dev/null 2>&1 || { echo "tygo absent : go install github.com/gzuidhof/tygo@latest"; exit 1; }
+	tygo generate --config tools/tygo/tygo.yaml
+
+web-build:
+	cd web && npm run build
+
+web-test:
+	cd web && npm run test:run
+
+web-lint:
+	cd web && npm run lint
