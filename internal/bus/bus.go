@@ -19,9 +19,13 @@
 package bus
 
 import (
+	"encoding/json"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/sprimault/paysim/internal/store"
 )
 
 // bufferCap borne le ring buffer des events récents. Dimensionné large
@@ -64,6 +68,17 @@ type Bus struct {
 
 	bufMu  sync.Mutex
 	buffer []Event
+
+	// Persistance optionnelle. Activée via WithPersistence — sinon
+	// nil et Publish reste 100% en mémoire. Le worker draine
+	// persistQueue en tâche de fond, avec un drop non-bloquant si
+	// saturation (correspond au contrat général du bus : mieux vaut
+	// perdre un event que bloquer un producteur).
+	persistRepo   store.EventRepository
+	persistLogger *slog.Logger
+	persistQueue  chan Event
+	persistDone   chan struct{}
+	persistOnce   sync.Once
 }
 
 // New instancie un Bus prêt à l'emploi.
@@ -72,6 +87,75 @@ func New() *Bus {
 		subs:   make(map[chan Event]struct{}),
 		buffer: make([]Event, 0, bufferCap),
 	}
+}
+
+// WithPersistence active la persistance des events sur un
+// EventRepository. Un worker goroutine drains persistQueue et
+// persiste chaque event de manière asynchrone — le publisher reste
+// non-bloquant. Un logger optionnel permet de tracer les échecs
+// d'écriture (nil = pas de log).
+//
+// SnapshotSince consultera automatiquement le repository si le ring
+// buffer mémoire ne couvre plus le catch-up demandé (client SSE qui
+// rattrape après un long down).
+//
+// À appeler une seule fois après New et avant tout Publish. Un
+// deuxième appel est un no-op.
+func (b *Bus) WithPersistence(repo store.EventRepository, logger *slog.Logger) *Bus {
+	if b == nil || repo == nil {
+		return b
+	}
+	b.persistOnce.Do(func() {
+		b.persistRepo = repo
+		b.persistLogger = logger
+		b.persistQueue = make(chan Event, 1024)
+		b.persistDone = make(chan struct{})
+		go b.persistWorker()
+	})
+	return b
+}
+
+// Close ferme la persistance : plus aucun Publish n'est enfilé après
+// l'appel, le worker draine la queue et sort. Idempotent, nil-safe.
+// Ne ferme PAS le repository — l'appelant garde la propriété
+// (typiquement cmd/paysim/main.go qui fermera aussi le DB).
+func (b *Bus) Close() error {
+	if b == nil || b.persistQueue == nil {
+		return nil
+	}
+	// Signaler la fermeture au worker et attendre son drainage.
+	close(b.persistQueue)
+	<-b.persistDone
+	return nil
+}
+
+// persistWorker draine persistQueue et persiste chaque event.
+// Erreurs loguées mais non fatales — un event manquant en base
+// dégrade le catch-up post-restart, mais ne casse pas le bus vivant.
+func (b *Bus) persistWorker() {
+	defer close(b.persistDone)
+	for evt := range b.persistQueue {
+		dataJSON, err := json.Marshal(evt.Data)
+		if err != nil {
+			b.logf("bus_persist_marshal_failed", "id", evt.ID, "err", err)
+			continue
+		}
+		if err := b.persistRepo.Save(store.EventRecord{
+			ID:       evt.ID,
+			Type:     evt.Type,
+			At:       evt.At,
+			DataJSON: string(dataJSON),
+		}); err != nil {
+			b.logf("bus_persist_save_failed", "id", evt.ID, "err", err)
+		}
+	}
+}
+
+func (b *Bus) logf(msg string, args ...any) {
+	if b.persistLogger == nil {
+		return
+	}
+	b.persistLogger.Error(msg, args...)
 }
 
 // Publish diffuse l'événement à tous les abonnés en cours. L'ID est
@@ -97,6 +181,17 @@ func (b *Bus) Publish(e Event) {
 		b.buffer = b.buffer[len(b.buffer)-bufferCap:]
 	}
 	b.bufMu.Unlock()
+
+	// Persistance async si activée. Drop non-bloquant si la queue est
+	// pleine — cohérent avec le contrat général du bus (perdre un
+	// event vaut mieux que bloquer un producteur).
+	if b.persistQueue != nil {
+		select {
+		case b.persistQueue <- e:
+		default:
+			b.logf("bus_persist_queue_full", "id", e.ID)
+		}
+	}
 
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -163,18 +258,102 @@ func (b *Bus) SnapshotSince(lastID uint64) ([]Event, uint64) {
 		return nil, 0
 	}
 	b.bufMu.Lock()
-	defer b.bufMu.Unlock()
-	if len(b.buffer) == 0 {
+	bufferCopy := make([]Event, len(b.buffer))
+	copy(bufferCopy, b.buffer)
+	b.bufMu.Unlock()
+
+	if len(bufferCopy) == 0 {
+		// Ring vide — pas de high water à annoncer. Si la persistance
+		// est active, on peut quand même récupérer les events post-
+		// lastID depuis la base (utile juste après un restart avant
+		// tout Publish).
+		if b.persistRepo != nil {
+			return b.snapshotFromRepo(lastID)
+		}
 		return nil, 0
 	}
-	highWater := b.buffer[len(b.buffer)-1].ID
-	out := make([]Event, 0, len(b.buffer))
-	for _, e := range b.buffer {
+
+	oldestBuffered := bufferCopy[0].ID
+	highWater := bufferCopy[len(bufferCopy)-1].ID
+
+	// Filtrer le ring pour ne renvoyer que ce qui est > lastID.
+	fromBuffer := make([]Event, 0, len(bufferCopy))
+	for _, e := range bufferCopy {
 		if e.ID > lastID {
-			out = append(out, e)
+			fromBuffer = append(fromBuffer, e)
+		}
+	}
+
+	// Si le lastID demandé est plus ancien que le ring buffer et
+	// que la persistance est active, aller chercher le trou en base.
+	if b.persistRepo != nil && lastID+1 < oldestBuffered {
+		olderThanBuffer, err := b.loadFromRepo(lastID, oldestBuffered)
+		if err == nil && len(olderThanBuffer) > 0 {
+			// Concat : événements DB (plus anciens) + événements ring.
+			return append(olderThanBuffer, fromBuffer...), highWater
+		}
+	}
+	return fromBuffer, highWater
+}
+
+// snapshotFromRepo est le fallback pur base : appelé quand le ring
+// est vide (post-restart avant tout Publish).
+func (b *Bus) snapshotFromRepo(lastID uint64) ([]Event, uint64) {
+	recs, err := b.persistRepo.Since(lastID)
+	if err != nil || len(recs) == 0 {
+		return nil, 0
+	}
+	out := make([]Event, 0, len(recs))
+	var highWater uint64
+	for _, r := range recs {
+		out = append(out, Event{
+			ID:   r.ID,
+			Type: r.Type,
+			At:   r.At,
+			Data: parseData(r.DataJSON),
+		})
+		if r.ID > highWater {
+			highWater = r.ID
 		}
 	}
 	return out, highWater
+}
+
+// loadFromRepo récupère les events entre lastID (exclusif) et
+// oldestBuffered (exclusif) — le trou qui manque au ring.
+func (b *Bus) loadFromRepo(lastID, oldestBuffered uint64) ([]Event, error) {
+	recs, err := b.persistRepo.Since(lastID)
+	if err != nil {
+		return nil, err
+	}
+	// Ne garder que ceux < oldestBuffered (le ring couvre le reste).
+	out := make([]Event, 0, len(recs))
+	for _, r := range recs {
+		if r.ID >= oldestBuffered {
+			break
+		}
+		out = append(out, Event{
+			ID:   r.ID,
+			Type: r.Type,
+			At:   r.At,
+			Data: parseData(r.DataJSON),
+		})
+	}
+	return out, nil
+}
+
+// parseData désérialise le blob JSON en map[string]any. Perte de type
+// fort acceptée — le catch-up SSE renvoie du JSON générique côté
+// front, qui n'a pas besoin des struct Go d'origine.
+func parseData(dataJSON string) any {
+	if dataJSON == "" || dataJSON == "null" {
+		return nil
+	}
+	var v any
+	if err := json.Unmarshal([]byte(dataJSON), &v); err != nil {
+		return dataJSON
+	}
+	return v
 }
 
 // Subscribers retourne le nombre d'abonnés actifs. Utile pour

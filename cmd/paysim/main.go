@@ -124,6 +124,13 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 			return fmt.Errorf("initialisation repository SQLite webhooks: %w", err)
 		}
 		queue.SetHistory(delivery.NewSQLiteHistory(webhookRepo))
+
+		eventRepo, err := sqlitepkg.NewEventsRepository(db)
+		if err != nil {
+			return fmt.Errorf("initialisation repository SQLite events: %w", err)
+		}
+		eventBus.WithPersistence(eventRepo, logger)
+		defer func() { _ = eventBus.Close() }()
 		logger.Info("store_backend", "backend", "sqlite", "path", cfg.SQLitePath)
 	default:
 		payzenStore = payzen.NewMemoryStore()
