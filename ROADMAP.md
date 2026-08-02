@@ -151,14 +151,17 @@ Découpage restant de la phase 4 :
   formAction REGISTER_PAY, notificationUrl, card, wallet, threeDSStatus,
   chaos struct, extraction paymentMethodToken + rejeu one-click) ;
   `scenario.php` original conservé pour l'onboarding.
-- **4.4.8 — Doc de référence par provider** — un fichier bilingue par
-  provider câblé : `docs/providers/payzen.md` + `.fr.md` recense
-  chaque endpoint natif supporté (`POST /api-payment/V4/*`), les
-  champs de request/response, les valeurs autorisées par champ, les
-  différences volontaires avec le vrai PayZen, et les extensions
-  Paysim (`card`, `chaos`). Objectif : un intégrateur PayZen sait ce
-  qu'il peut envoyer à Paysim sans lire le code. Symétrique quand
-  Stripe arrive en phase 5 → `docs/providers/stripe.md`.
+- **4.4.8 fait** (2026-08-02) — `docs/providers/payzen.md` + `.fr.md`
+  bilingues, ~450 lignes chacun : vue d'ensemble, table de couverture
+  endpoints (5 simulés + liste explicite des non-simulés), détail par
+  endpoint avec chaque champ request/response + type + requis +
+  valeurs autorisées + spécificités Paysim, endpoints de contrôle
+  `/paysim/simulate/*`, structure kr-answer complète avec sous-
+  structures (KrTransaction/KrCardDetails/KrThreeDSResponse), outcomes,
+  valeurs magiques (amount + PAN + chaos struct), codes d'erreur
+  PAYSIM_*, signature kr-hash avec vecteur validé contre le SDK Java
+  Lyra. Structure symétrique pour `docs/providers/stripe.md` en
+  phase 5.
 - **4.4.7 — Extensions UI** — la mécanique 4.4.5/4.4.6 crée des entités que l'UI
   actuelle n'affiche pas. À ajouter : colonne « Provider » dans l'onglet « Tous » de
   la liste des paiements (aujourd'hui provider invisible en vue cross-provider) ;
