@@ -89,16 +89,49 @@ panne injectée. Ce GIF est l'actif principal du projet — il vaut plus que le 
 
 ## Phase 4 — Scénarios, conteneur et cluster
 
-État au 2026-08-01 : conteneur, cluster (avec overlay Kustomize SQLite optionnel validé
+État au 2026-08-02 : conteneur, cluster (avec overlay Kustomize SQLite optionnel validé
 end-to-end sur k3d), plafond de rétention en ring buffer, protection API par jeton,
-`docs/install.md` bilingue et **loader YAML des scénarios** (`internal/scenarios`, format
-impératif à discriminant `action:`, six actions, validation agrégée) — faits. Restent :
-moteur d'exécution + sous-commande `paysim run scenario.yml` avec code retour CI,
-scénarios canoniques d'exemple, `docs/scenarios.md` bilingue, et la matrice des deux URL
-dans `docs/install.md`.
+`docs/install.md` bilingue, **loader YAML des scénarios** (`internal/scenarios`, format
+impératif à discriminant `action:`, six actions, validation agrégée) et **moteur
+d'exécution** (client HTTP + runner + endpoint générique `POST /paysim/api/v1/payments`
+cross-provider) — faits. Restent : sous-commande `paysim run scenario.yml` avec code
+retour CI, support token pattern + fausse CB stockée, subscriptions natives, scénarios
+canoniques d'exemple, `docs/scenarios.md` bilingue, et la matrice des deux URL dans
+`docs/install.md`.
 
-- Définition de scénarios en YAML, commités dans le dépôt de l'utilisateur.
-- `paysim run scenario.yml` avec un code de retour exploitable en CI.
+Découpage restant de la phase 4 :
+
+- **4.4.3** — Sous-commande `paysim run scenario.yml` dans `cmd/paysim/main.go`, code
+  retour CI (0 OK, 1 assertion échouée, 2 erreur d'exécution), config `PAYSIM_URL` et
+  `PAYSIM_API_TOKEN` pour cibler un Paysim distant.
+- **4.4.5** — Token pattern PayZen + fausse CB stockée avec vérification d'expiration.
+  Enrôlement via `formAction: REGISTER_PAY`, `paymentMethodToken` retourné dans le
+  webhook et réutilisable dans un `CreatePayment` suivant sans formulaire. Store des
+  moyens de paiement avec `pan_masked`, `expiry_month`, `expiry_year`, `revoked`.
+  Vérification d'expiration au rejeu avec code `EXPIRED_CARD`. Endpoint de contrôle
+  `POST /paysim/api/v1/payment-methods/{token}/revoke`. Actions YAML : `create_payment`
+  enrichi (`register: true`, `card: {pan, expiry_month, expiry_year, brand}`) et
+  `charge_token`. Aucune validation Luhn (simulateur), pas de whitelist PAN, clock
+  injectable pour tests déterministes. **Rappel : n'utilisez jamais ce store avec de
+  vraies CB, aucune protection.**
+- **4.4.6** — Subscriptions natives PSP-driven. Endpoint générique
+  `POST /paysim/api/v1/subscriptions` (paymentMethodToken + amount + currency + rrule
+  + effectDate). Endpoint de contrôle `POST /paysim/api/v1/subscriptions/{id}/trigger-renewal`
+  qui déclenche manuellement la prochaine échéance (compromis honnête : pas de moteur
+  RRule qui tourne en fond). Actions YAML : `create_subscription`, `trigger_billing`,
+  `assert_subscription`.
+- **4.4.4** — Scénarios canoniques d'exemple (one-shot, token pattern, subscription)
+  + `docs/scenarios.md` bilingue. Livré en dernier pour couvrir les trois patterns
+  d'un seul jet.
+- **4.4.2b** (mineur, à programmer) — Rendre l'action `inject` fonctionnelle : le
+  runner accepte l'action mais retourne actuellement `errInjectUnsupported`. Enrichir
+  `SimulatePaymentRequest` avec un champ `chaos` structuré (`WebhookChaos`) et
+  logique runner qui mémorise le mode entre étapes. ~50 lignes.
+- **Matrice URL** dans `docs/install.md` (local, host+conteneur, compose, cluster).
+
+- Définition de scénarios en YAML, commités dans le dépôt de l'utilisateur — fait pour
+  le format et le loader (4.4.1) + moteur d'exécution (4.4.2).
+- `paysim run scenario.yml` avec un code de retour exploitable en CI — voir 4.4.3.
 - `deploy/Dockerfile` multi-étapes, image publiée en amd64 et arm64 — fait.
 - `deploy/compose.yml` montrant les deux URL correctement renseignées — c'est l'exemple que
   les gens copieront sans le lire, il doit être juste. Fait.

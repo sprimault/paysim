@@ -646,3 +646,177 @@ func TestSSELastEventIDReplay(t *testing.T) {
 		}
 	}
 }
+
+// setupWithPayzen construit un handler API avec un PayzenHandler câblé —
+// nécessaire pour tester les endpoints qui délèguent à payzen (create
+// générique, simulate). Extrait ici pour partager la mécanique entre tests.
+func setupWithPayzen(t *testing.T, token string) (*httptest.Server, payzen.Store) {
+	t.Helper()
+	logger := discardLogger()
+	store := payzen.NewMemoryStore()
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	b := bus.New()
+	queue.SetPublisher(b)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); _ = queue.Run(ctx) }()
+	t.Cleanup(func() { cancel(); wg.Wait() })
+
+	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{
+		HMACKey:   "test-hmac",
+		Publisher: b,
+	})
+	handler := NewHandler(Deps{
+		Store:         store,
+		Queue:         queue,
+		Publisher:     b,
+		Logger:        logger,
+		Token:         token,
+		PayzenHandler: ph,
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return server, store
+}
+
+func TestCreatePaymentGenericNominal(t *testing.T) {
+	t.Parallel()
+	server, store := setupWithPayzen(t, "")
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen",
+		Amount:   1500,
+		Currency: "EUR",
+		OrderID:  "ORDER-42",
+	})
+	resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, veut 201", resp.StatusCode)
+	}
+	var got CreatePaymentOutput
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.UUID == "" {
+		t.Errorf("UUID vide")
+	}
+	if got.Provider != "payzen" {
+		t.Errorf("Provider = %q, veut payzen", got.Provider)
+	}
+	if got.State != "initiated" {
+		t.Errorf("State = %q, veut initiated", got.State)
+	}
+	// La transaction doit être vraiment persistée côté store.
+	tx, _ := store.ByUUID(got.UUID)
+	if tx == nil {
+		t.Fatalf("transaction absente du store apres create")
+	}
+	if tx.OrderID != "ORDER-42" || tx.Amount != 1500 || tx.Currency != "EUR" {
+		t.Errorf("transaction persistée incorrecte: %+v", tx)
+	}
+}
+
+func TestCreatePaymentGenericDefautPayzen(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	// Provider vide → payzen par défaut, pour ne pas alourdir les
+	// scénarios monoprovider.
+	body := []byte(`{"amount":1000,"currency":"EUR","orderId":"O-D"}`)
+	resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, veut 201", resp.StatusCode)
+	}
+	var got CreatePaymentOutput
+	_ = json.NewDecoder(resp.Body).Decode(&got)
+	if got.Provider != "payzen" {
+		t.Errorf("Provider = %q, veut payzen (defaut)", got.Provider)
+	}
+}
+
+func TestCreatePaymentGenericProviderInconnu(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "stripe",
+		Amount:   1000,
+		Currency: "EUR",
+		OrderID:  "O",
+	})
+	resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, veut 400", resp.StatusCode)
+	}
+	msg, _ := io.ReadAll(resp.Body)
+	if !bytes.Contains(msg, []byte(`"stripe" inconnu`)) {
+		t.Errorf("message = %q, veut contenir '\"stripe\" inconnu'", msg)
+	}
+}
+
+func TestCreatePaymentGenericInputInvalide(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"amount nul", `{"amount":0,"currency":"EUR","orderId":"O"}`, "montant"},
+		{"currency vide", `{"amount":1000,"currency":"","orderId":"O"}`, "devise"},
+		{"json casse", `{not json`, "invalid"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
+				"application/json", strings.NewReader(c.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d, veut 400", resp.StatusCode)
+			}
+		})
+	}
+}
+
+func TestCreatePaymentGenericSansPayzenHandler(t *testing.T) {
+	t.Parallel()
+	// setup sans PayzenHandler — l'endpoint doit répondre 503 propre
+	// plutôt que crasher sur un pointeur nil.
+	server, _, _, _ := setup(t, "")
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Amount: 1000, Currency: "EUR", OrderID: "O",
+	})
+	resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, veut 503", resp.StatusCode)
+	}
+}

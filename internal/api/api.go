@@ -14,6 +14,7 @@ package api
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -22,6 +23,8 @@ import (
 
 	"github.com/sprimault/paysim/internal/bus"
 	"github.com/sprimault/paysim/internal/delivery"
+	"github.com/sprimault/paysim/internal/domain"
+	"github.com/sprimault/paysim/internal/format"
 	"github.com/sprimault/paysim/internal/providers/payzen"
 	"github.com/sprimault/paysim/internal/store"
 )
@@ -66,6 +69,7 @@ func NewHandler(deps Deps) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /paysim/api/v1/payments", h.listPayments)
+	mux.HandleFunc("POST /paysim/api/v1/payments", h.createPayment)
 	mux.HandleFunc("DELETE /paysim/api/v1/payments", h.deletePayments)
 	mux.HandleFunc("GET /paysim/api/v1/payments/{uuid}", h.getPayment)
 	mux.HandleFunc("DELETE /paysim/api/v1/payments/{uuid}", h.deletePayment)
@@ -150,6 +154,28 @@ type WebhookDetail struct {
 	Body    string            `json:"body"`
 }
 
+// CreatePaymentInput est le corps de POST /paysim/api/v1/payments,
+// endpoint générique de création cross-provider. Le champ Provider
+// choisit l'adaptateur qui matérialise le paiement (seul "payzen"
+// est câblé aujourd'hui ; Stripe arrivera en phase 5). Vide = payzen
+// par défaut pour ne pas alourdir les scénarios monoprovider.
+type CreatePaymentInput struct {
+	Provider string        `json:"provider,omitempty"`
+	Amount   format.Amount `json:"amount"`
+	Currency string        `json:"currency"`
+	OrderID  string        `json:"orderId"`
+}
+
+// CreatePaymentOutput retourne l'uuid attribué au paiement — seul
+// identifiant nécessaire pour cibler ensuite les endpoints
+// /payments/{uuid}/*. State est renvoyé pour éviter au client un
+// GET juste après pour lire l'état initial.
+type CreatePaymentOutput struct {
+	UUID     string `json:"uuid"`
+	Provider string `json:"provider"`
+	State    string `json:"state"`
+}
+
 // SimulatePaymentRequest est le corps de POST
 // /paysim/api/v1/payments/{uuid}/simulate. L'UI n'a pas à connaître
 // le formToken interne — Paysim le retrouve depuis l'uuid. Le champ
@@ -182,6 +208,63 @@ type ReplayWebhookResponse struct {
 // -----------------------------------------------------------------------------
 // Endpoints
 // -----------------------------------------------------------------------------
+
+// createPayment traite POST /paysim/api/v1/payments : endpoint générique
+// de création cross-provider. Délègue à l'adaptateur du provider demandé
+// après validation. Motivation : les scénarios de test et les intégrateurs
+// qui veulent orchestrer un paiement sans dépendre du format natif d'un
+// PSP. L'ajout de Stripe (phase 5) se fera par ajout d'un cas au switch.
+func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
+	var req CreatePaymentInput
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	provider := req.Provider
+	if provider == "" {
+		provider = "payzen"
+	}
+	switch provider {
+	case "payzen":
+		if h.payzenHandler == nil {
+			http.Error(w, "payzen handler non configure", http.StatusServiceUnavailable)
+			return
+		}
+		tx, err := h.payzenHandler.Create(payzen.CreateInput{
+			Amount:   req.Amount,
+			Currency: req.Currency,
+			OrderID:  req.OrderID,
+		})
+		if err != nil {
+			// Les erreurs domain (montant, devise) sont fonctionnelles, on
+			// retourne 400 ; toute autre (store, génération d'uuid) est
+			// infra et remonte en 500 avec log.
+			if isDomainErr(err) {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			h.logger.Error("api_create_payment_failed", "provider", provider, "err", err)
+			http.Error(w, "erreur de creation", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusCreated, CreatePaymentOutput{
+			UUID:     tx.UUID,
+			Provider: "payzen",
+			State:    string(tx.Payment.State()),
+		})
+	default:
+		http.Error(w, fmt.Sprintf("provider %q inconnu", provider), http.StatusBadRequest)
+	}
+}
+
+// isDomainErr identifie les erreurs métier remontées par domain.New à
+// travers l'enveloppement fmt.Errorf du provider. Utilisé pour choisir
+// entre 400 (input invalide) et 500 (infra).
+func isDomainErr(err error) bool {
+	return errors.Is(err, domain.ErrInvalidAmount) ||
+		errors.Is(err, domain.ErrInvalidCurrency) ||
+		errors.Is(err, domain.ErrInvalidPayment)
+}
 
 func (h *Handler) listPayments(w http.ResponseWriter, _ *http.Request) {
 	txs, err := h.store.AllTransactions()

@@ -18,6 +18,7 @@ import (
 	"github.com/sprimault/paysim/internal/chaos"
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/domain"
+	"github.com/sprimault/paysim/internal/format"
 )
 
 // HandlerConfig regroupe les parametres injectes au Handler. Une seule
@@ -150,10 +151,80 @@ func withBearerToken(next http.Handler, expected string, logger *slog.Logger) ht
 	})
 }
 
+// CreateInput regroupe les paramètres de création programmatique d'un
+// paiement. Utilisé à la fois par le handler HTTP natif (qui remplit tous
+// les champs depuis CreatePaymentRequest) et par l'API de contrôle
+// générique de Paysim (qui ne renseigne que les quatre premiers). Les
+// champs de contexte optionnels — FormAction, Customer, Metadata,
+// ReturnURL, NotificationURL — sont vides pour un appel générique et
+// portent les valeurs marchand pour un appel natif.
+type CreateInput struct {
+	Amount          format.Amount
+	Currency        string
+	OrderID         string
+	FormAction      string
+	Customer        Customer
+	Metadata        map[string]string
+	ReturnURL       string
+	NotificationURL string
+}
+
+// Create matérialise un paiement PayZen : génère UUID et formToken,
+// instancie le domain.Payment, persiste la Transaction et publie
+// l'event payment_created. Retourne la Transaction complète pour que
+// l'appelant puisse en extraire ce dont il a besoin (UUID pour l'API
+// générique, FormToken pour l'endpoint REST V4).
+//
+// Exportée pour que le paquet api puisse consommer cette création sans
+// passer par un self-loopback HTTP — même motivation que pour Simulate.
+func (h *Handler) Create(in CreateInput) (*Transaction, error) {
+	uuid, err := newUUID()
+	if err != nil {
+		return nil, fmt.Errorf("generation uuid: %w", err)
+	}
+	payment, err := domain.New(uuid, in.Amount, in.Currency)
+	if err != nil {
+		return nil, err
+	}
+	token, err := newFormToken()
+	if err != nil {
+		return nil, fmt.Errorf("generation formToken: %w", err)
+	}
+	now := time.Now().UTC()
+	tx := &Transaction{
+		FormToken:       token,
+		UUID:            uuid,
+		OrderID:         in.OrderID,
+		Amount:          in.Amount,
+		Currency:        in.Currency,
+		FormAction:      in.FormAction,
+		Customer:        in.Customer,
+		Metadata:        in.Metadata,
+		Payment:         payment,
+		ReturnURL:       in.ReturnURL,
+		NotificationURL: in.NotificationURL,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := h.store.Save(tx); err != nil {
+		return nil, fmt.Errorf("store Save: %w", err)
+	}
+	h.cfg.Publisher.Publish(bus.Event{
+		Type: "payment_created",
+		At:   now,
+		Data: map[string]any{
+			"uuid":     uuid,
+			"orderId":  in.OrderID,
+			"amount":   in.Amount,
+			"currency": in.Currency,
+		},
+	})
+	return tx, nil
+}
+
 // createPayment traite POST /api-payment/V4/Charge/CreatePayment.
-// Cree un domain.Payment, l'associe a un formToken opaque genere
-// cote Paysim, stocke le contexte (dont ReturnURL/NotificationURL
-// si fournies), retourne le formToken au marchand.
+// Décode le body PayZen natif, applique la latence magique éventuelle,
+// délègue la création à Create, retourne le formToken au marchand.
 func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 	var req CreatePaymentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -167,55 +238,21 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 	// l'appel. Voir chaos.MagicLatencyMs.
 	h.cfg.Chaos.Sleep(r.Context(), chaos.MagicLatencyMs(req.Amount))
 
-	uuid, err := newUUID()
-	if err != nil {
-		h.writeError(w, ErrCodeInvalidRequest, "generation uuid impossible")
-		return
-	}
-	payment, err := domain.New(uuid, req.Amount, req.Currency)
+	tx, err := h.Create(CreateInput{
+		Amount:          req.Amount,
+		Currency:        req.Currency,
+		OrderID:         req.OrderID,
+		FormAction:      req.FormAction,
+		Customer:        req.Customer,
+		Metadata:        req.Metadata,
+		ReturnURL:       req.ReturnURL,
+		NotificationURL: req.NotificationURL,
+	})
 	if err != nil {
 		h.writeDomainError(w, err)
 		return
 	}
-	token, err := newFormToken()
-	if err != nil {
-		h.writeError(w, ErrCodeInvalidRequest, "generation formToken impossible")
-		return
-	}
-
-	now := time.Now().UTC()
-	tx := &Transaction{
-		FormToken:       token,
-		UUID:            uuid,
-		OrderID:         req.OrderID,
-		Amount:          req.Amount,
-		Currency:        req.Currency,
-		FormAction:      req.FormAction,
-		Customer:        req.Customer,
-		Metadata:        req.Metadata,
-		Payment:         payment,
-		ReturnURL:       req.ReturnURL,
-		NotificationURL: req.NotificationURL,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-	}
-	if err := h.store.Save(tx); err != nil {
-		h.storeErr(w, "createPayment.Save", err)
-		return
-	}
-
-	h.cfg.Publisher.Publish(bus.Event{
-		Type: "payment_created",
-		At:   now,
-		Data: map[string]any{
-			"uuid":    uuid,
-			"orderId": req.OrderID,
-			"amount":  req.Amount,
-			"currency": req.Currency,
-		},
-	})
-
-	h.writeSuccess(w, CreatePaymentAnswer{FormToken: token})
+	h.writeSuccess(w, CreatePaymentAnswer{FormToken: tx.FormToken})
 }
 
 // updatePayment traite POST /api-payment/V4/Charge/UpdatePayment. Met
