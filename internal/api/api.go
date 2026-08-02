@@ -30,41 +30,52 @@ import (
 )
 
 // Deps regroupe les dépendances de l'API UI. Struct plutôt que
-// 6 paramètres positionnels — plus lisible et extensible sans
+// paramètres positionnels — plus lisible et extensible sans
 // breaking change côté cmd/paysim.
+//
+// SubscriptionRepo et PaymentMethodRepo sont optionnels — nil en
+// mode mémoire, les endpoints listing correspondants retournent alors
+// une liste vide (comportement cohérent avec le mode dégradé mémoire :
+// les entités survivent au run mais ne sont pas listées globalement).
 type Deps struct {
-	Store         payzen.Store
-	PaymentRepo   store.PaymentRepository // optionnel — nil en mode mémoire ; permet les endpoints DELETE cross-provider
-	Queue         *delivery.Queue
-	Publisher     *bus.Bus
-	Logger        *slog.Logger
-	Token         string // Bearer requis si non vide, sinon API ouverte
-	PayzenHandler *payzen.Handler
+	Store             payzen.Store
+	PaymentRepo       store.PaymentRepository       // optionnel — nil en mode mémoire ; permet les endpoints DELETE cross-provider
+	SubscriptionRepo  store.SubscriptionRepository  // optionnel — mode SQLite uniquement pour listing global
+	PaymentMethodRepo store.PaymentMethodRepository // optionnel — mode SQLite uniquement
+	Queue             *delivery.Queue
+	Publisher         *bus.Bus
+	Logger            *slog.Logger
+	Token             string // Bearer requis si non vide, sinon API ouverte
+	PayzenHandler     *payzen.Handler
 }
 
 // Handler regroupe les dépendances nécessaires pour servir les
 // endpoints API et SSE. Instancié dans cmd/paysim/main.go.
 type Handler struct {
-	store         payzen.Store
-	paymentRepo   store.PaymentRepository
-	queue         *delivery.Queue
-	publisher     *bus.Bus
-	logger        *slog.Logger
-	token         string
-	payzenHandler *payzen.Handler
+	store             payzen.Store
+	paymentRepo       store.PaymentRepository
+	subscriptionRepo  store.SubscriptionRepository
+	paymentMethodRepo store.PaymentMethodRepository
+	queue             *delivery.Queue
+	publisher         *bus.Bus
+	logger            *slog.Logger
+	token             string
+	payzenHandler     *payzen.Handler
 }
 
 // NewHandler retourne un http.Handler qui multiplexe les endpoints
 // UI sous /paysim/api/v1/*, protégé par Bearer si Token non vide.
 func NewHandler(deps Deps) http.Handler {
 	h := &Handler{
-		store:         deps.Store,
-		paymentRepo:   deps.PaymentRepo,
-		queue:         deps.Queue,
-		publisher:     deps.Publisher,
-		logger:        deps.Logger,
-		token:         deps.Token,
-		payzenHandler: deps.PayzenHandler,
+		store:             deps.Store,
+		paymentRepo:       deps.PaymentRepo,
+		subscriptionRepo:  deps.SubscriptionRepo,
+		paymentMethodRepo: deps.PaymentMethodRepo,
+		queue:             deps.Queue,
+		publisher:         deps.Publisher,
+		logger:            deps.Logger,
+		token:             deps.Token,
+		payzenHandler:     deps.PayzenHandler,
 	}
 
 	mux := http.NewServeMux()
@@ -77,6 +88,7 @@ func NewHandler(deps Deps) http.Handler {
 	mux.HandleFunc("GET /paysim/api/v1/webhooks", h.listWebhooks)
 	mux.HandleFunc("GET /paysim/api/v1/webhooks/{id}", h.getWebhook)
 	mux.HandleFunc("POST /paysim/api/v1/webhooks/{id}/replay", h.replayWebhook)
+	mux.HandleFunc("GET /paysim/api/v1/payment-methods", h.listPaymentMethods)
 	mux.HandleFunc("POST /paysim/api/v1/payment-methods/{token}/revoke", h.revokePaymentMethod)
 	mux.HandleFunc("POST /paysim/api/v1/subscriptions", h.createSubscription)
 	mux.HandleFunc("GET /paysim/api/v1/subscriptions", h.listSubscriptions)
@@ -433,14 +445,39 @@ func (h *Handler) listSubscriptions(w http.ResponseWriter, r *http.Request) {
 }
 
 // payzenSubscriptions liste tous les abonnements PayZen via le
-// PaymentRepository si dispo (mode SQLite) ; en mode mémoire aucun
-// listing global n'existe côté payzen.Store — on retourne vide.
+// SubscriptionRepository si dispo (mode SQLite) ; en mode mémoire
+// aucun listing global n'existe côté payzen.Store — on retourne vide.
+// Le converter recordToPayzenSub vit dans internal/providers/payzen
+// mais n'est pas exposé publiquement, on reconstruit une Subscription
+// depuis le SubscriptionRecord ici (structures alignées).
 func (h *Handler) payzenSubscriptions() ([]*payzen.Subscription, error) {
-	// TODO(4.4.7 UI) : quand le SubscriptionRepository sera exposé
-	// via api.Deps, on pourra lister proprement cross-provider. Pour
-	// l'instant, on retourne vide en mémoire — la liste UI arrive avec
-	// le vertical UI dédié.
-	return nil, nil
+	if h.subscriptionRepo == nil {
+		return nil, nil
+	}
+	recs, err := h.subscriptionRepo.ByProvider("payzen")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*payzen.Subscription, 0, len(recs))
+	for _, rec := range recs {
+		var metadata map[string]string
+		if rec.MetadataJSON != "" {
+			_ = json.Unmarshal([]byte(rec.MetadataJSON), &metadata)
+		}
+		out = append(out, &payzen.Subscription{
+			ID:                 rec.ID,
+			OrderID:            rec.OrderID,
+			Amount:             rec.Amount,
+			Currency:           rec.Currency,
+			PaymentMethodToken: rec.PaymentMethodToken,
+			EffectDate:         rec.EffectDate,
+			Rrule:              rec.Rrule,
+			Metadata:           metadata,
+			CreatedAt:          rec.CreatedAt,
+			Cancelled:          rec.Cancelled,
+		})
+	}
+	return out, nil
 }
 
 // triggerBilling traite POST /paysim/api/v1/subscriptions/{id}/trigger-billing.
@@ -506,6 +543,55 @@ func subscriptionToOutput(sub *payzen.Subscription, provider string) Subscriptio
 		Cancelled:          sub.Cancelled,
 		CreatedAt:          sub.CreatedAt,
 	}
+}
+
+// PaymentMethodOutput est la vue exposée d'un moyen de paiement
+// enregistré. PANFull volontairement absent — le simulateur stocke en
+// clair, mais l'API l'expose sous forme masquée uniquement (comme un
+// vrai PSP dans son back-office).
+type PaymentMethodOutput struct {
+	Token       string    `json:"token"`
+	Provider    string    `json:"provider"`
+	PANMasked   string    `json:"panMasked"`
+	Brand       string    `json:"brand,omitempty"`
+	ExpiryMonth int       `json:"expiryMonth"`
+	ExpiryYear  int       `json:"expiryYear"`
+	Revoked     bool      `json:"revoked"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+// listPaymentMethods traite GET /paysim/api/v1/payment-methods.
+// Retourne la liste cross-provider — utilisé par l'UI (4.4.7) pour
+// la vue « Moyens de paiement enregistrés ». En mode mémoire, aucun
+// listing global n'est possible côté payzen.Store — on renvoie vide.
+func (h *Handler) listPaymentMethods(w http.ResponseWriter, _ *http.Request) {
+	if h.paymentMethodRepo == nil {
+		writeJSON(w, http.StatusOK, []PaymentMethodOutput{})
+		return
+	}
+	// Aujourd'hui un seul provider (payzen) — quand Stripe arrive en
+	// phase 5, on itère sur la liste des providers ou on expose un
+	// filtre ?provider= comme sur payments.
+	recs, err := h.paymentMethodRepo.ByProvider("payzen")
+	if err != nil {
+		h.logger.Error("api_list_payment_methods_failed", "err", err)
+		http.Error(w, "erreur de lecture", http.StatusInternalServerError)
+		return
+	}
+	out := make([]PaymentMethodOutput, 0, len(recs))
+	for _, rec := range recs {
+		out = append(out, PaymentMethodOutput{
+			Token:       rec.Token,
+			Provider:    rec.Provider,
+			PANMasked:   rec.PANMasked,
+			Brand:       rec.Brand,
+			ExpiryMonth: rec.ExpiryMonth,
+			ExpiryYear:  rec.ExpiryYear,
+			Revoked:     rec.Revoked,
+			CreatedAt:   rec.CreatedAt,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // revokePaymentMethod traite POST /paysim/api/v1/payment-methods/{token}/revoke.

@@ -162,6 +162,14 @@ Découpage restant de la phase 4 :
   PAYSIM_*, signature kr-hash avec vecteur validé contre le SDK Java
   Lyra. Structure symétrique pour `docs/providers/stripe.md` en
   phase 5.
+- **4.4.7a fait** (2026-08-02) — Backend listing endpoints + colonne provider.
+  `api.Deps` gagne `SubscriptionRepo` + `PaymentMethodRepo` (optionnels,
+  nil en mode mémoire). Nouvel endpoint `GET /paysim/api/v1/payment-methods`
+  qui liste avec PAN masqué + revoked. `payzenSubscriptions()` désormais
+  brancé sur `SubscriptionRepository.ByProvider("payzen")` (retournait
+  `nil, nil` avant). Helper de test `setupWithSQLite` + 4 nouveaux tests.
+  Colonne « Provider » dans PaymentList React côté onglet « Tous »
+  uniquement (propriété `showProvider` optionnelle sur PaymentRow).
 - **4.4.7 — Extensions UI** — la mécanique 4.4.5/4.4.6 crée des entités que l'UI
   actuelle n'affiche pas. À ajouter : colonne « Provider » dans l'onglet « Tous » de
   la liste des paiements (aujourd'hui provider invisible en vue cross-provider) ;

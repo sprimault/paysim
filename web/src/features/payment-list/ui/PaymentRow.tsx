@@ -14,9 +14,16 @@ import type { PaymentSummary } from '@/shared/model';
 interface PaymentRowProps {
   payment: PaymentSummary;
   onDelete?: (payment: PaymentSummary) => void;
+  /**
+   * Affiche la colonne provider quand true — utile dans l'onglet
+   * « Tous » où le provider n'est pas déjà porté par le contexte de
+   * l'onglet. Les onglets filtrés le laissent implicite pour ne pas
+   * dupliquer une information redondante.
+   */
+  showProvider?: boolean;
 }
 
-export function PaymentRow({ payment: p, onDelete }: PaymentRowProps) {
+export function PaymentRow({ payment: p, onDelete, showProvider }: PaymentRowProps) {
   const meta = paymentStateMeta[p.state];
   const StateIcon = meta.icon;
 
@@ -27,6 +34,11 @@ export function PaymentRow({ payment: p, onDelete }: PaymentRowProps) {
           {meta.label}
         </Badge>
       </td>
+      {showProvider && (
+        <td className="px-4 py-2.5 text-xs text-zinc-500 dark:text-zinc-400">
+          {p.provider}
+        </td>
+      )}
       <td className="px-4 py-2.5 text-right font-mono text-sm tabular text-zinc-900 dark:text-zinc-100">
         {formatAmount(p.amount)}
         <span className="ml-1 text-xs text-zinc-500 dark:text-zinc-500">{p.currency}</span>

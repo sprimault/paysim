@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,6 +23,7 @@ import (
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/domain"
 	"github.com/sprimault/paysim/internal/providers/payzen"
+	sqlitepkg "github.com/sprimault/paysim/internal/store/sqlite"
 )
 
 func discardLogger() *slog.Logger {
@@ -647,6 +649,59 @@ func TestSSELastEventIDReplay(t *testing.T) {
 	}
 }
 
+// setupWithSQLite construit un handler API avec un PayzenHandler câblé
+// sur SQLiteStore (avec les 3 repos réels : payments, subscriptions,
+// payment methods). Utile pour tester les endpoints listing qui
+// interrogent directement les repos — le mode mémoire retourne
+// toujours vide sur ces endpoints.
+func setupWithSQLite(t *testing.T) *httptest.Server {
+	t.Helper()
+	logger := discardLogger()
+	db, err := sqlitepkg.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("sqlite Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	payRepo, err := sqlitepkg.NewPaymentsRepository(db)
+	if err != nil {
+		t.Fatalf("payments repo: %v", err)
+	}
+	subsRepo, err := sqlitepkg.NewSubscriptionsRepository(db)
+	if err != nil {
+		t.Fatalf("subs repo: %v", err)
+	}
+	methodsRepo, err := sqlitepkg.NewPaymentMethodsRepository(db)
+	if err != nil {
+		t.Fatalf("methods repo: %v", err)
+	}
+	pzStore := payzen.NewSQLiteStore(payRepo, subsRepo, methodsRepo)
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	b := bus.New()
+	queue.SetPublisher(b)
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); _ = queue.Run(ctx) }()
+	t.Cleanup(func() { cancel(); wg.Wait() })
+
+	ph := payzen.NewHandler(pzStore, queue, logger, payzen.HandlerConfig{
+		HMACKey: "test-hmac", Publisher: b,
+	})
+	handler := NewHandler(Deps{
+		Store:             pzStore,
+		PaymentRepo:       payRepo,
+		SubscriptionRepo:  subsRepo,
+		PaymentMethodRepo: methodsRepo,
+		Queue:             queue,
+		Publisher:         b,
+		Logger:            logger,
+		PayzenHandler:     ph,
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return server
+}
+
 // setupWithPayzen construit un handler API avec un PayzenHandler câblé —
 // nécessaire pour tester les endpoints qui délèguent à payzen (create
 // générique, simulate). Extrait ici pour partager la mécanique entre tests.
@@ -1159,4 +1214,132 @@ func enroll(t *testing.T, server *httptest.Server, pan string, expM, expY int) s
 		t.Fatalf("enroll: PaymentMethodToken vide")
 	}
 	return out.PaymentMethodToken
+}
+
+// --- Tests 7a : endpoints listing subscriptions + payment methods ---------
+
+func TestListPaymentMethods_emptyInMemoryMode(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+	// setupWithPayzen ne branche pas PaymentMethodRepo → endpoint retourne [].
+	resp, err := http.Get(server.URL + "/paysim/api/v1/payment-methods")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, veut 200", resp.StatusCode)
+	}
+	var out []PaymentMethodOutput
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if len(out) != 0 {
+		t.Errorf("liste = %d entries, veut 0 en mode memoire", len(out))
+	}
+}
+
+func TestListPaymentMethods_afterEnrollWithSQLite(t *testing.T) {
+	t.Parallel()
+	server := setupWithSQLite(t)
+
+	// Enroll une CB.
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider:   "payzen",
+		Amount:     1000, Currency: "EUR", OrderID: "O",
+		FormAction: "REGISTER_PAY",
+		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
+	})
+	createResp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	_ = createResp.Body.Close()
+
+	// Liste → doit contenir 1 entrée avec PAN masqué.
+	listResp, _ := http.Get(server.URL + "/paysim/api/v1/payment-methods")
+	defer func() { _ = listResp.Body.Close() }()
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, veut 200", listResp.StatusCode)
+	}
+	var out []PaymentMethodOutput
+	_ = json.NewDecoder(listResp.Body).Decode(&out)
+	if len(out) != 1 {
+		t.Fatalf("liste = %d entries, veut 1", len(out))
+	}
+	if out[0].PANMasked != "411111XXXXXX1111" {
+		t.Errorf("PANMasked = %q, veut 411111XXXXXX1111", out[0].PANMasked)
+	}
+	if out[0].Brand != "VISA" || out[0].Provider != "payzen" || out[0].Revoked {
+		t.Errorf("Brand/Provider/Revoked = %q/%q/%v", out[0].Brand, out[0].Provider, out[0].Revoked)
+	}
+}
+
+func TestListPaymentMethods_afterRevoke(t *testing.T) {
+	t.Parallel()
+	server := setupWithSQLite(t)
+
+	// Enroll puis revoke → la liste doit refléter revoked=true.
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider:   "payzen",
+		Amount:     1000, Currency: "EUR", OrderID: "O",
+		FormAction: "REGISTER_PAY",
+		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
+	})
+	createResp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	var created CreatePaymentOutput
+	_ = json.NewDecoder(createResp.Body).Decode(&created)
+	_ = createResp.Body.Close()
+
+	revReq, _ := http.NewRequest(http.MethodPost,
+		server.URL+"/paysim/api/v1/payment-methods/"+created.PaymentMethodToken+"/revoke", nil)
+	rr, _ := http.DefaultClient.Do(revReq)
+	_ = rr.Body.Close()
+
+	listResp, _ := http.Get(server.URL + "/paysim/api/v1/payment-methods")
+	defer func() { _ = listResp.Body.Close() }()
+	var out []PaymentMethodOutput
+	_ = json.NewDecoder(listResp.Body).Decode(&out)
+	if len(out) != 1 || !out[0].Revoked {
+		t.Errorf("liste = %+v, veut 1 entree avec Revoked=true", out)
+	}
+}
+
+func TestListSubscriptions_afterCreateWithSQLite(t *testing.T) {
+	t.Parallel()
+	server := setupWithSQLite(t)
+
+	// Enroll une CB puis crée un abonnement.
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider:   "payzen",
+		Amount:     100, Currency: "EUR", OrderID: "INIT",
+		FormAction: "REGISTER_PAY",
+		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
+	})
+	createResp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	var created CreatePaymentOutput
+	_ = json.NewDecoder(createResp.Body).Decode(&created)
+	_ = createResp.Body.Close()
+
+	subBody, _ := json.Marshal(CreateSubscriptionInput{
+		PaymentMethodToken: created.PaymentMethodToken,
+		Amount: 2990, Currency: "EUR", OrderID: "SUB",
+		EffectDate: "2026-09-01", Rrule: "RRULE:FREQ=MONTHLY",
+	})
+	subResp, _ := http.Post(server.URL+"/paysim/api/v1/subscriptions",
+		"application/json", bytes.NewReader(subBody))
+	_ = subResp.Body.Close()
+
+	// Liste des subscriptions → doit contenir 1 entrée.
+	listResp, _ := http.Get(server.URL + "/paysim/api/v1/subscriptions")
+	defer func() { _ = listResp.Body.Close() }()
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, veut 200", listResp.StatusCode)
+	}
+	var out []SubscriptionOutput
+	_ = json.NewDecoder(listResp.Body).Decode(&out)
+	if len(out) != 1 {
+		t.Fatalf("liste = %d subs, veut 1", len(out))
+	}
+	if out[0].Amount != 2990 || out[0].PaymentMethodToken != created.PaymentMethodToken {
+		t.Errorf("sub = %+v, veut amount 2990 + bon token", out[0])
+	}
 }

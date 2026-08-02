@@ -135,6 +135,7 @@ export function PaymentList() {
             <thead>
               <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
                 <th className="px-4 py-2">État</th>
+                {providerFilter === '' && <th className="px-4 py-2">Provider</th>}
                 <th className="px-4 py-2 text-right tabular">Montant</th>
                 <th className="px-4 py-2">Commande</th>
                 <th className="px-4 py-2">UUID</th>
@@ -145,7 +146,12 @@ export function PaymentList() {
             </thead>
             <tbody>
               {filtered.map((p) => (
-                <PaymentRow key={p.uuid} payment={p} onDelete={setToDelete} />
+                <PaymentRow
+                  key={p.uuid}
+                  payment={p}
+                  onDelete={setToDelete}
+                  showProvider={providerFilter === ''}
+                />
               ))}
             </tbody>
           </table>

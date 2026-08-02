@@ -109,8 +109,10 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 	// repo — les endpoints de suppression cross-provider retombent
 	// sur les Delete du store payzen.
 	var (
-		payzenStore  payzen.Store
-		paymentRepo  store.PaymentRepository
+		payzenStore       payzen.Store
+		paymentRepo       store.PaymentRepository
+		subscriptionRepo  store.SubscriptionRepository
+		paymentMethodRepo store.PaymentMethodRepository
 	)
 	queue := delivery.New(&http.Client{Timeout: httpClientTimeout}, logger, cfg.MaxPayments)
 	switch cfg.StoreBackend {
@@ -133,6 +135,8 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("initialisation repository SQLite payment methods: %w", err)
 		}
+		subscriptionRepo = subsRepo
+		paymentMethodRepo = methodsRepo
 		payzenStore = payzen.NewSQLiteStore(repo, subsRepo, methodsRepo)
 
 		webhookRepo, err := sqlitepkg.NewWebhooksRepository(db)
@@ -161,13 +165,15 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		DefaultCallbackURL: cfg.CallbackURL.String(),
 	})
 	apiHandler := api.NewHandler(api.Deps{
-		Store:         payzenStore,
-		PaymentRepo:   paymentRepo,
-		Queue:         queue,
-		Publisher:     eventBus,
-		Logger:        logger,
-		Token:         cfg.APIToken,
-		PayzenHandler: payzenHandler,
+		Store:             payzenStore,
+		PaymentRepo:       paymentRepo,
+		SubscriptionRepo:  subscriptionRepo,
+		PaymentMethodRepo: paymentMethodRepo,
+		Queue:             queue,
+		Publisher:         eventBus,
+		Logger:            logger,
+		Token:             cfg.APIToken,
+		PayzenHandler:     payzenHandler,
 	})
 
 	var ready atomic.Bool
