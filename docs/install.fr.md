@@ -253,6 +253,40 @@ de toute façon pas cohérent entre plusieurs répliques).
   `imagePullSecret` dans le namespace, ou il ne matche pas la
   référence d'image.
 
+## Peupler un jeu de démo
+
+Une fois Paysim démarré, remplir la base avec un jeu varié permet de
+voir les états de l'UI (captured / declined / actif / révoqué /
+expiré) sans écrire de curl à la main. Utile pour une première prise
+en main :
+
+Le défaut `PAYSIM_URL` est `http://localhost:30880` (NodePort
+Kubernetes). Pour un Docker Compose exposé sur le port 8080, le
+surcharger explicitement.
+
+```bash
+# Bash / Linux / macOS / Windows git-bash
+bash examples/seed-paysim.sh
+# Docker Compose : PAYSIM_URL=http://localhost:8080 bash examples/seed-paysim.sh
+```
+
+```powershell
+# PowerShell natif sous Windows
+./examples/seed-paysim.ps1
+# Docker Compose : $env:PAYSIM_URL = 'http://localhost:8080'; ./examples/seed-paysim.ps1
+```
+
+Les deux scripts produisent les mêmes 11 cas : capture nominale,
+refus magic amount, autorisation seule, enrolement Visa + abonnement
+mensuel avec 2 renewals réussis, magic PAN + renewal en échec,
+enrolements Mastercard / Amex / carte expirée, et une révocation
+manuelle.
+
+Options : `--purge` (bash) / `-Purge` (PowerShell) vide les paiements
+existants avant de peupler. Définir `NOTIF_URL` pour livrer les
+webhooks ailleurs (défaut : `http://localhost:1/discard` — port
+fermé, échec immédiat, garde la vue webhooks lisible).
+
 ## Intégration marchand
 
 Le dossier [`examples/php`](../examples/php/README.fr.md) contient un

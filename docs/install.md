@@ -243,6 +243,38 @@ be consistent across replicas anyway).
   `imagePullSecret` in the namespace, or it doesn't match the image
   reference.
 
+## Seeding demo data
+
+Once Paysim is up, populate it with a varied dataset to see the UI
+states (captured / declined / active / revoked / expired) without
+crafting curl calls by hand. Useful for a first walkthrough:
+
+Default `PAYSIM_URL` is `http://localhost:30880` (Kubernetes
+NodePort). For a Docker Compose deployment exposed on port 8080,
+override it accordingly.
+
+```bash
+# Bash / Linux / macOS / Windows git-bash
+bash examples/seed-paysim.sh
+# Docker Compose: PAYSIM_URL=http://localhost:8080 bash examples/seed-paysim.sh
+```
+
+```powershell
+# Native Windows PowerShell
+./examples/seed-paysim.ps1
+# Docker Compose: $env:PAYSIM_URL = 'http://localhost:8080'; ./examples/seed-paysim.ps1
+```
+
+Both scripts create the same 11 cases: nominal capture, magic-amount
+decline, authorization-only, Visa enrollment + monthly subscription
+with 2 successful renewals, magic-PAN enrollment + failing renewal,
+Mastercard / Amex / expired-card enrollments, and a manual revocation.
+
+Options: `--purge` (bash) / `-Purge` (PowerShell) clears existing
+payments first. Set `NOTIF_URL` if you want webhooks delivered
+somewhere reachable (default: `http://localhost:1/discard` — a closed
+port that fails immediately, keeping the queue view uncluttered).
+
 ## Merchant integration
 
 The [`examples/php`](../examples/php/README.md) folder contains a full
