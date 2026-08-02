@@ -220,6 +220,51 @@ steps: - not a list
 `,
 			wantSub: "decodage yaml",
 		},
+		{
+			name: "card avec expiry_month invalide",
+			yaml: `
+name: x
+steps:
+  - action: create_payment
+    provider: payzen
+    amount: 1000
+    currency: EUR
+    order_id: O
+    card:
+      pan: "4111111111111111"
+      expiry_month: 13
+      expiry_year: 2028
+`,
+			wantSub: "expiry_month = 13",
+		},
+		{
+			name: "card avec pan vide",
+			yaml: `
+name: x
+steps:
+  - action: create_payment
+    provider: payzen
+    amount: 1000
+    currency: EUR
+    order_id: O
+    card:
+      pan: ""
+      expiry_month: 12
+      expiry_year: 2028
+`,
+			wantSub: "pan vide",
+		},
+		{
+			name: "charge_token sans amount",
+			yaml: `
+name: x
+steps:
+  - action: charge_token
+    currency: EUR
+    order_id: O
+`,
+			wantSub: "amount doit etre strictement positif",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -252,6 +297,34 @@ steps:
 		if !strings.Contains(msg, sub) {
 			t.Errorf("message d'erreur ne contient pas %q\nobtenu: %s", sub, msg)
 		}
+	}
+}
+
+func TestLoadFile_recurringScenario(t *testing.T) {
+	t.Parallel()
+	s, err := LoadFile(filepath.Join("testdata", "recurring.yml"))
+	if err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	if len(s.Steps) != 5 {
+		t.Fatalf("nb etapes = %d, veut 5", len(s.Steps))
+	}
+	create := s.Steps[0].CreatePayment
+	if create == nil || create.Card == nil {
+		t.Fatalf("create_payment.card absent")
+	}
+	if create.Card.PAN != "4111111111111111" {
+		t.Errorf("PAN = %q", create.Card.PAN)
+	}
+	if create.FormAction != "REGISTER_PAY" {
+		t.Errorf("FormAction = %q", create.FormAction)
+	}
+	charge := s.Steps[3].ChargeToken
+	if charge == nil {
+		t.Fatalf("charge_token absent en etape 4")
+	}
+	if charge.Amount != 2990 || charge.OrderID != "SUB-42-M2" {
+		t.Errorf("charge_token = %+v", charge)
 	}
 }
 

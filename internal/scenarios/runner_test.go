@@ -17,12 +17,14 @@ import (
 )
 
 // fakeServer simule les endpoints de contrôle Paysim consommés par le
-// runner. Suffisamment complet pour exécuter un scénario nominal et les
-// cas d'erreur — pas plus. Un vrai test d'intégration bout-en-bout
-// contre payzen.Handler + api.Handler viendra avec la CLI en 4.4.3.
+// runner. Suffisamment complet pour exécuter les scénarios nominaux
+// (one-shot, enrôlement + rejeu one-click, révocation). La logique
+// métier reproduite ici est intentionnellement plus étroite que celle
+// du vrai serveur — on teste le runner, pas le PSP.
 type fakeServer struct {
 	mu       sync.Mutex
-	payments map[string]string // uuid -> state courant
+	payments map[string]string      // uuid -> state courant
+	methods  map[string]*fakeMethod // token -> moyen de paiement
 	webhooks []WebhookEntry
 	// hooks permettent aux tests de forcer une réponse anormale sur un
 	// endpoint donné (nil = comportement nominal).
@@ -30,9 +32,30 @@ type fakeServer struct {
 	failGet    func(w http.ResponseWriter) bool
 }
 
+// fakeMethod porte les infos minimales sur une carte enregistrée qui
+// permettent au fake de reproduire les décisions du vrai serveur.
+type fakeMethod struct {
+	PAN         string
+	ExpiryMonth int
+	ExpiryYear  int
+	Revoked     bool
+}
+
+// fakeDeclinedPANs miroir léger de chaos.declinedTestPANs — dupliqué
+// pour éviter d'importer internal/chaos dans le test.
+var fakeDeclinedPANs = map[string]bool{
+	"4000000000000002": true,
+	"5105105105105100": true,
+	"2223000000000007": true,
+	"378282000000008":  true,
+}
+
 func newFakeServer(t *testing.T) (*fakeServer, *httptest.Server) {
 	t.Helper()
-	fs := &fakeServer{payments: make(map[string]string)}
+	fs := &fakeServer{
+		payments: make(map[string]string),
+		methods:  make(map[string]*fakeMethod),
+	}
 	srv := httptest.NewServer(fs.router())
 	t.Cleanup(srv.Close)
 	return fs, srv
@@ -44,20 +67,100 @@ func (fs *fakeServer) router() http.Handler {
 	mux.HandleFunc("POST /paysim/api/v1/payments/{uuid}/simulate", fs.simulate)
 	mux.HandleFunc("GET /paysim/api/v1/payments/{uuid}", fs.get)
 	mux.HandleFunc("GET /paysim/api/v1/webhooks", fs.list)
+	mux.HandleFunc("POST /paysim/api/v1/payment-methods/{token}/revoke", fs.revoke)
 	return mux
 }
 
+// create couvre les trois flows du vrai handler.Create : nominal (ni
+// Card ni PaymentMethodToken), enrôlement (Card → génère token),
+// rejeu one-click (PaymentMethodToken → applique outcome selon état
+// du moyen).
 func (fs *fakeServer) create(w http.ResponseWriter, r *http.Request) {
 	if fs.failCreate != nil && fs.failCreate(w) {
 		return
 	}
+	var body createPaymentReq
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
+
+	// Rejeu one-click par token.
+	if body.PaymentMethodToken != "" {
+		pm, ok := fs.methods[body.PaymentMethodToken]
+		if !ok {
+			http.Error(w, "moyen de paiement inconnu", http.StatusBadRequest)
+			return
+		}
+		uuid := "uuid-" + timestamp()
+		state := "captured"
+		if pm.Revoked || fakeIsExpired(pm) || fakeDeclinedPANs[pm.PAN] {
+			state = "declined"
+		}
+		fs.payments[uuid] = state
+		fs.webhooks = append(fs.webhooks, WebhookEntry{
+			ID: "wh-" + timestamp(), Status: outcomeFor(state), CreatedAt: time.Now().UTC(),
+		})
+		writeJSONResp(w, http.StatusCreated, CreatedPayment{
+			UUID: uuid, Provider: "payzen", State: state,
+			PaymentMethodToken: body.PaymentMethodToken,
+		})
+		return
+	}
+
+	// Nominal ou enrôlement — état initié dans tous les cas.
 	uuid := "uuid-" + timestamp()
 	fs.payments[uuid] = "initiated"
-	writeJSONResp(w, http.StatusCreated, CreatedPayment{
-		UUID: uuid, Provider: "payzen", State: "initiated",
-	})
+	resp := CreatedPayment{UUID: uuid, Provider: "payzen", State: "initiated"}
+
+	if body.Card != nil {
+		token := "pmt-" + timestamp()
+		fs.methods[token] = &fakeMethod{
+			PAN:         body.Card.PAN,
+			ExpiryMonth: body.Card.ExpiryMonth,
+			ExpiryYear:  body.Card.ExpiryYear,
+		}
+		resp.PaymentMethodToken = token
+	}
+	writeJSONResp(w, http.StatusCreated, resp)
+}
+
+// revoke marque le moyen comme révoqué. Idempotent sur token inconnu.
+func (fs *fakeServer) revoke(w http.ResponseWriter, r *http.Request) {
+	token := r.PathValue("token")
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	if pm := fs.methods[token]; pm != nil {
+		pm.Revoked = true
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// fakeIsExpired reproduit PaymentMethod.IsExpired : refuse si le
+// mois/année d'expiration sont strictement antérieurs à maintenant.
+func fakeIsExpired(pm *fakeMethod) bool {
+	now := time.Now().UTC()
+	year, month, _ := now.Date()
+	if pm.ExpiryYear < year {
+		return true
+	}
+	if pm.ExpiryYear == year && pm.ExpiryMonth < int(month) {
+		return true
+	}
+	return false
+}
+
+// outcomeFor reflète le mapping state → status webhook côté vrai
+// serveur (applyOutcome retour → KrTransaction.Status).
+func outcomeFor(state string) string {
+	switch state {
+	case "captured":
+		return "PAID"
+	case "declined":
+		return "UNPAID"
+	default:
+		return state
+	}
 }
 
 // simulate mappe l'outcome PayZen vers un état domain, met à jour le
@@ -328,6 +431,160 @@ func TestRunner_ctxAnnule(t *testing.T) {
 	rep := r.Run(ctx, s)
 	if err := rep.Err(); !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("erreur = %v, veut context.DeadlineExceeded", err)
+	}
+}
+
+// --- Tests 4.4.5c : token pattern côté scénarios --------------------------
+
+func TestRunner_enrolementCaptureToken(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	// create_payment avec card : Paysim renvoie un paymentMethodToken.
+	// Le runner doit le mémoriser dans state.currentToken pour que
+	// charge_token suivant puisse l'utiliser sans le nommer.
+	s := &Scenario{
+		Name: "enrol",
+		Steps: []Step{
+			{Action: ActionCreatePayment, CreatePayment: &CreatePayment{
+				Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "SUB-1",
+				Card: &Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
+			}},
+			{Action: ActionChargeToken, ChargeToken: &ChargeToken{
+				Amount: 1000, Currency: "EUR", OrderID: "SUB-1-M2",
+			}},
+			{Action: ActionAssertState, AssertState: &AssertState{State: "captured"}},
+		},
+	}
+	rep := r.Run(context.Background(), s)
+	if err := rep.Err(); err != nil {
+		t.Fatalf("scenario a echoue: %v", err)
+	}
+}
+
+func TestRunner_chargeTokenSansTokenNiEnrolement(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	s := &Scenario{
+		Name: "no-token",
+		Steps: []Step{
+			{Action: ActionChargeToken, ChargeToken: &ChargeToken{
+				Amount: 1000, Currency: "EUR", OrderID: "X",
+			}},
+		},
+	}
+	rep := r.Run(context.Background(), s)
+	err := rep.Err()
+	if err == nil || !strings.Contains(err.Error(), "sans token") {
+		t.Errorf("erreur = %v, veut contenir 'sans token'", err)
+	}
+}
+
+func TestRunner_chargeTokenRefusMagicPAN(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	s := &Scenario{
+		Name: "magic-refus",
+		Steps: []Step{
+			{Action: ActionCreatePayment, CreatePayment: &CreatePayment{
+				Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "SUB",
+				Card: &Card{PAN: "4000000000000002", ExpiryMonth: 12, ExpiryYear: 2028},
+			}},
+			{Action: ActionChargeToken, ChargeToken: &ChargeToken{
+				Amount: 1000, Currency: "EUR", OrderID: "SUB-M2",
+			}},
+			{Action: ActionAssertState, AssertState: &AssertState{State: "declined"}},
+		},
+	}
+	rep := r.Run(context.Background(), s)
+	if err := rep.Err(); err != nil {
+		t.Errorf("scenario a echoue: %v", err)
+	}
+}
+
+func TestRunner_chargeTokenRefusExpiration(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	// Carte expirée dans le passé : le rejeu doit remonter declined.
+	s := &Scenario{
+		Name: "exp-refus",
+		Steps: []Step{
+			{Action: ActionCreatePayment, CreatePayment: &CreatePayment{
+				Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "SUB",
+				Card: &Card{PAN: "4111111111111111", ExpiryMonth: 1, ExpiryYear: 2020},
+			}},
+			{Action: ActionChargeToken, ChargeToken: &ChargeToken{
+				Amount: 1000, Currency: "EUR", OrderID: "SUB-M2",
+			}},
+			{Action: ActionAssertState, AssertState: &AssertState{State: "declined"}},
+		},
+	}
+	rep := r.Run(context.Background(), s)
+	if err := rep.Err(); err != nil {
+		t.Errorf("scenario a echoue: %v", err)
+	}
+}
+
+func TestRunner_chargeTokenTokenExplicite(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	c := NewClient(srv.URL, "")
+	r := NewRunner(c)
+
+	// Enrôlement direct via client pour obtenir un token à réutiliser.
+	created, err := c.CreatePayment(context.Background(), &CreatePayment{
+		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "PRE",
+		Card: &Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
+	})
+	if err != nil || created.PaymentMethodToken == "" {
+		t.Fatalf("prep create failed: %v / %+v", err, created)
+	}
+
+	// Un scénario qui utilise ce token explicitement, sans passer par
+	// un create_payment (pas de currentToken automatique).
+	s := &Scenario{
+		Name: "token-explicite",
+		Steps: []Step{
+			{Action: ActionChargeToken, ChargeToken: &ChargeToken{
+				Token:  created.PaymentMethodToken,
+				Amount: 2500, Currency: "EUR", OrderID: "EXPLICIT",
+			}},
+			{Action: ActionAssertState, AssertState: &AssertState{State: "captured"}},
+		},
+	}
+	rep := r.Run(context.Background(), s)
+	if err := rep.Err(); err != nil {
+		t.Errorf("scenario a echoue: %v", err)
+	}
+}
+
+func TestClient_RevokePaymentMethod(t *testing.T) {
+	t.Parallel()
+	fs, srv := newFakeServer(t)
+	c := NewClient(srv.URL, "")
+
+	// Setup : un moyen de paiement en base côté fake.
+	fs.methods["pmt-x"] = &fakeMethod{
+		PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028,
+	}
+
+	if err := c.RevokePaymentMethod(context.Background(), "pmt-x"); err != nil {
+		t.Fatalf("RevokePaymentMethod: %v", err)
+	}
+	if !fs.methods["pmt-x"].Revoked {
+		t.Errorf("Revoked = false apres appel, veut true")
+	}
+
+	// Idempotent : token inconnu → 204, pas d'erreur.
+	if err := c.RevokePaymentMethod(context.Background(), "unknown"); err != nil {
+		t.Errorf("RevokePaymentMethod(inconnu) = %v, veut nil (idempotent)", err)
 	}
 }
 

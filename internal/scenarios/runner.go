@@ -123,10 +123,13 @@ func (r *Runner) Run(ctx context.Context, s *Scenario) *Report {
 // state porte le contexte d'exécution partagé entre étapes : cursor
 // temporel pour les assertions webhook, uuid du paiement courant pour
 // les assertions qui n'ont pas de champ id explicite (voir D4 de la
-// note de conception 4.4.2).
+// note de conception 4.4.2), et token du dernier moyen de paiement
+// enregistré pour les rejeux one-click (charge_token sans token
+// explicite, cf. 4.4.5c).
 type state struct {
 	startedAt    time.Time
 	currentUUID  string // dernier paiement créé, référence implicite
+	currentToken string // dernier paymentMethodToken vu, pour charge_token
 }
 
 // exec dispatche une étape sur son handler concret. Le contrat sortant
@@ -145,6 +148,8 @@ func (r *Runner) exec(ctx context.Context, st *state, step Step) error {
 		return r.doAssertWebhook(ctx, st, step.AssertWebhook)
 	case ActionAssertState:
 		return r.doAssertState(ctx, st, step.AssertState)
+	case ActionChargeToken:
+		return r.doChargeToken(ctx, st, step.ChargeToken)
 	default:
 		return fmt.Errorf("action inconnue: %q", step.Action)
 	}
@@ -152,8 +157,39 @@ func (r *Runner) exec(ctx context.Context, st *state, step Step) error {
 
 // doCreate crée un paiement et mémorise son uuid pour les assertions
 // suivantes. Un create ultérieur remplace la référence courante.
+// Si le paiement retourne un paymentMethodToken (enrôlement via Card),
+// il est aussi mémorisé pour les charge_token à venir.
 func (r *Runner) doCreate(ctx context.Context, st *state, in *CreatePayment) error {
 	got, err := r.client.CreatePayment(ctx, in)
+	if err != nil {
+		return err
+	}
+	st.currentUUID = got.UUID
+	if got.PaymentMethodToken != "" {
+		st.currentToken = got.PaymentMethodToken
+	}
+	return nil
+}
+
+// doChargeToken déclenche un rejeu one-click. Token vide → utilise le
+// dernier token mémorisé (implicite comme pour l'uuid dans assert_state).
+// Provider vide → payzen par défaut, cohérent avec le create_payment.
+// L'uuid retourné devient le nouveau paiement courant pour les
+// assertions suivantes (assert_state cible bien le rejeu).
+func (r *Runner) doChargeToken(ctx context.Context, st *state, in *ChargeToken) error {
+	token := in.Token
+	if token == "" {
+		token = st.currentToken
+	}
+	if token == "" {
+		return errors.New("charge_token sans token : place un create_payment avec card avant, ou fournis token explicitement")
+	}
+	provider := in.Provider
+	if provider == "" {
+		provider = "payzen"
+	}
+	got, err := r.client.ChargeToken(ctx, provider, token,
+		in.Amount, in.Currency, in.OrderID, in.NotificationURL)
 	if err != nil {
 		return err
 	}

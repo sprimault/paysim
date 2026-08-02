@@ -145,6 +145,16 @@ Découpage restant de la phase 4 :
   des subscriptions dans SQLiteStore. Types `PaymentMethod`, `Card`, `Clock`,
   `NewPaymentMethod`, `maskPAN`, `BrandFromBIN`, `IsLuhnValid` dans
   `internal/providers/payzen/method.go`.
+- **4.4.5c-scenarios fait** (2026-08-02) — Enrichissement du DSL YAML :
+  `create_payment` gagne `card`/`form_action`/`notification_url` (Card structuré
+  avec `pan`/`expiry_month`/`expiry_year`/`brand`), nouvelle action
+  `charge_token` pour le rejeu one-click. Le runner mémorise le
+  `paymentMethodToken` retourné dans `state.currentToken` (miroir de
+  `currentUUID`), `charge_token` sans token explicite utilise ce dernier.
+  Client HTTP enrichi (`ChargeToken`, `RevokePaymentMethod`), validation
+  loader étendue, fake serveur de test reproduit les 3 flows serveur
+  (nominal, enrôlement, rejeu avec refus déclenché par magic PAN /
+  expiration / révocation). `testdata/recurring.yml` comme exemple.
 - **4.4.5b-serveur fait** (2026-08-02) — Enrichissement `payzen.Handler.Create()`
   pour supporter les trois flows : nominal (existant), enrôlement (Card +
   `formAction: REGISTER_PAY|ASK_REGISTER_PAY` → génération token + attachement

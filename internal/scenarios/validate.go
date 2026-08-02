@@ -66,6 +66,11 @@ func (s Step) Validate() error {
 			return errors.New("payload assert_state manquant")
 		}
 		return s.AssertState.Validate()
+	case ActionChargeToken:
+		if s.ChargeToken == nil {
+			return errors.New("payload charge_token manquant")
+		}
+		return s.ChargeToken.Validate()
 	default:
 		return fmt.Errorf("action inconnue: %q", s.Action)
 	}
@@ -73,12 +78,53 @@ func (s Step) Validate() error {
 
 // Validate contrôle la forme d'un CreatePayment. Aucune connaissance du
 // domaine ni des providers ici : les valeurs concrètes (provider existant,
-// devise ISO 4217) sont validées à l'exécution.
+// devise ISO 4217) sont validées à l'exécution. Si une Card est fournie,
+// ses champs sont validés en cascade.
 func (c *CreatePayment) Validate() error {
 	var errs []error
 	if c.Provider == "" {
 		errs = append(errs, errors.New("provider vide"))
 	}
+	if c.Amount <= 0 {
+		errs = append(errs, errors.New("amount doit etre strictement positif"))
+	}
+	if c.Currency == "" {
+		errs = append(errs, errors.New("currency vide"))
+	}
+	if c.OrderID == "" {
+		errs = append(errs, errors.New("order_id vide"))
+	}
+	if c.Card != nil {
+		if err := c.Card.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("card: %w", err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// Validate contrôle la forme d'une Card. Aucune validation Luhn (choix
+// projet 4.4.5 : Paysim accepte tout PAN). ExpiryMonth 1-12 ; ExpiryYear
+// pas contraint côté loader — c'est au runner/serveur de refuser au
+// moment de la vérification d'expiration (via `IsExpired`).
+func (c *Card) Validate() error {
+	var errs []error
+	if c.PAN == "" {
+		errs = append(errs, errors.New("pan vide"))
+	}
+	if c.ExpiryMonth < 1 || c.ExpiryMonth > 12 {
+		errs = append(errs, fmt.Errorf("expiry_month = %d, veut 1-12", c.ExpiryMonth))
+	}
+	if c.ExpiryYear <= 0 {
+		errs = append(errs, errors.New("expiry_year manquant ou nul"))
+	}
+	return errors.Join(errs...)
+}
+
+// Validate contrôle la forme d'un ChargeToken. Token vide est
+// légitime — le runner utilisera le dernier token vu, comme il fait
+// pour l'uuid dans assert_state.
+func (c *ChargeToken) Validate() error {
+	var errs []error
 	if c.Amount <= 0 {
 		errs = append(errs, errors.New("amount doit etre strictement positif"))
 	}

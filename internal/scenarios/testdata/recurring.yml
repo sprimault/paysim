@@ -1,0 +1,25 @@
+name: recurring-payment
+description: Un abonnement mensuel — enrôlement à l'inscription puis rejeu à l'échéance.
+steps:
+  - action: create_payment
+    provider: payzen
+    amount: 2990
+    currency: EUR
+    order_id: SUB-42
+    form_action: REGISTER_PAY
+    notification_url: http://merchant.local/ipn
+    card:
+      pan: "4111111111111111"
+      expiry_month: 12
+      expiry_year: 2028
+  - action: simulate
+    status: captured
+  - action: assert_state
+    state: captured
+  - action: charge_token
+    amount: 2990
+    currency: EUR
+    order_id: SUB-42-M2
+    notification_url: http://merchant.local/ipn
+  - action: assert_state
+    state: captured

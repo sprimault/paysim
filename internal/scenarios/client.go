@@ -49,32 +49,78 @@ func (c *Client) SetHTTPClient(hc *http.Client) { c.httpClient = hc }
 // contraire à ce qu'on veut : le runner consomme l'API par HTTP, pas
 // par appel Go direct).
 type createPaymentReq struct {
-	Provider string `json:"provider,omitempty"`
-	Amount   int64  `json:"amount"`
-	Currency string `json:"currency"`
-	OrderID  string `json:"orderId"`
+	Provider           string `json:"provider,omitempty"`
+	Amount             int64  `json:"amount"`
+	Currency           string `json:"currency"`
+	OrderID            string `json:"orderId"`
+	FormAction         string `json:"formAction,omitempty"`
+	NotificationURL    string `json:"notificationUrl,omitempty"`
+	Card               *Card  `json:"card,omitempty"`
+	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
 }
 
 // CreatedPayment est la vue minimale d'un paiement fraîchement créé.
+// PaymentMethodToken est renseigné dans deux cas :
+//   - après un enrôlement (Card fournie),
+//   - après un rejeu one-click (echo du token utilisé).
 type CreatedPayment struct {
-	UUID     string `json:"uuid"`
-	Provider string `json:"provider"`
-	State    string `json:"state"`
+	UUID               string `json:"uuid"`
+	Provider           string `json:"provider"`
+	State              string `json:"state"`
+	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
 }
 
 // CreatePayment appelle POST /paysim/api/v1/payments (endpoint générique).
+// Propage tous les champs 4.4.5 (Card, FormAction, NotificationURL).
 func (c *Client) CreatePayment(ctx context.Context, in *CreatePayment) (*CreatedPayment, error) {
 	body := createPaymentReq{
-		Provider: in.Provider,
-		Amount:   in.Amount,
-		Currency: in.Currency,
-		OrderID:  in.OrderID,
+		Provider:        in.Provider,
+		Amount:          in.Amount,
+		Currency:        in.Currency,
+		OrderID:         in.OrderID,
+		FormAction:      in.FormAction,
+		NotificationURL: in.NotificationURL,
+		Card:            in.Card,
 	}
 	var out CreatedPayment
 	if err := c.do(ctx, http.MethodPost, "/paysim/api/v1/payments", body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// ChargeToken déclenche un rejeu one-click via le même endpoint
+// générique. C'est un create_payment dont le body porte le
+// paymentMethodToken au lieu de la Card — Paysim reconnaît le mode
+// rejeu et applique directement l'outcome (PAID ou UNPAID selon les
+// conditions du moyen de paiement).
+func (c *Client) ChargeToken(
+	ctx context.Context,
+	provider, token string,
+	amount int64,
+	currency, orderID, notificationURL string,
+) (*CreatedPayment, error) {
+	body := createPaymentReq{
+		Provider:           provider,
+		Amount:             amount,
+		Currency:           currency,
+		OrderID:            orderID,
+		NotificationURL:    notificationURL,
+		PaymentMethodToken: token,
+	}
+	var out CreatedPayment
+	if err := c.do(ctx, http.MethodPost, "/paysim/api/v1/payments", body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RevokePaymentMethod marque un moyen de paiement comme révoqué côté
+// Paysim. Idempotent (204 sur token inconnu). Utile aux scénarios qui
+// veulent tester le refus de rejeu après révocation manuelle.
+func (c *Client) RevokePaymentMethod(ctx context.Context, token string) error {
+	path := "/paysim/api/v1/payment-methods/" + token + "/revoke"
+	return c.do(ctx, http.MethodPost, path, nil, nil)
 }
 
 // simulateReq est le miroir de api.SimulatePaymentRequest. Le vocabulaire

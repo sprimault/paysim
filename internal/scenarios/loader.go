@@ -36,6 +36,7 @@ const (
 	ActionWait          = "wait"
 	ActionAssertWebhook = "assert_webhook"
 	ActionAssertState   = "assert_state"
+	ActionChargeToken   = "charge_token"
 )
 
 // Scenario est un scénario complet chargé depuis un fichier YAML. Une fois
@@ -60,16 +61,63 @@ type Step struct {
 	Wait          *Wait
 	AssertWebhook *AssertWebhook
 	AssertState   *AssertState
+	ChargeToken   *ChargeToken
 }
 
 // CreatePayment demande à Paysim de créer un paiement via un provider.
 // Amount est en centimes entiers de la devise (invariant Paysim, jamais de
 // flottant), OrderID identifie la commande côté marchand.
+//
+// Champs 4.4.5 (paiements récurrents) :
+//   - Card : si présent, Paysim enregistre le moyen de paiement à la
+//     création et retourne un paymentMethodToken réutilisable par
+//     charge_token. Cet enrôlement est **systématique** dès qu'une Card
+//     est fournie, indépendamment de FormAction — cf. handler.Create.
+//   - FormAction : info métadata PayZen (`REGISTER_PAY`,
+//     `ASK_REGISTER_PAY`, `PAYMENT`…) conservée mais sans effet sur
+//     l'enrôlement côté Paysim.
+//   - NotificationURL : URL de destination du webhook émis par le
+//     simulate ultérieur — indispensable en cas de rejeu direct
+//     (charge_token), utile aussi côté one-shot pour tester le flux
+//     de notification.
 type CreatePayment struct {
-	Provider string `yaml:"provider"`
-	Amount   int64  `yaml:"amount"`
-	Currency string `yaml:"currency"`
-	OrderID  string `yaml:"order_id"`
+	Provider        string `yaml:"provider"`
+	Amount          int64  `yaml:"amount"`
+	Currency        string `yaml:"currency"`
+	OrderID         string `yaml:"order_id"`
+	FormAction      string `yaml:"form_action,omitempty"`
+	NotificationURL string `yaml:"notification_url,omitempty"`
+	Card            *Card  `yaml:"card,omitempty"`
+}
+
+// Card décrit un moyen de paiement fictif présenté à Paysim.
+// PAN complet, mois et année d'expiration, marque optionnelle
+// (déduite du BIN si absente). Les tags JSON/YAML séparés permettent
+// à la même struct d'être sérialisée côté client HTTP (camelCase
+// PayZen) et parsée côté loader YAML (snake_case scénario).
+//
+// AVERTISSEMENT : les PAN sont stockés en clair côté serveur — ne
+// jamais utiliser une CB réelle. Voir docs/testing-cards.md.
+type Card struct {
+	PAN         string `json:"pan"                yaml:"pan"`
+	ExpiryMonth int    `json:"expiryMonth"        yaml:"expiry_month"`
+	ExpiryYear  int    `json:"expiryYear"         yaml:"expiry_year"`
+	Brand       string `json:"brand,omitempty"    yaml:"brand,omitempty"`
+}
+
+// ChargeToken déclenche un rejeu one-click d'un paiement à partir d'un
+// paymentMethodToken déjà enregistré (via un create_payment précédent
+// avec Card). Sans Token explicite, le runner utilise le dernier token
+// vu — cohérent avec la mémorisation implicite de l'uuid par
+// assert_state. Amount peut différer du montant initial, comme dans un
+// vrai abonnement où chaque échéance a son propre montant.
+type ChargeToken struct {
+	Token           string `yaml:"token,omitempty"`
+	Provider        string `yaml:"provider,omitempty"`
+	Amount          int64  `yaml:"amount"`
+	Currency        string `yaml:"currency"`
+	OrderID         string `yaml:"order_id"`
+	NotificationURL string `yaml:"notification_url,omitempty"`
 }
 
 // Simulate avance le paiement dans la machine à états via l'API de simulation
@@ -161,6 +209,9 @@ func (s *Step) UnmarshalYAML(node *yaml.Node) error {
 	case ActionAssertState:
 		s.AssertState = &AssertState{}
 		return node.Decode(s.AssertState)
+	case ActionChargeToken:
+		s.ChargeToken = &ChargeToken{}
+		return node.Decode(s.ChargeToken)
 	default:
 		return fmt.Errorf("action inconnue: %q", head.Action)
 	}
