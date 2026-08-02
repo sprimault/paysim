@@ -1,0 +1,15 @@
+name: one-shot-capture
+description: Paiement one-shot nominal — création, simulate PAID, capture réussie.
+steps:
+  - action: create_payment
+    provider: payzen
+    amount: 4990
+    currency: EUR
+    order_id: ORDER-DEMO-001
+  - action: simulate
+    status: captured
+  - action: assert_state
+    state: captured
+  - action: assert_webhook
+    count: 1
+    status: PAID

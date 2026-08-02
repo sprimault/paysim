@@ -1,0 +1,25 @@
+name: subscription-with-magic-pan-decline
+description: |
+  Subscription dont le renewal est refusé — CB enregistrée avec un PAN
+  magique de refus (4000000000000002 = Visa refusée systématique).
+  Le trigger_billing remonte declined, sans intervention externe.
+  Utile pour tester la gestion marchand d'un renewal en échec.
+steps:
+  - action: create_payment
+    provider: payzen
+    amount: 100
+    currency: EUR
+    order_id: INIT
+    card:
+      pan: "4000000000000002"
+      expiry_month: 12
+      expiry_year: 2028
+  - action: create_subscription
+    amount: 990
+    currency: EUR
+    order_id: SUB-FAILING
+    effect_date: "2026-09-01"
+    rrule: "RRULE:FREQ=MONTHLY;INTERVAL=1"
+  - action: trigger_billing
+  - action: assert_state
+    state: declined

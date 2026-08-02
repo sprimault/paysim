@@ -141,9 +141,24 @@ Découpage restant de la phase 4 :
   en commentaire pour phase 5, note sur défaut payzen et log Debug,
   distinction SDK natif (URL discriminante) vs API générique
   (champ `provider`).
-- **4.4.4** — Scénarios canoniques d'exemple (one-shot, token pattern, subscription)
-  + `docs/scenarios.md` bilingue. Livré en dernier pour couvrir les trois patterns
-  d'un seul jet.
+- **4.4.4 fait** (2026-08-02) — 5 scénarios canoniques dans
+  `examples/scenarios/` (one-shot capture/declined, recurring-token,
+  subscription complète, subscription-with-decline), tous validés par un
+  test loader dédié. `docs/scenarios.md` + `.fr.md` bilingues (format
+  YAML, référence des 11 actions, état implicite currentUUID/Token/SubID,
+  codes retour CLI, cross-provider). `examples/php/scenario-complete.php`
+  ajouté comme référence exhaustive (customer complet, metadata,
+  formAction REGISTER_PAY, notificationUrl, card, wallet, threeDSStatus,
+  chaos struct, extraction paymentMethodToken + rejeu one-click) ;
+  `scenario.php` original conservé pour l'onboarding.
+- **4.4.8 — Doc de référence par provider** — un fichier bilingue par
+  provider câblé : `docs/providers/payzen.md` + `.fr.md` recense
+  chaque endpoint natif supporté (`POST /api-payment/V4/*`), les
+  champs de request/response, les valeurs autorisées par champ, les
+  différences volontaires avec le vrai PayZen, et les extensions
+  Paysim (`card`, `chaos`). Objectif : un intégrateur PayZen sait ce
+  qu'il peut envoyer à Paysim sans lire le code. Symétrique quand
+  Stripe arrive en phase 5 → `docs/providers/stripe.md`.
 - **4.4.7 — Extensions UI** — la mécanique 4.4.5/4.4.6 crée des entités que l'UI
   actuelle n'affiche pas. À ajouter : colonne « Provider » dans l'onglet « Tous » de
   la liste des paiements (aujourd'hui provider invisible en vue cross-provider) ;

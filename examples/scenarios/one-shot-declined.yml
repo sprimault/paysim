@@ -1,0 +1,18 @@
+name: one-shot-declined-magic-amount
+description: |
+  Refus au parcours utilisateur via montant magique. Un montant qui se
+  termine par 01 en centimes force UNPAID au simulate, quel que soit
+  l'outcome demandé — cf. docs/testing-cards.md, levier « Montant magique ».
+steps:
+  - action: create_payment
+    provider: payzen
+    amount: 1001
+    currency: EUR
+    order_id: ORDER-DECLINE-001
+  - action: simulate
+    status: captured
+  - action: assert_state
+    state: declined
+  - action: assert_webhook
+    count: 1
+    status: UNPAID

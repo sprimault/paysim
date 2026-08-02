@@ -374,6 +374,29 @@ func TestLoadFile_recurringScenario(t *testing.T) {
 	}
 }
 
+func TestLoadFile_canonicalExamples(t *testing.T) {
+	t.Parallel()
+	// Les scénarios canoniques publiés dans examples/scenarios/ doivent
+	// rester valides — si le format YAML évolue, cette suite casse et
+	// force la mise à jour cohérente doc + exemples.
+	examples := []string{
+		"one-shot.yml",
+		"one-shot-declined.yml",
+		"recurring-token.yml",
+		"subscription.yml",
+		"subscription-with-decline.yml",
+	}
+	for _, name := range examples {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join("..", "..", "examples", "scenarios", name)
+			if _, err := LoadFile(path); err != nil {
+				t.Errorf("LoadFile(%s): %v", path, err)
+			}
+		})
+	}
+}
+
 func TestLoadFile_notFound(t *testing.T) {
 	t.Parallel()
 	_, err := LoadFile(filepath.Join("testdata", "does-not-exist.yml"))
