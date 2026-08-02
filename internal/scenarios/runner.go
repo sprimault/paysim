@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -68,12 +70,6 @@ func (r *Report) Err() error {
 // Duration retourne la durée totale du scénario, StartedAt à EndedAt.
 func (r *Report) Duration() time.Duration { return r.EndedAt.Sub(r.StartedAt) }
 
-// errInjectUnsupported est renvoyée par l'action inject en 4.4.2 —
-// le canal de transmission au serveur (enrichissement du DTO simulate)
-// arrive dans un vertical dédié. Le loader accepte l'action pour ne
-// pas pénaliser l'écriture des scénarios en avance de phase.
-var errInjectUnsupported = errors.New("action inject non supportee par le runner v4.4.2 (canal chaos serveur a livrer)")
-
 // ErrAssertion identifie une erreur d'assertion (assert_state ou
 // assert_webhook qui ne matche pas l'état observé). Distinguée des
 // erreurs d'exécution (HTTP down, fichier YAML invalide, action non
@@ -133,6 +129,13 @@ type state struct {
 	currentUUID  string // dernier paiement créé, référence implicite
 	currentToken string // dernier paymentMethodToken vu, pour charge_token
 	currentSubID string // dernier abonnement créé, pour trigger_billing
+
+	// Chaos actif — remis à chaque inject. Consommé par le prochain
+	// simulate puis remis à zéro : « inject » a une portée d'une seule
+	// étape suivante, comme un one-shot. Un scénario qui veut du chaos
+	// permanent doit inject avant chaque simulate.
+	pendingChaos   ChaosOpts
+	pendingDelayMs int
 }
 
 // exec dispatche une étape sur son handler concret. Le contrat sortant
@@ -144,7 +147,7 @@ func (r *Runner) exec(ctx context.Context, st *state, step Step) error {
 	case ActionSimulate:
 		return r.doSimulate(ctx, st, step.Simulate)
 	case ActionInject:
-		return errInjectUnsupported
+		return r.doInject(ctx, st, step.Inject)
 	case ActionWait:
 		return r.doWait(ctx, step.Wait)
 	case ActionAssertWebhook:
@@ -212,7 +215,8 @@ func (r *Runner) doChargeToken(ctx context.Context, st *state, in *ChargeToken) 
 // attendu par l'API et déclenche la simulation. Le mapping est
 // délibérément conservateur : seuls les statuts sans ambiguïté sont
 // couverts ; un status inconnu retourne une erreur explicite plutôt
-// qu'un mapping deviné.
+// qu'un mapping deviné. Consomme le chaos éventuellement empilé par
+// un inject précédent (portée « une étape »).
 func (r *Runner) doSimulate(ctx context.Context, st *state, in *Simulate) error {
 	if st.currentUUID == "" {
 		return errors.New("simulate sans paiement courant : place un create_payment avant")
@@ -221,10 +225,49 @@ func (r *Runner) doSimulate(ctx context.Context, st *state, in *Simulate) error 
 	if err != nil {
 		return err
 	}
+	opts := SimulateOpts{
+		Chaos:           st.pendingChaos,
+		DeliveryDelayMs: st.pendingDelayMs,
+	}
+	// Chaos one-shot : consommé, on remet à zéro pour la suite.
+	st.pendingChaos = ChaosOpts{}
+	st.pendingDelayMs = 0
 	// Channel ipn par défaut : un scénario CI n'a pas de navigateur
 	// pour recevoir le POST de retour ; l'IPN suffit à déclencher le
 	// webhook côté marchand et à faire progresser la machine à états.
-	return r.client.SimulatePayment(ctx, st.currentUUID, outcome, "ipn")
+	return r.client.SimulatePayment(ctx, st.currentUUID, outcome, "ipn", opts)
+}
+
+// doInject empile un mode chaos pour la prochaine étape simulate.
+// Mode reconnu :
+//   - "duplicate"     : webhook enqueue deux fois côté serveur
+//   - "bad-signature" : kr-hash altéré, le marchand doit refuser
+//   - "race"          : réponse HTTP retardée 500ms, webhook part avant
+//   - "delay=NNN"     : retarde l'envoi du webhook de NNN millisecondes
+//
+// Un mode inconnu retourne une erreur explicite — pas de dégradation
+// silencieuse (le testeur doit voir tout de suite qu'il s'est trompé).
+// La portée est **une seule étape suivante** : le prochain simulate
+// consomme puis reset. Pour du chaos persistant, réinjecter avant
+// chaque simulate.
+func (r *Runner) doInject(_ context.Context, st *state, in *Inject) error {
+	switch {
+	case in.Mode == "duplicate":
+		st.pendingChaos.Duplicate = true
+	case in.Mode == "bad-signature":
+		st.pendingChaos.BadSignature = true
+	case in.Mode == "race":
+		st.pendingChaos.RaceBeforeResponse = true
+	case strings.HasPrefix(in.Mode, "delay="):
+		ms, err := strconv.Atoi(strings.TrimPrefix(in.Mode, "delay="))
+		if err != nil || ms <= 0 {
+			return fmt.Errorf("inject mode %q: delay invalide (attendu delay=NNN en ms)", in.Mode)
+		}
+		st.pendingDelayMs = ms
+	default:
+		return fmt.Errorf("inject mode %q inconnu (attendu duplicate|bad-signature|race|delay=NNN)", in.Mode)
+	}
+	return nil
 }
 
 // doWait suspend l'exécution pour Duration, annulable par ctx pour ne

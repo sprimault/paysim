@@ -1,0 +1,20 @@
+name: chaos-duplicate-webhook
+description: |
+  Test de la gestion d'idempotence côté marchand — le chaos duplicate
+  fait enqueue le webhook deux fois pour le même paiement. Un marchand
+  robuste doit dédupliquer sur `transactions[0].uuid`.
+steps:
+  - action: create_payment
+    provider: payzen
+    amount: 1500
+    currency: EUR
+    order_id: ORDER-CHAOS-001
+  - action: inject
+    mode: duplicate
+  - action: simulate
+    status: captured
+  - action: assert_state
+    state: captured
+  - action: assert_webhook
+    count: 2
+    status: PAID

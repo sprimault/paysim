@@ -385,6 +385,7 @@ func TestLoadFile_canonicalExamples(t *testing.T) {
 		"recurring-token.yml",
 		"subscription.yml",
 		"subscription-with-decline.yml",
+		"chaos-duplicate.yml",
 	}
 	for _, name := range examples {
 		t.Run(name, func(t *testing.T) {

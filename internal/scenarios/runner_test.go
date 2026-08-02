@@ -249,7 +249,14 @@ func outcomeFor(state string) string {
 // suivant reproduit le comportement de payzen.applyOutcome vu du runner.
 func (fs *fakeServer) simulate(w http.ResponseWriter, r *http.Request) {
 	uuid := r.PathValue("uuid")
-	var req struct{ Outcome string }
+	// Structure locale — miroir du body simulateReq côté client, on
+	// n'extrait que ce dont le fake a besoin (outcome + chaos.duplicate).
+	var req struct {
+		Outcome string
+		Chaos   struct {
+			Duplicate bool `json:"duplicate"`
+		} `json:"chaos"`
+	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
@@ -268,6 +275,16 @@ func (fs *fakeServer) simulate(w http.ResponseWriter, r *http.Request) {
 		Status:    req.Outcome,
 		CreatedAt: time.Now().UTC(),
 	})
+	// Chaos duplicate : le vrai serveur enqueue le webhook deux fois.
+	// Le fake reproduit ce comportement pour valider bout-en-bout que
+	// le runner propage bien l'option jusqu'à l'API simulate.
+	if req.Chaos.Duplicate {
+		fs.webhooks = append(fs.webhooks, WebhookEntry{
+			ID:        "wh-dup-" + timestamp(),
+			Status:    req.Outcome,
+			CreatedAt: time.Now().UTC(),
+		})
+	}
 	w.WriteHeader(http.StatusAccepted)
 }
 
@@ -449,20 +466,91 @@ func TestRunner_assertWebhookCount(t *testing.T) {
 	}
 }
 
-func TestRunner_injectNonSupporte(t *testing.T) {
+func TestRunner_injectModeInconnu(t *testing.T) {
 	t.Parallel()
 	_, srv := newFakeServer(t)
 	r := NewRunner(NewClient(srv.URL, ""))
 
 	s := &Scenario{
-		Name: "chaos",
+		Name: "bad-mode",
 		Steps: []Step{
-			{Action: ActionInject, Inject: &Inject{Mode: "duplicate"}},
+			{Action: ActionInject, Inject: &Inject{Mode: "teleport"}},
 		},
 	}
 	rep := r.Run(context.Background(), s)
-	if err := rep.Err(); !errors.Is(err, errInjectUnsupported) {
-		t.Errorf("erreur = %v, veut errInjectUnsupported", err)
+	err := rep.Err()
+	if err == nil || !strings.Contains(err.Error(), "inconnu") {
+		t.Errorf("erreur = %v, veut contenir 'inconnu'", err)
+	}
+}
+
+func TestRunner_injectDuplicateDoubleWebhook(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	// inject duplicate + simulate → 2 webhooks côté fake, assertion
+	// vérifie la propagation du chaos jusqu'à l'endpoint simulate.
+	s := &Scenario{
+		Name: "chaos-duplicate",
+		Steps: []Step{
+			{Action: ActionCreatePayment, CreatePayment: &CreatePayment{
+				Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "O",
+			}},
+			{Action: ActionInject, Inject: &Inject{Mode: "duplicate"}},
+			{Action: ActionSimulate, Simulate: &Simulate{Status: "captured"}},
+			{Action: ActionAssertWebhook, AssertWebhook: &AssertWebhook{Count: 2}},
+		},
+	}
+	rep := r.Run(context.Background(), s)
+	if err := rep.Err(); err != nil {
+		t.Errorf("scenario a echoue: %v", err)
+	}
+}
+
+func TestRunner_injectPorteeUneEtape(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	// inject one-shot : le chaos est consommé par le 1er simulate.
+	// Le 2e simulate n'a plus de chaos actif → 1 webhook seulement.
+	s := &Scenario{
+		Name: "chaos-one-shot",
+		Steps: []Step{
+			{Action: ActionCreatePayment, CreatePayment: &CreatePayment{
+				Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "O1",
+			}},
+			{Action: ActionInject, Inject: &Inject{Mode: "duplicate"}},
+			{Action: ActionSimulate, Simulate: &Simulate{Status: "captured"}}, // 2 webhooks
+			// Nouvelle simulate sans réinjecter → 1 seul webhook.
+			{Action: ActionCreatePayment, CreatePayment: &CreatePayment{
+				Provider: "payzen", Amount: 2000, Currency: "EUR", OrderID: "O2",
+			}},
+			{Action: ActionSimulate, Simulate: &Simulate{Status: "captured"}}, // 1 webhook
+			{Action: ActionAssertWebhook, AssertWebhook: &AssertWebhook{Count: 3}},
+		},
+	}
+	rep := r.Run(context.Background(), s)
+	if err := rep.Err(); err != nil {
+		t.Errorf("scenario a echoue: %v", err)
+	}
+}
+
+func TestRunner_injectDelayInvalide(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	s := &Scenario{
+		Name: "bad-delay",
+		Steps: []Step{
+			{Action: ActionInject, Inject: &Inject{Mode: "delay=abc"}},
+		},
+	}
+	rep := r.Run(context.Background(), s)
+	if err := rep.Err(); err == nil || !strings.Contains(err.Error(), "delay invalide") {
+		t.Errorf("erreur = %v, veut 'delay invalide'", err)
 	}
 }
 

@@ -88,7 +88,20 @@ Onze actions qui couvrent les trois patterns de paiement.
 | Action  | Rôle                                                          |
 | ------- | ------------------------------------------------------------- |
 | `wait`  | Suspend l'exécution pendant `duration` (`"500ms"`, `"2s"`).   |
-| `inject`| Injecte un mode chaos sur les requêtes suivantes (partiel v0.4.4.2). |
+| `inject`| Empile un mode chaos consommé par le **prochain** `simulate`. |
+
+Modes `inject` reconnus (one-shot — consommé par le prochain `simulate`,
+puis remis à zéro) :
+
+| Mode              | Effet sur le webhook déclenché par le prochain `simulate`             |
+| ----------------- | --------------------------------------------------------------------- |
+| `duplicate`       | Webhook enqueue deux fois (test idempotence côté marchand).           |
+| `bad-signature`   | `kr-hash` altéré — le marchand qui vérifie la signature doit refuser. |
+| `race`            | Réponse HTTP simulate retardée 500 ms ; le webhook part en premier.   |
+| `delay=NNN`       | Retarde la livraison du webhook de NNN millisecondes (compose avec un second `simulate` pour tester le out-of-order). |
+
+Chaos persistant : réinjecter avant chaque `simulate` concerné. Voir
+`examples/scenarios/chaos-duplicate.yml`.
 
 ## État implicite — un paiement / un token / une subscription à la fois
 
@@ -131,6 +144,8 @@ Voir [examples/scenarios/](../examples/scenarios/) :
   annulation.
 - `subscription-with-decline.yml` — subscription dont l'échéance
   échoue à cause d'un PAN magique.
+- `chaos-duplicate.yml` — injection du mode `duplicate`, assertion
+  que le webhook arrive deux fois (test d'idempotence marchand).
 
 ## Voir aussi
 

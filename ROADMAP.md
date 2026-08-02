@@ -168,10 +168,15 @@ Découpage restant de la phase 4 :
   au passage), `GET /paysim/api/v1/subscriptions` déjà là (6a). **Mode sombre/clair
   à prévoir** : sélecteur utilisateur, détection `prefers-color-scheme`,
   persistance localStorage. Tailwind supporte nativement (`dark:` variant).
-- **4.4.2b** (mineur, à programmer) — Rendre l'action `inject` fonctionnelle : le
-  runner accepte l'action mais retourne actuellement `errInjectUnsupported`. Enrichir
-  `SimulatePaymentRequest` avec un champ `chaos` structuré (`WebhookChaos`) et
-  logique runner qui mémorise le mode entre étapes. ~50 lignes.
+- **4.4.2b fait** (2026-08-02) — `inject` fonctionnel : `SimulatePaymentRequest`
+  enrichi côté API (`chaos` structuré + `deliveryDelayMs`), client scenarios
+  a un `SimulateOpts` optionnel, runner porte `pendingChaos`/`pendingDelayMs`
+  dans son state avec portée **one-shot** (consommé par le prochain simulate).
+  4 modes reconnus : `duplicate`, `bad-signature`, `race`, `delay=NNN`. Mode
+  inconnu → erreur explicite (pas de dégradation silencieuse). Nouveau
+  scénario canonique `chaos-duplicate.yml`. 4 tests runner (mode connu,
+  mode inconnu, portée one-shot, delay invalide). Docs `scenarios.md` +
+  `.fr.md` documentent les 4 modes.
 - **4.4.5a-store fait** (2026-08-02) — Refactor `internal/store/` pour héberger
   `SubscriptionRepository` et `PaymentMethodRepository` génériques cross-provider
   (tables SQLite dédiées, migrations, tests). Extension `payzen.Store` interface

@@ -204,14 +204,27 @@ type CreatePaymentOutput struct {
 // le formToken interne — Paysim le retrouve depuis l'uuid. Le champ
 // channel choisit entre retour navigateur (défaut) et IPN pur.
 type SimulatePaymentRequest struct {
-	Outcome           string `json:"outcome"` // PAID | AUTHORISED | UNPAID | EXPIRED | ABANDONED
-	Channel           string `json:"channel,omitempty"` // "browserReturn" (défaut) | "ipn"
-	ReturnURL         string `json:"returnUrl,omitempty"`
-	NotificationURL   string `json:"notificationUrl,omitempty"`
-	CardBrand         string `json:"cardBrand,omitempty"`
-	ThreeDSStatus     string `json:"threeDSStatus,omitempty"`
-	ErrorCode         string `json:"errorCode,omitempty"`
-	ErrorMessage      string `json:"errorMessage,omitempty"`
+	Outcome         string `json:"outcome"`           // PAID | AUTHORISED | UNPAID | EXPIRED | ABANDONED
+	Channel         string `json:"channel,omitempty"` // "browserReturn" (défaut) | "ipn"
+	ReturnURL       string `json:"returnUrl,omitempty"`
+	NotificationURL string `json:"notificationUrl,omitempty"`
+	CardBrand       string `json:"cardBrand,omitempty"`
+	ThreeDSStatus   string `json:"threeDSStatus,omitempty"`
+	ErrorCode       string `json:"errorCode,omitempty"`
+	ErrorMessage    string `json:"errorMessage,omitempty"`
+
+	// Chaos active des modes de panne sur le webhook émis par cet
+	// appel — chaque flag indépendant, tous inertes par défaut. Ces
+	// modes sont ceux qui n'ont pas de sens côté REST V4 native mais
+	// sont critiques pour tester la robustesse d'un intégrateur :
+	// duplicate (double envoi), badSignature (kr-hash altéré),
+	// raceBeforeResponse (webhook part avant le retour HTTP).
+	Chaos payzen.WebhookChaos `json:"chaos,omitempty"`
+
+	// DeliveryDelayMs retarde l'envoi du webhook (millisecondes).
+	// Compose avec deux appels successifs pour simuler du out-of-order
+	// sans flag dédié.
+	DeliveryDelayMs int `json:"deliveryDelayMs,omitempty"`
 }
 
 // SimulatePaymentResponse retourne le deliveryId et le hash calculé.
@@ -708,11 +721,13 @@ func (h *Handler) simulatePayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := payzen.BrowserReturnOpts{
-		Outcome:       req.Outcome,
-		CardBrand:     req.CardBrand,
-		ThreeDSStatus: req.ThreeDSStatus,
-		ErrorCode:     req.ErrorCode,
-		ErrorMessage:  req.ErrorMessage,
+		Outcome:         req.Outcome,
+		CardBrand:       req.CardBrand,
+		ThreeDSStatus:   req.ThreeDSStatus,
+		ErrorCode:       req.ErrorCode,
+		ErrorMessage:    req.ErrorMessage,
+		Chaos:           req.Chaos,
+		DeliveryDelayMs: req.DeliveryDelayMs,
 	}
 
 	input := payzen.SimulateInput{

@@ -208,15 +208,46 @@ func (c *Client) CancelSubscription(ctx context.Context, id string) error {
 // est celui de PayZen (PAID/AUTHORISED/UNPAID/EXPIRED/ABANDONED) — le
 // mapping depuis le vocabulaire domain du scénario est fait dans le runner.
 type simulateReq struct {
-	Outcome string `json:"outcome"`
-	Channel string `json:"channel,omitempty"`
+	Outcome         string     `json:"outcome"`
+	Channel         string     `json:"channel,omitempty"`
+	NotificationURL string     `json:"notificationUrl,omitempty"`
+	Chaos           ChaosOpts  `json:"chaos,omitempty"`
+	DeliveryDelayMs int        `json:"deliveryDelayMs,omitempty"`
+}
+
+// ChaosOpts est le miroir de payzen.WebhookChaos — struct locale pour
+// éviter d'importer internal/providers/payzen depuis scenarios. Un
+// intégrateur qui compose un simulate manuellement l'utilise via
+// SimulateOpts, un scénario YAML la remplit implicitement via l'action
+// inject (4.4.2b).
+type ChaosOpts struct {
+	Duplicate          bool `json:"duplicate,omitempty"`
+	BadSignature       bool `json:"badSignature,omitempty"`
+	RaceBeforeResponse bool `json:"raceBeforeResponse,omitempty"`
+}
+
+// SimulateOpts regroupe les options additionnelles d'un simulate.
+// Struct dédiée plutôt qu'une liste de paramètres qui grossit — évite
+// une signature à sept args et laisse la place aux extensions futures
+// sans casse binaire des consommateurs.
+type SimulateOpts struct {
+	NotificationURL string
+	Chaos           ChaosOpts
+	DeliveryDelayMs int
 }
 
 // SimulatePayment appelle POST /paysim/api/v1/payments/{uuid}/simulate.
-// L'outcome PayZen déjà résolu par le runner. Channel vide = ipn côté
-// runner, choix par défaut pour un scénario CI (pas de navigateur).
-func (c *Client) SimulatePayment(ctx context.Context, uuid, outcome, channel string) error {
-	body := simulateReq{Outcome: outcome, Channel: channel}
+// L'outcome PayZen est déjà résolu par le runner. Channel vide = ipn
+// (choix par défaut pour un scénario CI). Opts porte le chaos et le
+// delivery delay quand un scénario les active via inject.
+func (c *Client) SimulatePayment(ctx context.Context, uuid, outcome, channel string, opts SimulateOpts) error {
+	body := simulateReq{
+		Outcome:         outcome,
+		Channel:         channel,
+		NotificationURL: opts.NotificationURL,
+		Chaos:           opts.Chaos,
+		DeliveryDelayMs: opts.DeliveryDelayMs,
+	}
 	return c.do(ctx, http.MethodPost, "/paysim/api/v1/payments/"+uuid+"/simulate", body, nil)
 }
 

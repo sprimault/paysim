@@ -88,7 +88,20 @@ Eleven actions covering the three payment patterns.
 | Action  | Purpose                                                       |
 | ------- | ------------------------------------------------------------- |
 | `wait`  | Sleep for `duration` (`"500ms"`, `"2s"`).                     |
-| `inject`| Enqueue a chaos mode on next requests (partial in v0.4.4.2). |
+| `inject`| Enqueue a chaos mode consumed by the **next** `simulate`.     |
+
+`inject` recognized modes (one-shot — consumed by the next `simulate`,
+then reset):
+
+| Mode              | Effect on the webhook triggered by the next `simulate`             |
+| ----------------- | ------------------------------------------------------------------ |
+| `duplicate`       | Webhook enqueued twice (test merchant idempotency).                |
+| `bad-signature`   | `kr-hash` altered — merchant checking the signature must reject it.|
+| `race`            | HTTP simulate response delayed 500 ms; the webhook fires first.    |
+| `delay=NNN`       | Delay the webhook delivery by NNN milliseconds (compose with a second `simulate` to test out-of-order). |
+
+Persistent chaos: `inject` before every `simulate` you want it to
+affect. See `examples/scenarios/chaos-duplicate.yml`.
 
 ## Implicit state — one payment / one token / one subscription at a time
 
@@ -130,6 +143,8 @@ See [examples/scenarios/](../examples/scenarios/):
   and cancellation.
 - `subscription-with-decline.yml` — subscription where the recurring
   charge fails because of a magic PAN.
+- `chaos-duplicate.yml` — inject `duplicate` mode, assert the webhook
+  arrives twice (merchant idempotency test).
 
 ## Related
 
