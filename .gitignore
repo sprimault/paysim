@@ -30,3 +30,8 @@ internal/providers/*/testdata/*.jpeg
 
 # Logs générés par l'exemple d'intégration PHP
 examples/php/*.log
+
+# Répertoire de travail pour les binaires temporaires de `go test`
+# (via GOTMPDIR=.tmp/gobuild). Évite les alertes antivirus locales
+# quand les .test.exe transitent par C:\Users\...\AppData\Local\Temp.
+/.tmp/

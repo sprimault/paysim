@@ -145,6 +145,23 @@ Découpage restant de la phase 4 :
   des subscriptions dans SQLiteStore. Types `PaymentMethod`, `Card`, `Clock`,
   `NewPaymentMethod`, `maskPAN`, `BrandFromBIN`, `IsLuhnValid` dans
   `internal/providers/payzen/method.go`.
+- **4.4.5b-serveur fait** (2026-08-02) — Enrichissement `payzen.Handler.Create()`
+  pour supporter les trois flows : nominal (existant), enrôlement (Card +
+  `formAction: REGISTER_PAY|ASK_REGISTER_PAY` → génération token + attachement
+  Transaction), rejeu one-click (`paymentMethodToken` → capture directe ou refus
+  synchrone selon `decideReplayOutcome` : révocation → expiration → magic PAN →
+  magic amount → PAID). Le webhook IPN est émis en fin de rejeu si
+  `NotificationURL` + HMACKey présents. Enrichissement `CreatePaymentRequest`
+  natif et `api.CreatePaymentInput` avec `Card` + `paymentMethodToken`. Nouvel
+  endpoint `POST /paysim/api/v1/payment-methods/{token}/revoke`. Liste fermée
+  de 4 PANs de refus (Visa/Mastercard/MC2/Amex) dans `internal/chaos` avec
+  helper `IsDeclinedTestPAN`, valeurs Luhn-valides construites à partir des
+  préfixes standards par marque. `docs/testing-cards.md` + `.fr.md` bilingue
+  documente les 4 leviers (magic amount, magic PAN, expiration, révocation)
+  avec exemples curl et JS. Codes d'erreur `PAYSIM_PAYMENT_METHOD_UNKNOWN`,
+  `PAYSIM_EXPIRED_CARD`, `PAYSIM_REVOKED_CARD` ajoutés. 8 tests API +
+  propagation `PaymentMethodToken` dans `KrTransaction` et
+  `payzenProviderData` pour la persistance.
 - **Matrice URL** dans `docs/install.md` (local, host+conteneur, compose, cluster).
 
 - Définition de scénarios en YAML, commités dans le dépôt de l'utilisateur — fait pour

@@ -77,6 +77,7 @@ func NewHandler(deps Deps) http.Handler {
 	mux.HandleFunc("GET /paysim/api/v1/webhooks", h.listWebhooks)
 	mux.HandleFunc("GET /paysim/api/v1/webhooks/{id}", h.getWebhook)
 	mux.HandleFunc("POST /paysim/api/v1/webhooks/{id}/replay", h.replayWebhook)
+	mux.HandleFunc("POST /paysim/api/v1/payment-methods/{token}/revoke", h.revokePaymentMethod)
 	mux.HandleFunc("GET /paysim/api/v1/events/stream", h.streamEvents)
 
 	return withBearer(mux, deps.Token, deps.Logger)
@@ -159,21 +160,38 @@ type WebhookDetail struct {
 // choisit l'adaptateur qui matérialise le paiement (seul "payzen"
 // est câblé aujourd'hui ; Stripe arrivera en phase 5). Vide = payzen
 // par défaut pour ne pas alourdir les scénarios monoprovider.
+//
+// FormAction, NotificationURL, Card et PaymentMethodToken ouvrent le
+// support des paiements récurrents (4.4.5) :
+//   - FormAction=REGISTER_PAY|ASK_REGISTER_PAY + Card : enregistre le
+//     moyen de paiement à l'issue, retourne un paymentMethodToken.
+//   - PaymentMethodToken sans Card : rejeu one-click à partir du moyen
+//     stocké — capture directe, webhook émis (si NotificationURL et
+//     token de la boutique configurés côté serveur).
 type CreatePaymentInput struct {
-	Provider string        `json:"provider,omitempty"`
-	Amount   format.Amount `json:"amount"`
-	Currency string        `json:"currency"`
-	OrderID  string        `json:"orderId"`
+	Provider           string           `json:"provider,omitempty"`
+	Amount             format.Amount    `json:"amount"`
+	Currency           string           `json:"currency"`
+	OrderID            string           `json:"orderId"`
+	FormAction         string           `json:"formAction,omitempty"`
+	NotificationURL    string           `json:"notificationUrl,omitempty"`
+	Card               *payzen.Card     `json:"card,omitempty"`
+	PaymentMethodToken string           `json:"paymentMethodToken,omitempty"`
 }
 
-// CreatePaymentOutput retourne l'uuid attribué au paiement — seul
-// identifiant nécessaire pour cibler ensuite les endpoints
-// /payments/{uuid}/*. State est renvoyé pour éviter au client un
-// GET juste après pour lire l'état initial.
+// CreatePaymentOutput retourne l'uuid attribué au paiement et son
+// état à l'issue de l'appel. PaymentMethodToken est renseigné dans
+// deux cas :
+//   - après un enrôlement (Card + FormAction REGISTER_PAY),
+//   - après un rejeu one-click (echo du token utilisé).
+// Le marchand n'a pas besoin de GET juste après pour lire l'état,
+// State est présent dans la réponse même en cas de rejeu (où l'état
+// devient captured ou declined dès le retour HTTP).
 type CreatePaymentOutput struct {
-	UUID     string `json:"uuid"`
-	Provider string `json:"provider"`
-	State    string `json:"state"`
+	UUID               string `json:"uuid"`
+	Provider           string `json:"provider"`
+	State              string `json:"state"`
+	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
 }
 
 // SimulatePaymentRequest est le corps de POST
@@ -231,15 +249,19 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		tx, err := h.payzenHandler.Create(payzen.CreateInput{
-			Amount:   req.Amount,
-			Currency: req.Currency,
-			OrderID:  req.OrderID,
+			Amount:             req.Amount,
+			Currency:           req.Currency,
+			OrderID:            req.OrderID,
+			FormAction:         req.FormAction,
+			NotificationURL:    req.NotificationURL,
+			Card:               req.Card,
+			PaymentMethodToken: req.PaymentMethodToken,
 		})
 		if err != nil {
-			// Les erreurs domain (montant, devise) sont fonctionnelles, on
-			// retourne 400 ; toute autre (store, génération d'uuid) est
-			// infra et remonte en 500 avec log.
-			if isDomainErr(err) {
+			// Les erreurs domain (montant, devise) et l'inconnu de moyen
+			// de paiement sont fonctionnelles (400). Toute autre (store,
+			// génération d'uuid) est infra et remonte en 500 avec log.
+			if isDomainErr(err) || errors.Is(err, payzen.ErrPaymentMethodUnknown) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
@@ -248,13 +270,37 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusCreated, CreatePaymentOutput{
-			UUID:     tx.UUID,
-			Provider: "payzen",
-			State:    string(tx.Payment.State()),
+			UUID:               tx.UUID,
+			Provider:           "payzen",
+			State:              string(tx.Payment.State()),
+			PaymentMethodToken: tx.PaymentMethodToken,
 		})
 	default:
 		http.Error(w, fmt.Sprintf("provider %q inconnu", provider), http.StatusBadRequest)
 	}
+}
+
+// revokePaymentMethod traite POST /paysim/api/v1/payment-methods/{token}/revoke.
+// Marque le moyen de paiement comme révoqué — les rejeux ultérieurs par
+// ce token échoueront avec un outcome UNPAID. Idempotent : un token
+// inconnu retourne 204 (l'état demandé « ce token n'est plus utilisable »
+// est atteint pour un token inexistant), cohérent avec DeletePayment.
+func (h *Handler) revokePaymentMethod(w http.ResponseWriter, r *http.Request) {
+	if h.payzenHandler == nil {
+		http.Error(w, "payzen handler non configure", http.StatusServiceUnavailable)
+		return
+	}
+	token := r.PathValue("token")
+	if token == "" {
+		http.Error(w, "token manquant", http.StatusBadRequest)
+		return
+	}
+	if err := h.payzenHandler.RevokeMethod(token); err != nil {
+		h.logger.Error("api_revoke_method_failed", "token", token, "err", err)
+		http.Error(w, "revocation impossible", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // isDomainErr identifie les erreurs métier remontées par domain.New à

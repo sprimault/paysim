@@ -820,3 +820,343 @@ func TestCreatePaymentGenericSansPayzenHandler(t *testing.T) {
 		t.Errorf("status = %d, veut 503", resp.StatusCode)
 	}
 }
+
+// --- Tests 4.4.5 : token pattern + CB stockée -------------------------------
+
+func TestCreatePaymentEnrollment(t *testing.T) {
+	t.Parallel()
+	server, store := setupWithPayzen(t, "")
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider:   "payzen",
+		Amount:     1500,
+		Currency:   "EUR",
+		OrderID:    "ORDER-E",
+		FormAction: "REGISTER_PAY",
+		Card: &payzen.Card{
+			PAN:         "4111111111111111",
+			ExpiryMonth: 12,
+			ExpiryYear:  2028,
+		},
+	})
+	resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, veut 201", resp.StatusCode)
+	}
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+
+	if out.PaymentMethodToken == "" {
+		t.Fatalf("PaymentMethodToken vide — l'enrolement n'a pas produit de token")
+	}
+	// Le PaymentMethod doit exister côté store.
+	pm, _ := store.MethodByToken(out.PaymentMethodToken)
+	if pm == nil {
+		t.Fatalf("PaymentMethod absent du store apres enrolement")
+	}
+	if pm.Brand != "VISA" || pm.PANMasked != "411111XXXXXX1111" {
+		t.Errorf("Brand/PANMasked = %q/%q", pm.Brand, pm.PANMasked)
+	}
+	// La Transaction doit porter le token pour propagation dans le webhook ultérieur.
+	tx, _ := store.ByUUID(out.UUID)
+	if tx == nil || tx.PaymentMethodToken != out.PaymentMethodToken {
+		t.Errorf("tx.PaymentMethodToken = %q, veut %q", tx.PaymentMethodToken, out.PaymentMethodToken)
+	}
+}
+
+func TestCreatePaymentCardSansFormActionEnroleQuandMeme(t *testing.T) {
+	t.Parallel()
+	server, store := setupWithPayzen(t, "")
+
+	// Card fournie sans REGISTER_PAY : Paysim enrôle quand même — le
+	// simulateur stocke tout moyen fourni. Le formAction reste une
+	// info métadata sur la Transaction, sans effet sur l'enrôlement.
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "O",
+		Card: &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
+	})
+	resp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	defer func() { _ = resp.Body.Close() }()
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if out.PaymentMethodToken == "" {
+		t.Fatalf("PaymentMethodToken vide, veut renseigne (enrolement systematique quand Card fournie)")
+	}
+	pm, _ := store.MethodByToken(out.PaymentMethodToken)
+	if pm == nil {
+		t.Errorf("PaymentMethod absent du store apres create")
+	}
+}
+
+func TestSimulateRefusDirectSurCarteExpiree(t *testing.T) {
+	t.Parallel()
+	server, store := setupWithPayzen(t, "")
+
+	// Carte expirée dans le passé, fournie au 1er paiement. Le PSP
+	// réel refuse dès la présentation ; on reproduit ce comportement.
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 5000, Currency: "EUR", OrderID: "DIRECT-EXP",
+		Card: &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 1, ExpiryYear: 2020},
+	})
+	createResp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	defer func() { _ = createResp.Body.Close() }()
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(createResp.Body).Decode(&out)
+
+	simBody, _ := json.Marshal(SimulatePaymentRequest{
+		Outcome:         "PAID",
+		Channel:         "ipn",
+		NotificationURL: "http://localhost:1/discard",
+	})
+	simResp, _ := http.Post(server.URL+"/paysim/api/v1/payments/"+out.UUID+"/simulate",
+		"application/json", bytes.NewReader(simBody))
+	defer func() { _ = simResp.Body.Close() }()
+
+	tx, _ := store.ByUUID(out.UUID)
+	if got := string(tx.Payment.State()); got != "declined" {
+		t.Errorf("state = %q, veut declined (carte expiree au 1er paiement)", got)
+	}
+}
+
+func TestSimulateRefusDirectSurCarteRevoquee(t *testing.T) {
+	t.Parallel()
+	server, store := setupWithPayzen(t, "")
+
+	// Enrolement + révocation avant simulate → refus au 1er paiement.
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 5000, Currency: "EUR", OrderID: "DIRECT-REV",
+		Card: &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
+	})
+	createResp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	defer func() { _ = createResp.Body.Close() }()
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(createResp.Body).Decode(&out)
+
+	req, _ := http.NewRequest(http.MethodPost,
+		server.URL+"/paysim/api/v1/payment-methods/"+out.PaymentMethodToken+"/revoke", nil)
+	revResp, _ := http.DefaultClient.Do(req)
+	_ = revResp.Body.Close()
+
+	simBody, _ := json.Marshal(SimulatePaymentRequest{
+		Outcome: "PAID", Channel: "ipn",
+		NotificationURL: "http://localhost:1/discard",
+	})
+	simResp, _ := http.Post(server.URL+"/paysim/api/v1/payments/"+out.UUID+"/simulate",
+		"application/json", bytes.NewReader(simBody))
+	defer func() { _ = simResp.Body.Close() }()
+
+	tx, _ := store.ByUUID(out.UUID)
+	if got := string(tx.Payment.State()); got != "declined" {
+		t.Errorf("state = %q, veut declined (carte revoquee au 1er paiement)", got)
+	}
+}
+
+func TestSimulateRefusDirectSurMagicPAN(t *testing.T) {
+	t.Parallel()
+	server, store := setupWithPayzen(t, "")
+
+	// Premier paiement avec un PAN magic de refus.
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 5000, Currency: "EUR", OrderID: "DIRECT-DECLINE",
+		Card: &payzen.Card{PAN: "4000000000000002", ExpiryMonth: 12, ExpiryYear: 2028},
+	})
+	createResp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	defer func() { _ = createResp.Body.Close() }()
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(createResp.Body).Decode(&out)
+
+	// Simulate avec outcome PAID : le magic PAN doit forcer UNPAID.
+	simBody, _ := json.Marshal(SimulatePaymentRequest{
+		Outcome:   "PAID",
+		Channel:   "ipn",
+		NotificationURL: "http://localhost:1/discard",
+	})
+	simResp, _ := http.Post(server.URL+"/paysim/api/v1/payments/"+out.UUID+"/simulate",
+		"application/json", bytes.NewReader(simBody))
+	defer func() { _ = simResp.Body.Close() }()
+	if simResp.StatusCode != http.StatusAccepted {
+		t.Fatalf("simulate status = %d, veut 202", simResp.StatusCode)
+	}
+
+	// Le paiement doit etre passe en declined via applyOutcome UNPAID.
+	tx, _ := store.ByUUID(out.UUID)
+	if tx == nil {
+		t.Fatalf("tx absente apres simulate")
+	}
+	if got := string(tx.Payment.State()); got != "declined" {
+		t.Errorf("state = %q, veut declined (magic PAN au 1er paiement)", got)
+	}
+}
+
+func TestChargeTokenNominal(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	// 1er paiement avec enrolement.
+	token := enroll(t, server, "4111111111111111", 12, 2028)
+
+	// Rejeu via le token — état captured immédiat.
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 2000, Currency: "EUR", OrderID: "REPLAY",
+		PaymentMethodToken: token,
+	})
+	resp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("rejeu status = %d, veut 201", resp.StatusCode)
+	}
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if out.State != "captured" {
+		t.Errorf("state = %q, veut captured (rejeu one-click)", out.State)
+	}
+	if out.PaymentMethodToken != token {
+		t.Errorf("token echo = %q, veut %q", out.PaymentMethodToken, token)
+	}
+}
+
+func TestChargeTokenCarteExpiree(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	// Carte expirée dans le passé : refus immédiat au rejeu.
+	token := enroll(t, server, "4111111111111111", 3, 2020)
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "R-EXP",
+		PaymentMethodToken: token,
+	})
+	resp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	defer func() { _ = resp.Body.Close() }()
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if out.State != "declined" {
+		t.Errorf("state = %q, veut declined (carte expiree)", out.State)
+	}
+}
+
+func TestChargeTokenCarteRevoquee(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	token := enroll(t, server, "4111111111111111", 12, 2028)
+
+	// Révocation via l'endpoint dédié.
+	req, _ := http.NewRequest(http.MethodPost,
+		server.URL+"/paysim/api/v1/payment-methods/"+token+"/revoke", nil)
+	revResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = revResp.Body.Close()
+	if revResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("revoke status = %d, veut 204", revResp.StatusCode)
+	}
+
+	// Rejeu → refus.
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "R-REV",
+		PaymentMethodToken: token,
+	})
+	resp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	defer func() { _ = resp.Body.Close() }()
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if out.State != "declined" {
+		t.Errorf("state = %q, veut declined (carte revoquee)", out.State)
+	}
+}
+
+func TestChargeTokenMagicDeclinedPAN(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	// PAN Visa réservé pour refus systématique.
+	token := enroll(t, server, "4000000000000002", 12, 2028)
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "R-MAGIC",
+		PaymentMethodToken: token,
+	})
+	resp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	defer func() { _ = resp.Body.Close() }()
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if out.State != "declined" {
+		t.Errorf("state = %q, veut declined (PAN magic de refus)", out.State)
+	}
+}
+
+func TestChargeTokenInconnu(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "R-INC",
+		PaymentMethodToken: "does-not-exist",
+	})
+	resp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, veut 400 (token inconnu)", resp.StatusCode)
+	}
+}
+
+func TestRevokePaymentMethodInconnuRetourne204(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	req, _ := http.NewRequest(http.MethodPost,
+		server.URL+"/paysim/api/v1/payment-methods/does-not-exist/revoke", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("status = %d, veut 204 (idempotent sur token inconnu)", resp.StatusCode)
+	}
+}
+
+// enroll est un helper : crée un paiement avec Card + REGISTER_PAY et
+// retourne le paymentMethodToken produit par Paysim.
+func enroll(t *testing.T, server *httptest.Server, pan string, expM, expY int) string {
+	t.Helper()
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider:   "payzen",
+		Amount:     1000,
+		Currency:   "EUR",
+		OrderID:    "ENROLL",
+		FormAction: "REGISTER_PAY",
+		Card:       &payzen.Card{PAN: pan, ExpiryMonth: expM, ExpiryYear: expY},
+	})
+	resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("enroll POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("enroll status = %d, veut 201", resp.StatusCode)
+	}
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if out.PaymentMethodToken == "" {
+		t.Fatalf("enroll: PaymentMethodToken vide")
+	}
+	return out.PaymentMethodToken
+}

@@ -135,17 +135,18 @@ func buildKrAnswer(tx *Transaction, opts BrowserReturnOpts, serverURL string, mo
 	}
 
 	kt := KrTransaction{
-		UUID:              tx.UUID,
-		Amount:            tx.Amount,
-		Currency:          tx.Currency,
-		PaymentMethodType: paymentMethodType,
-		Status:            spec.TxStatus,
-		DetailedStatus:    spec.DetailedStatus,
-		OperationType:     spec.OperationType,
-		CreationDate:      now,
-		ErrorCode:         opts.ErrorCode,
-		ErrorMessage:      opts.ErrorMessage,
-		Metadata:          tx.Metadata,
+		UUID:               tx.UUID,
+		Amount:             tx.Amount,
+		Currency:           tx.Currency,
+		PaymentMethodType:  paymentMethodType,
+		PaymentMethodToken: tx.PaymentMethodToken, // propagé si enrôlement ou rejeu
+		Status:             spec.TxStatus,
+		DetailedStatus:     spec.DetailedStatus,
+		OperationType:      spec.OperationType,
+		CreationDate:       now,
+		ErrorCode:          opts.ErrorCode,
+		ErrorMessage:       opts.ErrorMessage,
+		Metadata:           tx.Metadata,
 		TransactionDetails: KrTransactionDetails{
 			CreationContext: "CHARGE",
 			Wallet:          opts.Wallet,

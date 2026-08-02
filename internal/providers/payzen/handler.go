@@ -51,6 +51,11 @@ type HandlerConfig struct {
 	// logue chaque fois que ce fallback declenche pour que le dev sache
 	// ou part le webhook.
 	DefaultCallbackURL string
+
+	// Clock permet aux tests d'injecter une source de temps
+	// déterministe pour la vérification d'expiration des moyens de
+	// paiement enregistrés. Nil = SystemClock (production).
+	Clock Clock
 }
 
 // Handler regroupe l'etat necessaire pour servir les endpoints REST V4
@@ -158,26 +163,86 @@ func withBearerToken(next http.Handler, expected string, logger *slog.Logger) ht
 // champs de contexte optionnels — FormAction, Customer, Metadata,
 // ReturnURL, NotificationURL — sont vides pour un appel générique et
 // portent les valeurs marchand pour un appel natif.
+//
+// Card et PaymentMethodToken sont deux modes de gestion des moyens de
+// paiement récurrents (4.4.5) :
+//   - Card + FormAction=REGISTER_PAY : Paysim génère un
+//     paymentMethodToken lors de la création et l'enregistre.
+//   - PaymentMethodToken (sans Card) : rejeu one-click à partir d'un
+//     moyen de paiement déjà stocké — pas de formulaire, capture
+//     directe, vérification d'expiration/révocation.
+// Fournir les deux en même temps est une erreur (Card ignorée, seul le
+// token est utilisé — mais autant l'omettre côté appelant).
 type CreateInput struct {
-	Amount          format.Amount
-	Currency        string
-	OrderID         string
-	FormAction      string
-	Customer        Customer
-	Metadata        map[string]string
-	ReturnURL       string
-	NotificationURL string
+	Amount             format.Amount
+	Currency           string
+	OrderID            string
+	FormAction         string
+	Customer           Customer
+	Metadata           map[string]string
+	ReturnURL          string
+	NotificationURL    string
+	Card               *Card
+	PaymentMethodToken string
 }
 
-// Create matérialise un paiement PayZen : génère UUID et formToken,
-// instancie le domain.Payment, persiste la Transaction et publie
-// l'event payment_created. Retourne la Transaction complète pour que
-// l'appelant puisse en extraire ce dont il a besoin (UUID pour l'API
-// générique, FormToken pour l'endpoint REST V4).
+// ErrPaymentMethodUnknown est retournée par Create en mode rejeu quand
+// le paymentMethodToken fourni n'existe pas dans le store.
+var ErrPaymentMethodUnknown = errors.New("moyen de paiement inconnu")
+
+// clock retourne l'horloge configurée ou SystemClock par défaut. Encapsulé
+// pour permettre l'injection dans les tests via HandlerConfig.Clock.
+func (h *Handler) clock() Clock {
+	if h.cfg.Clock == nil {
+		return SystemClock{}
+	}
+	return h.cfg.Clock
+}
+
+// Create matérialise un paiement PayZen. Trois modes selon l'input :
+//
+//  1. Nominal : ni Card ni PaymentMethodToken. Crée une Transaction
+//     en state=initiated qui attend un simulate ultérieur.
+//  2. Card fournie : enregistre le moyen de paiement (PaymentMethod
+//     stocké, token opaque généré) et l'attache à la Transaction. Le
+//     state reste initiated — la capture arrive au simulate. Le
+//     `formAction` PayZen (REGISTER_PAY, ASK_REGISTER_PAY, PAYMENT…)
+//     est conservé comme info métadata sur la Transaction mais ne
+//     conditionne pas l'enrôlement : côté simulateur, dès qu'on a
+//     une CB, on la stocke — cela permet notamment aux magic PANs
+//     de refus d'agir au simulate du premier paiement.
+//  3. Rejeu one-click : PaymentMethodToken fourni. Charge le moyen
+//     stocké, vérifie révocation → expiration → magic PAN → magic
+//     amount, applique directement l'outcome (PAID ou UNPAID), émet
+//     le webhook. Pas de simulate côté marchand — comportement
+//     PayZen réel pour un paiement récurrent.
+//
+// Fournir Card ET PaymentMethodToken n'a pas de sens ; seul le token
+// est pris en compte (le rejeu prime).
 //
 // Exportée pour que le paquet api puisse consommer cette création sans
-// passer par un self-loopback HTTP — même motivation que pour Simulate.
+// passer par un self-loopback HTTP.
 func (h *Handler) Create(in CreateInput) (*Transaction, error) {
+	if in.PaymentMethodToken != "" {
+		return h.createFromToken(in)
+	}
+	tx, err := h.createNominal(in)
+	if err != nil {
+		return nil, err
+	}
+	if in.Card != nil {
+		if err := h.enrollCard(tx, in.Card); err != nil {
+			return nil, err
+		}
+	}
+	return tx, nil
+}
+
+// createNominal est la création classique — Transaction en state
+// initiated, sans moyen de paiement enregistré. Utilisée directement
+// pour le flow one-shot et en interne pour l'enrôlement (le
+// PaymentMethod est ensuite attaché par enrollCard).
+func (h *Handler) createNominal(in CreateInput) (*Transaction, error) {
 	uuid, err := newUUID()
 	if err != nil {
 		return nil, fmt.Errorf("generation uuid: %w", err)
@@ -190,7 +255,7 @@ func (h *Handler) Create(in CreateInput) (*Transaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("generation formToken: %w", err)
 	}
-	now := time.Now().UTC()
+	now := h.clock().Now()
 	tx := &Transaction{
 		FormToken:       token,
 		UUID:            uuid,
@@ -222,6 +287,165 @@ func (h *Handler) Create(in CreateInput) (*Transaction, error) {
 	return tx, nil
 }
 
+// enrollCard génère un paymentMethodToken opaque à partir d'une Card,
+// stocke le PaymentMethod correspondant et l'attache à la Transaction.
+// Appelé après createNominal quand formAction demande l'enregistrement.
+func (h *Handler) enrollCard(tx *Transaction, card *Card) error {
+	token, err := newFormToken()
+	if err != nil {
+		return fmt.Errorf("generation payment method token: %w", err)
+	}
+	pm := NewPaymentMethod(token, *card, h.clock().Now())
+	if err := h.store.SaveMethod(pm); err != nil {
+		return fmt.Errorf("store SaveMethod: %w", err)
+	}
+	tx.PaymentMethodToken = pm.Token
+	if err := h.store.Save(tx); err != nil {
+		return fmt.Errorf("store re-Save tx apres enrollment: %w", err)
+	}
+	return nil
+}
+
+// createFromToken exécute un rejeu one-click. Charge le moyen de
+// paiement, vérifie ses conditions d'usage, applique l'outcome décidé
+// et émet le webhook si une NotificationURL est fournie. Retourne la
+// Transaction résultante — son state reflète l'outcome.
+func (h *Handler) createFromToken(in CreateInput) (*Transaction, error) {
+	pm, err := h.store.MethodByToken(in.PaymentMethodToken)
+	if err != nil {
+		return nil, fmt.Errorf("lookup payment method: %w", err)
+	}
+	if pm == nil {
+		return nil, fmt.Errorf("%w: %s", ErrPaymentMethodUnknown, in.PaymentMethodToken)
+	}
+
+	uuid, err := newUUID()
+	if err != nil {
+		return nil, fmt.Errorf("generation uuid: %w", err)
+	}
+	payment, err := domain.New(uuid, in.Amount, in.Currency)
+	if err != nil {
+		return nil, err
+	}
+	formToken, err := newFormToken()
+	if err != nil {
+		return nil, fmt.Errorf("generation formToken: %w", err)
+	}
+	now := h.clock().Now()
+	tx := &Transaction{
+		FormToken:          formToken,
+		UUID:               uuid,
+		OrderID:            in.OrderID,
+		Amount:             in.Amount,
+		Currency:           in.Currency,
+		FormAction:         in.FormAction,
+		Customer:           in.Customer,
+		Metadata:           in.Metadata,
+		Payment:            payment,
+		NotificationURL:    in.NotificationURL,
+		PaymentMethodToken: pm.Token,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+
+	outcome, reason := decideReplayOutcome(pm, in.Amount, now)
+	if err := applyOutcome(tx, outcome, reason); err != nil {
+		return nil, fmt.Errorf("apply outcome: %w", err)
+	}
+	tx.UpdatedAt = h.clock().Now()
+
+	if err := h.store.Save(tx); err != nil {
+		return nil, fmt.Errorf("store Save: %w", err)
+	}
+
+	h.cfg.Publisher.Publish(bus.Event{
+		Type: "payment_created",
+		At:   now,
+		Data: map[string]any{
+			"uuid":     uuid,
+			"orderId":  in.OrderID,
+			"amount":   in.Amount,
+			"currency": in.Currency,
+			"state":    string(payment.State()),
+			"replay":   true,
+		},
+	})
+
+	// Webhook : émis si NotificationURL fournie ET HMACKey configuré.
+	// L'absence de l'un ou de l'autre est légitime (test local sans
+	// notification, ou callback URL laissée à la charge du simulate) ;
+	// on ne veut pas faire échouer un rejeu pour ça.
+	if in.NotificationURL != "" && h.cfg.HMACKey != "" {
+		if err := h.emitReplayWebhook(tx, pm, outcome, reason); err != nil {
+			h.logger.Warn("replay_webhook_emit_failed",
+				"uuid", tx.UUID, "err", err)
+		}
+	}
+
+	return tx, nil
+}
+
+// emitReplayWebhook construit et enqueue le webhook IPN qui accompagne
+// un rejeu one-click. Duplique volontairement une partie de la logique
+// de simulate — les deux flows partageront un helper commun quand un
+// troisième cas apparaîtra (règle de trois).
+func (h *Handler) emitReplayWebhook(tx *Transaction, pm *PaymentMethod, outcome, reason string) error {
+	opts := BrowserReturnOpts{
+		Outcome:      outcome,
+		CardBrand:    pm.Brand,
+		ErrorMessage: reason,
+	}
+	answer := buildKrAnswer(tx, opts, "", "TEST")
+
+	deliveryID, err := newUUID()
+	if err != nil {
+		return fmt.Errorf("delivery uuid: %w", err)
+	}
+	wh, _, err := buildDeliveryWebhook(deliveryID, tx.NotificationURL,
+		answer, h.cfg.HMACKey, "V4/Payment", false, 0)
+	if err != nil {
+		return err
+	}
+	return h.queue.Enqueue(wh)
+}
+
+// evaluateMethodOutcome inspecte les trois conditions bloquantes d'un
+// moyen de paiement : révocation, expiration, PAN de test réservé aux
+// refus. Retourne ("", "") si tout est OK, sinon (UNPAID, raison).
+// Ordre de priorité choisi pour rendre le diagnostic déterministe et
+// prévisible en cas de multiples défauts sur la même CB.
+//
+// Utilisée aux deux moments où un PSP réel refuse : à la présentation
+// (simulate) et au rejeu récurrent (charge_token). C'est cohérent avec
+// le comportement bancaire — une carte expirée est refusée dès qu'un
+// paiement est tenté, pas seulement au moment du prélèvement récurrent.
+func evaluateMethodOutcome(pm *PaymentMethod, now time.Time) (outcome, reason string) {
+	if pm.Revoked {
+		return OutcomeUnpaid, "moyen de paiement revoque"
+	}
+	if pm.IsExpired(now) {
+		return OutcomeUnpaid, "moyen de paiement expire"
+	}
+	if chaos.IsDeclinedTestPAN(pm.PANFull) {
+		return OutcomeUnpaid, "carte de test refusee"
+	}
+	return "", ""
+}
+
+// decideReplayOutcome combine les 3 conditions du moyen de paiement
+// et le magic amount pour choisir l'outcome d'un rejeu one-click.
+// Ordre : conditions du PM (révocation/expiration/magic PAN) puis
+// magic amount, sinon PAID.
+func decideReplayOutcome(pm *PaymentMethod, amount format.Amount, now time.Time) (outcome, reason string) {
+	if o, r := evaluateMethodOutcome(pm, now); o != "" {
+		return o, r
+	}
+	if magic := chaos.MagicOutcome(amount); magic != "" {
+		return magic, "montant magique"
+	}
+	return OutcomePaid, ""
+}
+
 // createPayment traite POST /api-payment/V4/Charge/CreatePayment.
 // Décode le body PayZen natif, applique la latence magique éventuelle,
 // délègue la création à Create, retourne le formToken au marchand.
@@ -239,20 +463,33 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 	h.cfg.Chaos.Sleep(r.Context(), chaos.MagicLatencyMs(req.Amount))
 
 	tx, err := h.Create(CreateInput{
-		Amount:          req.Amount,
-		Currency:        req.Currency,
-		OrderID:         req.OrderID,
-		FormAction:      req.FormAction,
-		Customer:        req.Customer,
-		Metadata:        req.Metadata,
-		ReturnURL:       req.ReturnURL,
-		NotificationURL: req.NotificationURL,
+		Amount:             req.Amount,
+		Currency:           req.Currency,
+		OrderID:            req.OrderID,
+		FormAction:         req.FormAction,
+		Customer:           req.Customer,
+		Metadata:           req.Metadata,
+		ReturnURL:          req.ReturnURL,
+		NotificationURL:    req.NotificationURL,
+		Card:               req.Card,
+		PaymentMethodToken: req.PaymentMethodToken,
 	})
 	if err != nil {
+		if errors.Is(err, ErrPaymentMethodUnknown) {
+			h.writeError(w, ErrCodePaymentMethodUnknown, err.Error())
+			return
+		}
 		h.writeDomainError(w, err)
 		return
 	}
 	h.writeSuccess(w, CreatePaymentAnswer{FormToken: tx.FormToken})
+}
+
+// RevokeMethod expose la révocation d'un moyen de paiement au paquet
+// api. Wrapper trivial sur le Store — nécessaire parce que le champ
+// store est privé et qu'on ne veut pas l'exposer directement.
+func (h *Handler) RevokeMethod(token string) error {
+	return h.store.RevokeMethod(token)
 }
 
 // updatePayment traite POST /api-payment/V4/Charge/UpdatePayment. Met
@@ -531,6 +768,21 @@ func (h *Handler) simulate(
 	// un mode d'activation légitime, sans besoin de config globale.
 	if magic := chaos.MagicOutcome(tx.Amount); magic != "" {
 		opts.Outcome = magic
+	}
+	// Conditions du moyen de paiement (révocation / expiration /
+	// magic PAN) : si la Transaction porte un PaymentMethod stocké,
+	// les mêmes checks qu'au rejeu récurrent s'appliquent. Un PSP
+	// réel refuse une carte expirée ou révoquée dès la présentation ;
+	// on reproduit ce comportement pour rester fidèle (invariant 3).
+	if tx.PaymentMethodToken != "" {
+		if pm, _ := h.store.MethodByToken(tx.PaymentMethodToken); pm != nil {
+			if o, r := evaluateMethodOutcome(pm, h.clock().Now()); o != "" {
+				opts.Outcome = o
+				if opts.ErrorMessage == "" {
+					opts.ErrorMessage = r
+				}
+			}
+		}
 	}
 	targetURL := urlOverride
 	if targetURL == "" {

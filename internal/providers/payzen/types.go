@@ -39,10 +39,13 @@ const (
 	ErrCodeInvalidCurrency = "PAYSIM_INVALID_CURRENCY"
 	ErrCodeInvalidPayment  = "PAYSIM_INVALID_PAYMENT"
 	ErrCodeUUIDUnknown     = "PAYSIM_UUID_UNKNOWN"
-	// #nosec G101 -- code d'erreur, pas un secret.
-	ErrCodeTokenUnknown        = "PAYSIM_TOKEN_UNKNOWN"
-	ErrCodeSubscriptionUnknown = "PAYSIM_SUBSCRIPTION_UNKNOWN"
-	ErrCodeStoreFailure        = "PAYSIM_STORE_FAILURE"
+	// #nosec G101 -- codes d'erreur, pas des secrets.
+	ErrCodeTokenUnknown         = "PAYSIM_TOKEN_UNKNOWN"
+	ErrCodeSubscriptionUnknown  = "PAYSIM_SUBSCRIPTION_UNKNOWN"
+	ErrCodeStoreFailure         = "PAYSIM_STORE_FAILURE"
+	ErrCodePaymentMethodUnknown = "PAYSIM_PAYMENT_METHOD_UNKNOWN"
+	ErrCodeExpiredCard          = "PAYSIM_EXPIRED_CARD"
+	ErrCodeRevokedCard          = "PAYSIM_REVOKED_CARD"
 )
 
 // CreatePaymentRequest est le corps JSON attendu par POST
@@ -62,6 +65,19 @@ type CreatePaymentRequest struct {
 	Metadata        map[string]string `json:"metadata,omitempty"`
 	ReturnURL       string            `json:"returnUrl,omitempty"`
 	NotificationURL string            `json:"notificationUrl,omitempty"`
+
+	// PaymentMethodToken déclenche un rejeu one-click : plutôt que de
+	// démarrer un formulaire, Paysim créera un paiement directement à
+	// partir du moyen de paiement stocké. Vérifie l'expiration et la
+	// révocation avant capture. Ignoré si Card est également fourni.
+	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
+
+	// Card est une extension Paysim (hors périmètre PayZen réel où le
+	// PAN transite par le SmartForm client, pas par l'API marchand).
+	// Fourni pour permettre à un scénario ou à un test d'intégration
+	// d'enregistrer un moyen de paiement directement, sans SmartForm.
+	// Combiné avec formAction=REGISTER_PAY, produit un paymentMethodToken.
+	Card *Card `json:"card,omitempty"`
 }
 
 // CreatePaymentAnswer est le contenu de answer sur succes.
@@ -135,6 +151,15 @@ type Transaction struct {
 	NotificationURL string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+
+	// PaymentMethodToken pointe le moyen de paiement enregistré associé
+	// à cette transaction. Non vide dans deux cas :
+	//   - formAction REGISTER_PAY / ASK_REGISTER_PAY : Paysim a généré
+	//     un token lors du premier paiement et l'a stocké.
+	//   - rejeu one-click : la transaction a été créée à partir d'un
+	//     token existant fourni par le marchand.
+	// Vide sur un paiement one-shot sans enrôlement.
+	PaymentMethodToken string
 }
 
 // UpdatePaymentRequest est le corps de POST /api-payment/V4/Charge/UpdatePayment.

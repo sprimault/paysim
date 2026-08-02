@@ -224,3 +224,29 @@ func MagicLatencyMs(amount format.Amount) int {
 	}
 	return 0
 }
+
+// declinedTestPANs est la liste fermée des numéros de carte de test
+// que Paysim reconnaît comme refus systématique au rejeu par token
+// (`charge_token`). Un PAN d'exactement cette valeur → outcome UNPAID
+// automatique, sans montant magique ni révocation manuelle nécessaire.
+//
+// Ces PANs sont **Luhn-valides** et respectent les préfixes de BIN
+// standard par marque, pour rester générables par un script client
+// (Cadensio) sans effort particulier et sans risquer de confondre avec
+// une CB réelle en test. Le complément du préfixe est composé de zéros
+// et se termine par le check digit Luhn correspondant.
+//
+// Périmètre : la reconnaissance n'agit **qu'au rejeu** (charge_token),
+// pas au premier paiement. Pour un refus au parcours utilisateur
+// (simulate), utiliser un montant magique (voir MagicOutcome).
+// Cf. docs/testing-cards.md pour l'usage complet côté intégrateur.
+var declinedTestPANs = map[string]bool{
+	"4000000000000002": true, // Visa (préfixe 400000, 16 chiffres)
+	"5105105105105100": true, // Mastercard (préfixe 510510, 16 chiffres)
+	"2223000000000007": true, // Mastercard série 2 (préfixe 222300, 16 chiffres)
+	"378282000000008":  true, // Amex (préfixe 378282, 15 chiffres)
+}
+
+// IsDeclinedTestPAN retourne true si le PAN est un numéro de test
+// réservé pour provoquer un refus systématique au rejeu.
+func IsDeclinedTestPAN(pan string) bool { return declinedTestPANs[pan] }

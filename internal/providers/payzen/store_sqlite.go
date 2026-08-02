@@ -215,9 +215,10 @@ func (s *SQLiteStore) DeleteAllTransactions() (int, error) {
 // payzenProviderData contient les champs spécifiques PayZen à
 // sérialiser dans PaymentRecord.ProviderDataJSON.
 type payzenProviderData struct {
-	FormAction      string `json:"formAction,omitempty"`
-	ReturnURL       string `json:"returnUrl,omitempty"`
-	NotificationURL string `json:"notificationUrl,omitempty"`
+	FormAction         string `json:"formAction,omitempty"`
+	ReturnURL          string `json:"returnUrl,omitempty"`
+	NotificationURL    string `json:"notificationUrl,omitempty"`
+	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
 }
 
 // payzenToRecord sérialise Transaction en PaymentRecord générique.
@@ -237,9 +238,10 @@ func payzenToRecord(tx *Transaction) (*store.PaymentRecord, error) {
 		return nil, fmt.Errorf("marshal metadata: %w", err)
 	}
 	provJSON, err := json.Marshal(payzenProviderData{
-		FormAction:      tx.FormAction,
-		ReturnURL:       tx.ReturnURL,
-		NotificationURL: tx.NotificationURL,
+		FormAction:         tx.FormAction,
+		ReturnURL:          tx.ReturnURL,
+		NotificationURL:    tx.NotificationURL,
+		PaymentMethodToken: tx.PaymentMethodToken,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal provider_data: %w", err)
@@ -380,18 +382,19 @@ func recordToPayzen(rec *store.PaymentRecord) (*Transaction, error) {
 	pay := domain.Load(rec.UUID, rec.Amount, rec.Currency, rec.State,
 		rec.Refunded, rec.Events, rec.CreatedAt, rec.UpdatedAt)
 	return &Transaction{
-		FormToken:       rec.ProviderRef,
-		UUID:            rec.UUID,
-		OrderID:         rec.OrderID,
-		Amount:          rec.Amount,
-		Currency:        rec.Currency,
-		FormAction:      provData.FormAction,
-		Customer:        customer,
-		Metadata:        metadata,
-		Payment:         pay,
-		ReturnURL:       provData.ReturnURL,
-		NotificationURL: provData.NotificationURL,
-		CreatedAt:       rec.CreatedAt,
-		UpdatedAt:       rec.UpdatedAt,
+		FormToken:          rec.ProviderRef,
+		UUID:               rec.UUID,
+		OrderID:            rec.OrderID,
+		Amount:             rec.Amount,
+		Currency:           rec.Currency,
+		FormAction:         provData.FormAction,
+		Customer:           customer,
+		Metadata:           metadata,
+		Payment:            pay,
+		ReturnURL:          provData.ReturnURL,
+		NotificationURL:    provData.NotificationURL,
+		PaymentMethodToken: provData.PaymentMethodToken,
+		CreatedAt:          rec.CreatedAt,
+		UpdatedAt:          rec.UpdatedAt,
 	}, nil
 }
