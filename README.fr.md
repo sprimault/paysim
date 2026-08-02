@@ -40,6 +40,8 @@ pour provoquer ces cas à la demande, en dev et en CI.
 
 ## Démarrage rapide (Docker Compose)
 
+**Linux / macOS / Git Bash :**
+
 ```bash
 docker compose -f deploy/compose.yml up -d
 bash examples/seed-paysim.sh
@@ -49,8 +51,34 @@ bash examples/seed-paysim.sh
 bash examples/seed-paysim.sh --purge
 ```
 
+**Windows PowerShell :**
+
+```powershell
+docker compose -f deploy/compose.yml up -d
+.\examples\seed-paysim.ps1 -Purge
+# http://localhost:30880/
+
+# Re-lance pour repartir sur des paiements propres :
+.\examples\seed-paysim.ps1 -Purge
+```
+
 Surcharger `PAYSIM_HOST_PORT` (et passer le même à `PAYSIM_URL` sur
 la ligne du seed) si `30880` est déjà pris sur la machine.
+
+Reconstruire après un changement de code — force le rebuild de
+l'image et la recréation du conteneur :
+
+```bash
+docker compose -f deploy/compose.yml up -d --build --force-recreate
+```
+
+Si erreur `No such container`, Docker Compose a perdu la trace du
+conteneur (`docker rm` manuel hors compose, etc.). Reset d'abord :
+
+```bash
+docker compose -f deploy/compose.yml down --remove-orphans
+docker compose -f deploy/compose.yml up -d
+```
 
 Le script de seed peuple l'UI avec un jeu de données varié —
 paiements, abonnements, moyens de paiement dans tous les états

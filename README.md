@@ -38,6 +38,8 @@ provoke these on demand, in dev and in CI.
 
 ## Quick start (Docker Compose)
 
+**Linux / macOS / Git Bash:**
+
 ```bash
 docker compose -f deploy/compose.yml up -d
 bash examples/seed-paysim.sh
@@ -47,8 +49,33 @@ bash examples/seed-paysim.sh
 bash examples/seed-paysim.sh --purge
 ```
 
+**Windows PowerShell:**
+
+```powershell
+docker compose -f deploy/compose.yml up -d
+.\examples\seed-paysim.ps1
+# http://localhost:30880/
+
+# Re-run to reset payments to a clean state:
+.\examples\seed-paysim.ps1 -Purge
+```
+
 Override `PAYSIM_HOST_PORT` (and pass the same to `PAYSIM_URL` on
-the seed line) if `30880` is already taken on your machine.
+the seed line) if `30880` is already taken on the machine.
+
+Rebuild after code changes — forces image rebuild and container recreate:
+
+```bash
+docker compose -f deploy/compose.yml up -d --build --force-recreate
+```
+
+If it fails with `No such container`, Docker Compose lost track of the
+container state (manual `docker rm` outside compose, etc.). Reset first:
+
+```bash
+docker compose -f deploy/compose.yml down --remove-orphans
+docker compose -f deploy/compose.yml up -d
+```
 
 The seed script populates the UI with a varied dataset — payments,
 subscriptions, payment methods in every visual state (captured,
