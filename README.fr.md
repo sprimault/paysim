@@ -234,7 +234,8 @@ sortie publique avec un GIF de démo sont prévus.
 ## Retours
 
 Bugs, demandes de features, ou questions : ouvrir une issue sur
-https://github.com/sprimault/paysim/issues.
+https://github.com/sprimault/paysim/issues (français de préférence,
+anglais accepté).
 
 ## Licence
 

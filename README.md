@@ -228,7 +228,8 @@ public release with a demo GIF are planned.
 ## Feedback
 
 Bugs, feature requests, or questions: open an issue at
-https://github.com/sprimault/paysim/issues.
+https://github.com/sprimault/paysim/issues (French preferred,
+English welcome).
 
 ## License
 
