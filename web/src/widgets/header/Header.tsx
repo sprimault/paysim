@@ -3,6 +3,7 @@
 
 import { Radio, Zap } from 'lucide-react';
 import { Link } from 'react-router';
+import { ThemeToggle } from '@/shared/ui/ThemeToggle';
 
 interface HeaderProps {
   connected?: boolean; // état SSE, branché en 3c ; en 3b on affiche « démo »
@@ -19,7 +20,10 @@ export function Header({ connected = true }: HeaderProps) {
           <Zap size={18} className="text-brand-600 dark:text-brand-400" strokeWidth={2.5} />
           Paysim
         </Link>
-        <ConnectionIndicator connected={connected} />
+        <div className="flex items-center gap-3">
+          <ConnectionIndicator connected={connected} />
+          <ThemeToggle />
+        </div>
       </div>
     </header>
   );

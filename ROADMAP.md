@@ -170,6 +170,15 @@ Découpage restant de la phase 4 :
   `nil, nil` avant). Helper de test `setupWithSQLite` + 4 nouveaux tests.
   Colonne « Provider » dans PaymentList React côté onglet « Tous »
   uniquement (propriété `showProvider` optionnelle sur PaymentRow).
+- **4.4.7b fait** (2026-08-02) — Mode sombre/clair toggle utilisateur.
+  Tailwind passe de `darkMode: 'media'` à `'class'`. Toggle 3 états
+  (light/system/dark) dans le Header via nouveau `ThemeToggle` shared.
+  Hook `useTheme` gère persistance localStorage + listener
+  prefers-color-scheme en mode `system`. Script inline dans
+  `index.html` applique la classe `dark` avant le premier render pour
+  éviter le flash. Favicon SVG inline (data URI) ajouté : icône
+  éclair indigo, cohérent avec le logo Header. 16 nouveaux tests
+  (`theme.test.ts` + `ThemeToggle.test.tsx`).
 - **4.4.7 — Extensions UI** — la mécanique 4.4.5/4.4.6 crée des entités que l'UI
   actuelle n'affiche pas. À ajouter : colonne « Provider » dans l'onglet « Tous » de
   la liste des paiements (aujourd'hui provider invisible en vue cross-provider) ;

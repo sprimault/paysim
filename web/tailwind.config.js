@@ -4,7 +4,11 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
-  darkMode: 'media', // suit prefers-color-scheme du navigateur (web.md)
+  // Basculé de 'media' à 'class' en 4.4.7b — permet un toggle utilisateur
+  // (light/dark/system) qui écrase le préférence système. Le fallback
+  // prefers-color-scheme est réappliqué dans le hook useTheme quand
+  // l'utilisateur laisse « system ». Voir shared/lib/theme.ts.
+  darkMode: 'class',
   theme: {
     extend: {
       fontFamily: {
