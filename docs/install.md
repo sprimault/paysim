@@ -23,7 +23,7 @@ mounts.
 
 | Variable | Purpose |
 |---|---|
-| `PAYSIM_PUBLIC_URL` | URL the browser sees (ingress host, or `http://<node-ip>:30880` for NodePort). |
+| `PAYSIM_PUBLIC_URL` | URL the browser sees (ingress host, or `http://<node-ip>:30890` for NodePort). |
 | `PAYSIM_CALLBACK_URL` | Default merchant callback URL for webhooks — used as fallback when a payment has no `returnUrl`. |
 | `PAYSIM_BASE_PATH` | Prefix when Paysim is served under a sub-path (e.g. `/paysim`). Empty when served at root. |
 | `PAYSIM_API_TOKEN` (+ `_FILE`) | Bearer token that protects the control API. Empty = open (local mode only). |
@@ -55,7 +55,7 @@ either: behind an ingress it lies.
 | Standalone local binary (dev) | `http://localhost:8080` | `http://localhost:<merchant-port>` |
 | Merchant on host, Paysim in a container | `http://localhost:30880` | `http://host.docker.internal:<merchant-port>` |
 | Merchant + Paysim in the same Compose | `http://localhost:30880` | `http://<merchant-service>:<internal-port>` (service DNS) |
-| Kubernetes NodePort | `http://<node-ip>:30880` | `http://<merchant-svc>.<ns>.svc.cluster.local:<port>` |
+| Kubernetes NodePort | `http://<node-ip>:30890` | `http://<merchant-svc>.<ns>.svc.cluster.local:<port>` |
 | Kubernetes behind Ingress | `https://paysim.example.com` | `http://<merchant-svc>.<ns>.svc.cluster.local:<port>` |
 
 **Edge case**: a payment can carry its own `notificationUrl` in the
@@ -94,8 +94,9 @@ The demo merchant listens on port 30881 (override with
 ## Option 2 — Kubernetes as an internal dev tool (NodePort)
 
 A NodePort service accessible from any host on the cluster's
-network, at `http://<node-ip>:30880`. No DNS, no TLS, no ingress
-required.
+network, at `http://<node-ip>:30890`. No DNS, no TLS, no ingress
+required. (Port `30880` is left free for the Docker Compose default,
+so both can coexist on the same machine.)
 
 ### 1. Build the image and load it into your cluster
 
@@ -152,7 +153,7 @@ kubectl apply -k deploy/k8s/
 kubectl -n paysim rollout status deployment/paysim
 ```
 
-Access the UI at `http://<any-node-ip>:30880/`.
+Access the UI at `http://<any-node-ip>:30890/`.
 
 ## Option 3 — Kubernetes behind an ingress (domain + TLS + auth)
 
@@ -273,7 +274,7 @@ be consistent across replicas anyway).
 - **Pod stays in `ImagePullBackOff`** — the image is not in the
   cluster's local store. For k3d, use `k3d image import`; for
   kind, `kind load docker-image`; for k3s, `k3s ctr images import`.
-- **NodePort unreachable** — check your firewall (port 30880 by
+- **NodePort unreachable** — check your firewall (port 30890 by
   default) and that the node's IP is routable from where you're
   browsing.
 - **`ImagePullBackOff` on a private registry** — you're missing an

@@ -29,12 +29,18 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
     -o /paysim ./cmd/paysim
 
+# Prépare un /data appartenant à nonroot (65532). Sans ça, un volume
+# Docker/K8s monté sur /data hérite de root:root et SQLite ne peut pas
+# écrire depuis distroless (pas de shell pour chown au runtime).
+RUN mkdir -p /data-init && chown 65532:65532 /data-init
+
 # ─── Stage 3 : runtime distroless nonroot ─────────────────────────────
 # static-debian12 : glibc-free, ~2 MB de base, CA certs inclus (pour
 # webhook HTTPS sortant), utilisateur nonroot (65532) par défaut.
 # Aucun shell, aucun package manager — surface d'attaque quasi nulle.
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=gobuild /paysim /paysim
+COPY --from=gobuild --chown=nonroot:nonroot /data-init /data
 EXPOSE 8080
 USER nonroot:nonroot
 ENTRYPOINT ["/paysim"]

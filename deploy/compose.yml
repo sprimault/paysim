@@ -17,11 +17,12 @@
 services:
   paysim:
     image: ghcr.io/sprimault/paysim:latest
-    # Décommenter pour builder depuis les sources plutôt que tirer
-    # l'image publique (utile en dev sur une branche non taguée) :
-    # build:
-    #   context: ..
-    #   dockerfile: deploy/Dockerfile
+    # Fallback : si l'image n'est pas trouvée dans un registry, docker
+    # compose la construit localement à partir des sources. Retirer ces
+    # trois lignes le jour où l'image publique existe et suffit.
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
     ports:
       # Port hôte surchargable via PAYSIM_HOST_PORT (défaut 8080).
       # Utile quand 8080 est déjà pris par une autre application.
@@ -42,6 +43,14 @@ services:
       # être configurée côté marchand pour vérifier la signature.
       PAYSIM_PAYZEN_HMAC_KEY: "cle-hmac-de-test"
 
+      # Backend SQLite activé par défaut : les subscriptions et moyens
+      # de paiement ont besoin d'un repository partagé pour être listés
+      # globalement dans l'UI. Le volume `paysim-data` (déclaré plus bas)
+      # est monté sur /data et reste writable même sous read_only:true.
+      # Pour un mode sans état, retirer les 4 lignes suivantes (PAYSIM_STORE,
+      # volumes, et l'entrée du bloc `volumes:` racine).
+      PAYSIM_STORE: "sqlite"
+
       # Décommenter pour protéger l'API de contrôle (/paysim/simulate/*
       # et /paysim/api/v1/*). Vide = API ouverte, mode local explicite.
       # PAYSIM_API_TOKEN: "un-token-bearer-a-generer"
@@ -50,9 +59,12 @@ services:
       # PAYSIM_CHAOS_LATENCY_MS: "200"
       # PAYSIM_CHAOS_ERROR_RATE: "0.1"
 
+    volumes:
+      - paysim-data:/data
+
     # Contrat de conteneur : système de fichiers en lecture seule, pas
-    # de process root, capacités minimales. Paysim ne persiste rien par
-    # défaut, aucun besoin d'un volume writable.
+    # de process root, capacités minimales. Le volume /data monté
+    # au-dessus est le seul chemin writable.
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -61,8 +73,11 @@ services:
 
     # Le healthcheck HTTP standard (GET /healthz) nécessite un client
     # HTTP dans l'image ; distroless static n'a ni curl ni wget. Deux
-    # options si tu veux un healthcheck :
+    # options si un healthcheck est nécessaire :
     #   - Ajouter un flag `-healthcheck` au binaire (à faire dans un
     #     prochain incrément si le besoin se confirme).
     #   - Confier le check au proxy/ingress au-dessus (nginx, Traefik,
     #     Kubernetes probes en /healthz et /readyz — voir deploy/k8s/).
+
+volumes:
+  paysim-data:

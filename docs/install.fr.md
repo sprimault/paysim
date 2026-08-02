@@ -23,7 +23,7 @@ pour monter un Secret K8s sans écrire la valeur en clair.
 
 | Variable | Rôle |
 |---|---|
-| `PAYSIM_PUBLIC_URL` | URL vue par le navigateur (host d'ingress, ou `http://<ip-noeud>:30880` pour NodePort). |
+| `PAYSIM_PUBLIC_URL` | URL vue par le navigateur (host d'ingress, ou `http://<ip-noeud>:30890` pour NodePort). |
 | `PAYSIM_CALLBACK_URL` | URL de callback par défaut pour les webhooks — utilisée comme fallback quand un paiement n'a pas de `returnUrl`. |
 | `PAYSIM_BASE_PATH` | Préfixe quand Paysim est servi sous un sous-chemin (ex. `/paysim`). Vide quand servi à la racine. |
 | `PAYSIM_API_TOKEN` (+ `_FILE`) | Bearer token qui protège l'API de contrôle. Vide = ouvert (mode local uniquement). |
@@ -56,7 +56,7 @@ n'aide pas non plus : derrière un ingress, il ment.
 | Binaire local seul (dev) | `http://localhost:8080` | `http://localhost:<port-marchand>` |
 | Marchand sur l'hôte, Paysim en conteneur | `http://localhost:30880` | `http://host.docker.internal:<port-marchand>` |
 | Marchand + Paysim dans le même Compose | `http://localhost:30880` | `http://<service-marchand>:<port-interne>` (DNS de service) |
-| Kubernetes NodePort | `http://<ip-noeud>:30880` | `http://<svc-marchand>.<ns>.svc.cluster.local:<port>` |
+| Kubernetes NodePort | `http://<ip-noeud>:30890` | `http://<svc-marchand>.<ns>.svc.cluster.local:<port>` |
 | Kubernetes derrière Ingress | `https://paysim.example.com` | `http://<svc-marchand>.<ns>.svc.cluster.local:<port>` |
 
 **Cas non couvert** : un paiement peut inclure son propre
@@ -99,7 +99,9 @@ vérifiées dans `examples/php/retours.log`.
 
 Un Service NodePort accessible depuis
 n'importe quel host sur le réseau du cluster, à
-`http://<ip-noeud>:30880`. Pas de DNS, pas de TLS, pas d'ingress.
+`http://<ip-noeud>:30890`. Pas de DNS, pas de TLS, pas d'ingress.
+(Le port `30880` reste libre pour le défaut Docker Compose, les deux
+peuvent coexister sur la même machine.)
 
 ### 1. Builder l'image et la charger dans le cluster
 
@@ -160,7 +162,7 @@ kubectl apply -k deploy/k8s/
 kubectl -n paysim rollout status deployment/paysim
 ```
 
-Accéder à l'UI sur `http://<n-importe-quelle-ip-noeud>:30880/`.
+Accéder à l'UI sur `http://<n-importe-quelle-ip-noeud>:30890/`.
 
 ## Option 3 — Kubernetes derrière un ingress (domaine + TLS + auth)
 
@@ -285,7 +287,7 @@ de toute façon pas cohérent entre plusieurs répliques).
   store local du cluster. Pour k3d, utiliser `k3d image import` ;
   pour kind, `kind load docker-image` ; pour k3s, `k3s ctr images
   import`.
-- **NodePort inaccessible** — vérifier le firewall (port 30880 par
+- **NodePort inaccessible** — vérifier le firewall (port 30890 par
   défaut) et que l'IP du node est routable depuis votre poste.
 - **`ImagePullBackOff` sur un registre privé** — il manque un
   `imagePullSecret` dans le namespace, ou il ne matche pas la

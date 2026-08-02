@@ -18,7 +18,8 @@ spec:
     - name: http
       port: 8080
       targetPort: http
-      # 30880 = 8080 avec préfixe 3, mémorisable. Modifiable ; K8s
-      # exige un port dans la plage 30000-32767 par défaut.
-      nodePort: 30880
+      # Modifiable ; K8s exige un port dans la plage 30000-32767
+      # par défaut. Le port 30880 est laissé libre pour Docker Compose
+      # (défaut du quick start), le cluster prend 30890 pour cohabiter.
+      nodePort: 30890
       protocol: TCP

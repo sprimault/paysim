@@ -1,4 +1,4 @@
-# examples/seed-paysim.ps1 — équivalent PowerShell du script bash du
+﻿# examples/seed-paysim.ps1 — équivalent PowerShell du script bash du
 # même nom. Peuple Paysim avec un jeu de démo pour voir les états
 # visuels de l'UI (captured / declined / actif / révoqué / expiré).
 #
