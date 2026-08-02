@@ -14,7 +14,7 @@ Les invariants du projet sont dans `.claude/critical-rules.md`, réinjecté auto
 
 ## Commandes
 
-Ces cibles font partie de la livraison de la phase 0 — les créer avant de s'en servir.
+Cibles standard du projet.
 
 | Commande | Effet |
 |---|---|
@@ -46,22 +46,21 @@ deploy/
 docs/
 ```
 
-<!-- Cette arborescence est ici parce que le code n'existe pas encore. Dès que la phase 1
+<!-- Cette arborescence est ici parce que le code n'existe pas encore. Dès que le domaine
      est livrée, elle devient déductible du dépôt : la supprimer et laisser Claude lire
      l'arborescence réelle. Passer /doctor pour vérifier ce qui peut encore être coupé. -->
 
 Le découpage `domain` / `providers` / `delivery` n'est pas cosmétique : c'est lui qui rend
 le moteur de chaos uniforme et l'ajout d'un fournisseur mécanique. Voir les invariants.
 
-`internal/format` et `web/src/lib` existent dès la phase 0, même presque vides. Un
+`internal/format` et `web/src/lib` existent dès le début, même presque vides. Un
 formatage de date, de montant ou de troncature de chaîne écrit en ligne dans un composant
 ou un handler est une erreur à corriger, pas un raccourci acceptable.
 
 ## Contrat de conteneur et de cluster
 
-Paysim se déploie comme MailHog, Centrifugo, Gotenberg ou OnlyOffice : on l'ajoute à un
-`compose` ou à un cluster, on lui passe des variables, il fonctionne. Aucun fichier de
-configuration, aucun script d'amorçage. Ce contrat contraint la conception dès la phase 0.
+Paysim se déploie via `compose` ou dans un cluster : on l'ajoute, on lui passe des
+variables, il fonctionne. Aucun fichier de configuration, aucun script d'amorçage.
 
 ### Configuration
 
@@ -82,7 +81,7 @@ permet de monter un Secret Kubernetes sans écrire la valeur en clair dans le ma
 
 - **Un seul port HTTP** pour tout : interface, API de contrôle, routes des fournisseurs.
 - **Sans état par défaut**, système de fichiers en lecture seule, utilisateur non
-  privilégié. La persistance SQLite de la phase 4 reste optionnelle et explicite.
+  privilégié. La persistance SQLite reste optionnelle et explicite.
 - **Journaux sur la sortie standard**, jamais dans un fichier.
 - `GET /healthz` pour la sonde de vivacité, `GET /readyz` pour celle de disponibilité —
   deux points d'entrée distincts, pas un alias.
@@ -100,7 +99,7 @@ gênant, la réponse est de sortir l'état dans `internal/store`, pas d'ajouter 
 
 - Commits conventionnels : préfixe imposé par la norme (`feat:`, `fix:`, `test:`, `docs:`,
   `refactor:`), description en français.
-- Une branche par phase de la feuille de route, une PR par phase.
+- Une branche et une PR par livraison de la feuille de route.
 - Pour toute modification touchant `internal/domain` ou l'interface `Provider` : proposer
   le plan avant d'écrire du code.
 
@@ -108,8 +107,8 @@ gênant, la réponse est de sortir l'état dans `internal/store`, pas d'ajouter 
 
 - `ROADMAP.md` — les phases, leurs critères de fin, et la section « Plus tard » où se
   notent les idées hors périmètre. À lire quand on planifie, pas à chaque session.
-- `docs/states.md` — la machine à états du paiement (phase 0).
-- `docs/install.md` — installation et configuration, tous modes de déploiement (phase 4).
+- `docs/states.md` — la machine à états du paiement.
+- `docs/install.md` — installation et configuration, tous modes de déploiement.
 - `.claude/rules/preferences.md` — posture, langue, style de code. Chargé à chaque session.
 - `.claude/rules/{go,providers,web}.md` — conventions techniques, chargées automatiquement
   quand Claude touche les fichiers concernés.

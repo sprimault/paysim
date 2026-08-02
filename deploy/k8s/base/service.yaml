@@ -7,10 +7,10 @@ metadata:
     app.kubernetes.io/name: paysim
 spec:
   # NodePort pour un accès direct depuis le réseau du cluster, sans
-  # ingress — comme MailHog, OnlyOffice ou d'autres outils de dev
-  # qu'on ajoute au cluster et qu'on consomme depuis un poste sur le
-  # même LAN. Un dev qui veut exposer sur un domaine public active
-  # l'Ingress optionnel (voir ingress.yaml).
+  # ingress — un outil de dev qu'on ajoute au cluster et qu'on
+  # consomme depuis un poste sur le même LAN. Un dev qui veut
+  # exposer sur un domaine public active l'Ingress optionnel
+  # (voir ingress.yaml).
   type: NodePort
   selector:
     app.kubernetes.io/name: paysim

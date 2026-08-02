@@ -15,7 +15,7 @@ Paysim, in plain PHP (no Composer dependency). Three scripts:
 - **`notification.php`** — the equivalent for the server-to-server IPN,
   with the same verification logic.
 
-This example satisfies the phase-1 completion criterion: a PHP
+This example satisfies the integration contract: a PHP
 merchant performs a full payment against Paysim by changing only the
 base URL, and verifies the `kr-hash` signature produced by Paysim on
 its own side.

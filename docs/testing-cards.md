@@ -135,7 +135,7 @@ generic endpoint) selects the adapter. Omitting it defaults to
 trace implicit choices in a busy CI log.
 
 Explicit `provider` for future-proofing (the API surface will remain
-identical when Stripe joins in phase 5):
+identical when Stripe joins):
 
 ```bash
 # Explicit — same behaviour today, resilient to future adapters
@@ -146,7 +146,7 @@ curl -X POST http://paysim:8080/paysim/api/v1/payments \
     "amount": 1000, "currency": "EUR", "orderId": "O-1"
   }'
 
-# Coming in phase 5 — same endpoint, different provider
+# Coming later — same endpoint, different provider
 # curl -X POST http://paysim:8080/paysim/api/v1/payments \
 #   -d '{"provider":"stripe","amount":1000,"currency":"EUR","orderId":"O-1"}'
 ```

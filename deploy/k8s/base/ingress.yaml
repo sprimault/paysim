@@ -1,6 +1,6 @@
 # Ingress OPTIONNEL. Par défaut Paysim est accessible via NodePort
 # (voir service.yaml) — cohérent avec l'usage « outil de dev sur le
-# LAN » à la MailHog.
+# LAN ».
 #
 # Activer cet ingress si vous voulez :
 #   - Exposer Paysim sur un domaine public ou un sous-domaine interne

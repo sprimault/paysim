@@ -266,15 +266,14 @@ Découpage restant de la phase 4 :
   `/healthz` et `/readyz`, ConfigMap pour les URL, Secret pour `PAYSIM_API_TOKEN`, Ingress.
   Fait (base + overlay SQLite).
 - Plafond de rétention `PAYSIM_MAX_PAYMENTS`, avec un stockage conçu en tampon circulaire.
-  Sans lui, un pod qui tourne une semaine sature sa mémoire — c'est le défaut de MailHog
-  qu'on ne reproduit pas. Fait.
+  Sans lui, un pod qui tourne une semaine sature sa mémoire. Fait.
 - Persistance **SQLite optionnelle**, désactivée par défaut, activée par une variable
   dédiée qui pointe sur un fichier local. Un seul fichier, driver Go pur, aucun serveur
   externe. Sert à rejouer une session après redémarrage ; ne change ni l'invariant 8
   (une seule réplique) ni le contrat d'ajout de Paysim comme conteneur autonome. Fait,
   y compris la persistance des events bus pour le catch-up SSE post-restart et
   l'overlay Kustomize.
-- Protection de l'API de contrôle par jeton, sur le modèle du `JWT_SECRET` d'OnlyOffice.
+- Protection de l'API de contrôle par jeton Bearer, sur le modèle du `JWT_SECRET`.
   Inactive tant que la variable est vide, pour ne pas alourdir l'usage local. Fait.
 - **`docs/install.md`**, avec dans cet ordre : binaire seul, `docker run`, `compose` à côté
   d'une application, K3s/Kubernetes. Puis le tableau complet des variables. Puis — c'est la

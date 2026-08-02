@@ -6,9 +6,8 @@
 # PowerShell 7+ (Invoke-RestMethod est natif, pas de dépendance).
 #
 # Variables d'environnement :
-#   PAYSIM_URL   URL de base de Paysim (défaut http://localhost:30880 —
-#                port haut dédié, défaut identique en Docker Compose et
-#                Kubernetes NodePort). Surcharger si Paysim est ailleurs.
+#   PAYSIM_URL   URL de base de Paysim (défaut http://localhost:30880).
+#                Surcharger si Paysim est ailleurs.
 #   NOTIF_URL    URL des webhooks (défaut http://localhost:1/discard,
 #                port fermé, échec immédiat).
 #

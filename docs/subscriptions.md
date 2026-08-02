@@ -3,7 +3,7 @@
 # Subscriptions
 
 Paysim simulates two recurring-payment patterns supported by the
-providers it emulates (PayZen today, Stripe upcoming in phase 5):
+providers it emulates (PayZen today, Stripe upcoming):
 
 - **Token pattern**: the merchant orchestrates the recurrence and
   triggers each charge on its own. Covered in
@@ -142,7 +142,7 @@ curl -X POST http://paysim:8080/paysim/api/v1/subscriptions/<ID>/cancel
 ## Cross-provider
 
 The `provider` field selects the adapter — `payzen` today, `stripe`
-coming in phase 5. In the meantime any request without `provider`
+coming later. In the meantime any request without `provider`
 defaults to `payzen`. Explicit passing of the field remains valid to
 future-proof integration scripts:
 

@@ -20,7 +20,7 @@ import (
 // defaultMaxPayments est le plafond de rétention par défaut du tampon
 // circulaire de paiements. Choisi assez haut pour ne pas gêner un usage
 // interactif, assez bas pour qu'un pod qui tourne une semaine ne sature
-// pas sa mémoire — c'est le défaut de MailHog qu'on ne veut pas reproduire.
+// pas sa mémoire.
 const defaultMaxPayments = 10000
 
 // Config regroupe l'ensemble des paramètres validés du processus.

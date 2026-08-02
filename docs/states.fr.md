@@ -91,7 +91,7 @@ interdite, montant invalide) ne modifie rien — ni l'état, ni le journal.
 **Pas de capture partielle.** `Capture` transfère toujours l'intégralité du
 montant demandé. La capture partielle existe chez certains PSP (notamment pour
 les commandes expédiées en plusieurs colis) mais elle est **hors périmètre
-phase 0**. Si elle devient nécessaire, elle s'ajoutera comme un mode de
+l'instant**. Si elle devient nécessaire, elle s'ajoutera comme un mode de
 `Capture(amount format.Amount)` — et il faudra revoir le contrat de `Refund`
 dont la borne haute deviendra le montant capturé, plus le montant demandé.
 

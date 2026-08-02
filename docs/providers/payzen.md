@@ -281,7 +281,7 @@ KrAnswer
 │   ├── orderEffectiveAmount integer
 │   └── _type                "V4/OrderDetails"
 ├── customer            Customer (optional)
-├── transactions[]      one entry per payment (single in phase 1)
+├── transactions[]      one entry per payment (single today)
 │   ├── uuid                 string
 │   ├── amount               integer
 │   ├── currency             string

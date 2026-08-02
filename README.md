@@ -47,11 +47,8 @@ bash examples/seed-paysim.sh
 bash examples/seed-paysim.sh --purge
 ```
 
-Paysim binds `30880` on the host — a high dedicated port like
-MailHog's `30825`, chosen to avoid clashing with `8080`/`8081`
-(usually taken by Tomcat, Jenkins, Portainer, front-ends). If
-`30880` is also taken, override with `PAYSIM_HOST_PORT=30890` and
-pass the same to `PAYSIM_URL` on the seed line.
+Override `PAYSIM_HOST_PORT` (and pass the same to `PAYSIM_URL` on
+the seed line) if `30880` is already taken on your machine.
 
 The seed script populates the UI with a varied dataset — payments,
 subscriptions, payment methods in every visual state (captured,

@@ -2,10 +2,10 @@
 
 # Installation
 
-Paysim is packaged like MailHog or OnlyOffice: a single container you
-add to your stack, configure via environment variables, and consume
-from your other services. This document covers Docker Compose,
-Kubernetes (NodePort or Ingress), and the configuration knobs.
+Paysim ships as a single container you add to your stack, configure
+via environment variables, and consume from your other services.
+This document covers Docker Compose, Kubernetes (NodePort or Ingress),
+and the configuration knobs.
 
 ## Prerequisites
 
@@ -71,14 +71,10 @@ The simplest path for local testing. Copy [`deploy/compose.yml`](../deploy/compo
 docker compose -f deploy/compose.yml up -d
 ```
 
-Browse to `http://localhost:30880/` — a high dedicated port that
-avoids clashing with what devs usually already run (Tomcat, Jenkins,
-Portainer, XDebug, front-ends often occupy 8080/8081). Same
-convention MailHog uses on Kubernetes clusters (30825). The
-container internally still listens on 8080.
+Browse to `http://localhost:30880/`.
 
-If 30880 is also taken, override it — `PAYSIM_PUBLIC_URL` follows
-automatically:
+Override `PAYSIM_HOST_PORT` if `30880` is taken — `PAYSIM_PUBLIC_URL`
+follows automatically:
 
 ```bash
 PAYSIM_HOST_PORT=30890 docker compose -f deploy/compose.yml up -d
@@ -97,9 +93,9 @@ The demo merchant listens on port 30881 (override with
 
 ## Option 2 — Kubernetes as an internal dev tool (NodePort)
 
-This mirrors how MailHog is typically deployed: a NodePort service
-accessible from any host on the cluster's network, at
-`http://<node-ip>:30880`. No DNS, no TLS, no ingress required.
+A NodePort service accessible from any host on the cluster's
+network, at `http://<node-ip>:30880`. No DNS, no TLS, no ingress
+required.
 
 ### 1. Build the image and load it into your cluster
 
@@ -240,7 +236,7 @@ make image-push  # requires docker login and buildx configured
 **Private registry**: create an `imagePullSecret` in the namespace
 and reference it from the Deployment.
 
-Public GHCR images pushed by CI will land here at the phase-6 public
+Public GHCR images pushed by CI will land here at the public
 release — for now, local build + import is the recommended path.
 
 ## SQLite persistence (optional)

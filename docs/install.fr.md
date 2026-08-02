@@ -2,9 +2,9 @@
 
 # Installation
 
-Paysim s'empaquette comme MailHog ou OnlyOffice : un conteneur qu'on
-ajoute à son stack, configuré par variables d'environnement, consommé
-par les autres services. Ce document couvre Docker Compose, Kubernetes
+Paysim est distribué comme un conteneur unique qu'on ajoute à sa
+stack, configuré par variables d'environnement, consommé par les
+autres services. Ce document couvre Docker Compose, Kubernetes
 (NodePort ou Ingress), et les points de configuration.
 
 ## Prérequis
@@ -75,13 +75,9 @@ existant et fixer les variables d'environnement.
 docker compose -f deploy/compose.yml up -d
 ```
 
-Navigateur sur `http://localhost:30880/` — un port haut dédié qui
-évite le conflit avec ce que les devs font déjà tourner (Tomcat,
-Jenkins, Portainer, XDebug, front-ends occupent souvent 8080/8081).
-Même convention que MailHog en cluster (30825). Le conteneur écoute
-en interne sur 8080.
+Navigateur sur `http://localhost:30880/`.
 
-Si 30880 est également pris, le surcharger — `PAYSIM_PUBLIC_URL`
+Surcharger `PAYSIM_HOST_PORT` si `30880` est pris — `PAYSIM_PUBLIC_URL`
 suit automatiquement :
 
 ```bash
@@ -101,7 +97,7 @@ vérifiées dans `examples/php/retours.log`.
 
 ## Option 2 — Kubernetes en outil de dev interne (NodePort)
 
-Fonctionne comme MailHog : un Service NodePort accessible depuis
+Un Service NodePort accessible depuis
 n'importe quel host sur le réseau du cluster, à
 `http://<ip-noeud>:30880`. Pas de DNS, pas de TLS, pas d'ingress.
 
@@ -250,7 +246,7 @@ make image-push  # nécessite docker login et buildx configuré
 et le référencer depuis le Deployment.
 
 Les images publiques poussées par CI sur GHCR arriveront à la
-sortie phase 6 — d'ici là, le build local + import est le chemin
+sortie publique — d'ici là, le build local + import est le chemin
 recommandé.
 
 ## Persistance SQLite (optionnelle)

@@ -3,7 +3,7 @@
 # Abonnements
 
 Paysim simule deux mécaniques de paiement récurrent supportées par les
-fournisseurs qu'il émule (PayZen aujourd'hui, Stripe à venir en phase 5) :
+fournisseurs qu'il émule (PayZen aujourd'hui, Stripe à venir) :
 
 - **Token pattern** : le marchand orchestre la récurrence et déclenche
   chaque échéance lui-même. Documenté dans
@@ -143,7 +143,7 @@ curl -X POST http://paysim:8080/paysim/api/v1/subscriptions/<ID>/cancel
 ## Cross-provider
 
 Le champ `provider` sélectionne l'adaptateur — `payzen` aujourd'hui,
-`stripe` à venir en phase 5. En attendant, toute requête sans
+`stripe` à venir. En attendant, toute requête sans
 `provider` retombe sur `payzen` par défaut. Le passer explicitement
 reste valide et prépare la portabilité :
 

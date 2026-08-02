@@ -15,7 +15,7 @@ côté marchand, en PHP pur (aucune dépendance Composer). Trois scripts :
 - **`notification.php`** — équivalent pour l'IPN serveur-à-serveur,
   même mécanique de vérification.
 
-Cet exemple valide le critère de fin de phase 1 : un marchand PHP
+Cet exemple valide le contrat d'intégration : un marchand PHP
 effectue un paiement complet contre Paysim sans modification autre que
 l'URL de base, et vérifie côté marchand la signature `kr-hash` produite
 par Paysim.

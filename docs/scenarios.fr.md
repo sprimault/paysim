@@ -124,7 +124,7 @@ passer les ids explicitement.
 
 Le champ `provider` sur `create_payment`, `charge_token` et
 `create_subscription` sélectionne l'adaptateur — `payzen` par défaut.
-Quand Stripe arrivera en phase 5 (`provider: stripe`), les scénarios
+Quand Stripe arrivera (`provider: stripe`), les scénarios
 écrits aujourd'hui continueront de fonctionner sans changement ; seuls
 les nouveaux scénarios devront opter explicitement pour le nouveau
 provider.

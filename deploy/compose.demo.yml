@@ -26,8 +26,6 @@ services:
       - ../examples/php:/app:ro
     ports:
       # Port hôte surchargable via MERCHANT_HOST_PORT (défaut 30881).
-      # 30881 est voisin du port Paysim (30880) — cohérence visuelle,
-      # et 9000 est trop souvent pris (php-fpm, XDebug, portainer...).
       - "${MERCHANT_HOST_PORT:-30881}:80"
     environment:
       # Même clé HMAC que Paysim, sinon la vérification kr-hash échoue.

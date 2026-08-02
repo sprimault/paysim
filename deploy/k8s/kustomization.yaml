@@ -1,6 +1,6 @@
 # Kustomization racine — pointe vers la base, garde
 # `kubectl apply -k deploy/k8s/` fonctionnel pour l'usage courant
-# (mode mémoire, MailHog-like).
+# (mode mémoire).
 #
 # Pour activer la persistance SQLite :
 #   kubectl apply -k deploy/k8s/overlays/sqlite/

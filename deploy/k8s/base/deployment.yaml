@@ -1,7 +1,7 @@
 # Déploiement de Paysim. Invariant fort : replicas: 1 et strategy
 # Recreate — l'état vit en mémoire, deux réplicas verraient chacune
 # la moitié des paiements. Ne pas relever ce nombre sans avoir
-# implémenté un backend persistant partagé (SQLite phase 4, ou plus).
+# implémenté un backend persistant partagé (SQLite ou plus).
 apiVersion: apps/v1
 kind: Deployment
 metadata:

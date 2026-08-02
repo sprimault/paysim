@@ -124,7 +124,7 @@ explicit ids.
 
 The `provider` field on `create_payment`, `charge_token` and
 `create_subscription` selects the adapter — defaults to `payzen`.
-When Stripe joins in phase 5 (`provider: stripe`), scenarios written
+When Stripe joins later (`provider: stripe`), scenarios written
 today keep running unchanged; only new scenarios need to opt into the
 new provider explicitly.
 

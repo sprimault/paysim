@@ -5,9 +5,8 @@
 # expiré). Utile en première prise en main : « lance ça et regarde ».
 #
 # Prérequis :
-#   - Paysim tourne sur http://localhost:30880 — port haut dédié,
-#     défaut identique en Docker Compose et Kubernetes NodePort.
-#     Surcharger PAYSIM_URL si Paysim est ailleurs.
+#   - Paysim tourne sur http://localhost:30880. Surcharger PAYSIM_URL
+#     si Paysim est ailleurs.
 #   - PAYSIM_PAYZEN_HMAC_KEY configuré côté serveur (sinon simulate
 #     retourne 400 sur les cartes).
 #   - bash + curl + grep -o. Aucune autre dépendance.

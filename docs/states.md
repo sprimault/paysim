@@ -91,7 +91,7 @@ journal.
 
 **No partial capture.** `Capture` always transfers the full requested amount.
 Partial capture exists in some PSPs (notably for orders shipped in several
-parcels) but it is **out of scope for phase 0**. If it becomes necessary, it
+parcels) but it is **out of scope for now**. If it becomes necessary, it
 will be added as a mode of `Capture(amount format.Amount)` — and the contract
 of `Refund` will need revisiting, since its upper bound would become the
 captured amount rather than the requested one.

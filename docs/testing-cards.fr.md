@@ -140,7 +140,7 @@ endpoint générique) sélectionne l'adaptateur. L'omettre retombe sur
 pour permettre de tracer les choix implicites dans un log CI dense.
 
 `provider` explicite pour préparer l'avenir (la surface API restera
-identique quand Stripe arrivera en phase 5) :
+identique quand Stripe arrivera) :
 
 ```bash
 # Explicite — comportement identique aujourd'hui, résilient aux
@@ -152,7 +152,7 @@ curl -X POST http://paysim:8080/paysim/api/v1/payments \
     "amount": 1000, "currency": "EUR", "orderId": "O-1"
   }'
 
-# À venir en phase 5 — même endpoint, provider différent
+# À venir — même endpoint, provider différent
 # curl -X POST http://paysim:8080/paysim/api/v1/payments \
 #   -d '{"provider":"stripe","amount":1000,"currency":"EUR","orderId":"O-1"}'
 ```
