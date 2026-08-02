@@ -4,7 +4,15 @@
 #
 # Le marchand appelle Paysim via son nom de service DNS (`paysim`)
 # depuis le réseau interne. Depuis l'hôte, Paysim est joignable sur
-# `http://localhost:8080/`.
+# `http://localhost:30880/` par défaut — port haut dédié qui évite
+# le conflit avec ce qui tourne déjà chez le dev (Tomcat, Jenkins,
+# Portainer, XDebug, front-ends... occupent souvent 8080/8081).
+# Convention analogue à MailHog en cluster (30825). Le port interne
+# du process reste 8080 (containerPort du pod K8s aussi).
+# Si 30880 est également pris, surcharger avant le `up` :
+#   PAYSIM_HOST_PORT=30890 docker compose -f compose.yml up -d
+# PAYSIM_PUBLIC_URL suit automatiquement — sans quoi les redirections
+# rendues par Paysim pointeraient sur un port fermé.
 #
 # Pour tester Paysim seul (sans stack marchand), ajouter le fichier
 # compose.demo.yml qui monte un serveur PHP recevant les webhooks :
@@ -19,11 +27,14 @@ services:
     #   context: ..
     #   dockerfile: deploy/Dockerfile
     ports:
-      - "8080:8080"
+      # Port hôte surchargable via PAYSIM_HOST_PORT (défaut 8080).
+      # Utile quand 8080 est déjà pris par une autre application.
+      - "${PAYSIM_HOST_PORT:-30880}:8080"
     environment:
       # URL vue par un navigateur (redirects PayZen, formulaires).
-      # Adapter à l'ingress qui expose Paysim en prod-lite.
-      PAYSIM_PUBLIC_URL: "http://localhost:8080"
+      # Suit le port hôte pour ne pas casser les redirections quand
+      # PAYSIM_HOST_PORT est surchargé. Adapter à l'ingress en prod-lite.
+      PAYSIM_PUBLIC_URL: "http://localhost:${PAYSIM_HOST_PORT:-30880}"
 
       # URL vers laquelle Paysim livre les webhooks. Pour un stack de
       # test, pointer sur le service marchand du même compose
