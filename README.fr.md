@@ -2,6 +2,10 @@
 
 # Paysim
 
+![License](https://img.shields.io/badge/license-Apache%202.0-blue)
+![Release](https://img.shields.io/github/v/release/sprimault/paysim)
+![Image](https://img.shields.io/badge/image-ghcr.io%2Fsprimault%2Fpaysim-blue?logo=docker)
+
 > Faux prestataire de paiement qui provoque les échecs qu'une sandbox refuse de reproduire.
 
 ## Ce qu'est Paysim
@@ -47,7 +51,8 @@ git clone https://github.com/sprimault/paysim.git
 cd paysim
 ```
 
-Puis :
+Puis (aucun build local nécessaire — `docker compose` tire l'image
+prête depuis `ghcr.io/sprimault/paysim:latest`, multi-arch amd64+arm64) :
 
 **Linux / macOS / Git Bash :**
 
@@ -225,6 +230,11 @@ est déployé, bouton d'actualisation par vue.
 
 Préversion, tag `v0.4.0` (2026-08-02). Le support Stripe et une
 sortie publique avec un GIF de démo sont prévus.
+
+## Retours
+
+Bugs, demandes de features, ou questions : ouvrir une issue sur
+https://github.com/sprimault/paysim/issues.
 
 ## Licence
 
