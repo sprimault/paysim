@@ -57,7 +57,9 @@ describe('<SubscriptionList />', () => {
     );
     expect(screen.getByText('Actif')).toBeInTheDocument();
     expect(screen.getByText('SUB-42')).toBeInTheDocument();
-    expect(screen.getByText('payzen')).toBeInTheDocument();
+    // « payzen » apparaît dans le tab et dans la colonne provider —
+    // on ne teste que la présence dans la cellule via getAllByText.
+    expect(screen.getAllByText('payzen').length).toBeGreaterThanOrEqual(2);
   });
 
   it('affiche un abonnement annulé', () => {

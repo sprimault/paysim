@@ -13,6 +13,7 @@ import { toast } from '@/shared/ui/toastStore';
 import { formatShort } from '@/shared/lib/dates';
 import { usePaymentMethod } from '@/entities/payment-method/model/usePaymentMethods';
 import { revokePaymentMethod } from '@/entities/payment-method/api/paymentMethodApi';
+import { paymentMethodStatus } from '@/entities/payment-method/lib/status';
 
 /**
  * Vue détail d'un moyen de paiement enregistré. Une seule action :
@@ -72,11 +73,12 @@ export function PaymentMethodDetail() {
               {method.token}
             </code>
             <CopyButton value={method.token} className="p-0.5" />
-            {method.revoked ? (
-              <Badge tone="unpaid">Révoqué</Badge>
-            ) : (
-              <Badge tone="paid">Actif</Badge>
-            )}
+            {(() => {
+              const s = paymentMethodStatus(method);
+              if (s === 'revoked') return <Badge tone="unpaid">Révoqué</Badge>;
+              if (s === 'expired') return <Badge tone="expired">Expiré</Badge>;
+              return <Badge tone="paid">Actif</Badge>;
+            })()}
           </div>
         </div>
         {!method.revoked && (

@@ -12,10 +12,14 @@ interface Option {
   icon: ComponentType<{ size?: number; className?: string }>;
 }
 
+// Ordre Clair / Sombre / Système — le mode « Système » vient en
+// dernier parce qu'il représente un fallback plutôt qu'un choix
+// explicite (« comme mon OS »), les deux modes utilisateurs directs
+// tiennent la gauche.
 const OPTIONS: readonly Option[] = [
   { value: 'light', label: 'Clair', icon: Sun },
-  { value: 'system', label: 'Système', icon: Monitor },
   { value: 'dark', label: 'Sombre', icon: Moon },
+  { value: 'system', label: 'Système', icon: Monitor },
 ];
 
 /**

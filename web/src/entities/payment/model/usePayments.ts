@@ -34,17 +34,22 @@ export function usePaymentsList(): {
   // le selector produit un nouveau tableau à chaque render et
   // déclenche une boucle infinie de mise à jour.
   const paymentsRecord = usePaymentStore((s) => s.payments);
-  const listLoaded = usePaymentStore((s) => s.listLoaded);
   const setList = usePaymentStore((s) => s.setList);
   const payments = useMemo(
     () =>
       Object.values(paymentsRecord).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     [paymentsRecord],
   );
-  const [state, setState] = useState<FetchState>({ loading: !listLoaded });
+  const [state, setState] = useState<FetchState>({
+    loading: Object.keys(paymentsRecord).length === 0,
+  });
 
+  // Refetch au mount — le SSE couvre les updates incrémentaux mais un
+  // remount doit repartir de la vérité serveur (utile après purge ou
+  // navigation depuis un onglet resté longtemps en arrière-plan).
   const refresh = async () => {
-    setState({ loading: true });
+    const empty = Object.keys(usePaymentStore.getState().payments).length === 0;
+    if (empty) setState({ loading: true });
     try {
       const list = await fetchPayments();
       setList(list);
@@ -55,11 +60,9 @@ export function usePaymentsList(): {
   };
 
   useEffect(() => {
-    if (!listLoaded) {
-      void refresh();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh est stable au sens fonctionnel, on ne veut pas relancer à chaque render.
-  }, [listLoaded]);
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return { payments, loading: state.loading, error: state.error, refresh };
 }

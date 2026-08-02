@@ -1,14 +1,18 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
+import { useMemo, useState } from 'react';
 import { ChevronRight, CreditCard } from 'lucide-react';
 import { Link } from 'react-router';
 import { Badge } from '@/shared/ui/Badge';
 import { CopyButton } from '@/shared/ui/CopyButton';
 import { DataTable, type Column } from '@/shared/ui/DataTable';
 import { EmptyState } from '@/shared/ui/EmptyState';
+import { ProviderTabs } from '@/shared/ui/ProviderTabs';
+import { RefreshButton } from '@/shared/ui/RefreshButton';
 import { formatRelative, formatShort } from '@/shared/lib/dates';
 import { truncate } from '@/shared/lib/strings';
+import { paymentMethodStatus } from '@/entities/payment-method/lib/status';
 import { usePaymentMethodsList } from '@/entities/payment-method/model/usePaymentMethods';
 import type { PaymentMethodOutput } from '@/shared/model';
 
@@ -21,17 +25,26 @@ import type { PaymentMethodOutput } from '@/shared/model';
  * même sur un simulateur).
  */
 export function PaymentMethodList() {
-  const { methods, loading, error } = usePaymentMethodsList();
+  const { methods, loading, error, refresh } = usePaymentMethodsList();
+  const [providerFilter, setProviderFilter] = useState<string>('');
+  const filtered = useMemo(
+    () =>
+      providerFilter ? methods.filter((m) => m.provider === providerFilter) : methods,
+    [methods, providerFilter],
+  );
 
   const columns: Column<PaymentMethodOutput>[] = [
     {
       header: 'État',
-      cell: (m) =>
-        m.revoked ? (
-          <Badge tone="unpaid">Révoqué</Badge>
-        ) : (
-          <Badge tone="paid">Actif</Badge>
-        ),
+      cell: (m) => {
+        // Trois états visuels — cf. entities/payment-method/lib/status.
+        // Révoqué prime sur expiré ; les deux empêchent un charge_token
+        // ou trigger_billing d'aboutir.
+        const s = paymentMethodStatus(m);
+        if (s === 'revoked') return <Badge tone="unpaid">Révoqué</Badge>;
+        if (s === 'expired') return <Badge tone="expired">Expiré</Badge>;
+        return <Badge tone="paid">Actif</Badge>;
+      },
     },
     {
       header: 'Provider',
@@ -101,16 +114,21 @@ export function PaymentMethodList() {
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-6">
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-          Moyens de paiement
-        </h1>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          {loading && methods.length === 0
-            ? 'Chargement…'
-            : `${methods.length} moyen${methods.length > 1 ? 's' : ''} enregistré${methods.length > 1 ? 's' : ''}`}
-        </p>
+      <div className="mb-4 flex items-end justify-between">
+        <div>
+          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+            Moyens de paiement
+          </h1>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            {loading && filtered.length === 0
+              ? 'Chargement…'
+              : `${filtered.length} moyen${filtered.length > 1 ? 's' : ''} enregistré${filtered.length > 1 ? 's' : ''}`}
+          </p>
+        </div>
+        <RefreshButton onRefresh={refresh} />
       </div>
+
+      <ProviderTabs value={providerFilter} onChange={setProviderFilter} />
 
       {error && (
         <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
@@ -120,7 +138,7 @@ export function PaymentMethodList() {
 
       <DataTable
         columns={columns}
-        rows={methods}
+        rows={filtered}
         rowKey={(m) => m.token}
         loading={loading}
         emptyState={

@@ -28,17 +28,23 @@ export function useSubscriptionsList(): {
   refresh: () => Promise<void>;
 } {
   const record = useSubscriptionStore((s) => s.subscriptions);
-  const listLoaded = useSubscriptionStore((s) => s.listLoaded);
   const setList = useSubscriptionStore((s) => s.setList);
   const subscriptions = useMemo(
     () =>
       Object.values(record).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [record],
   );
-  const [state, setState] = useState<FetchState>({ loading: !listLoaded });
+  const [state, setState] = useState<FetchState>({
+    loading: Object.keys(record).length === 0,
+  });
 
+  // Refetch systématique au mount. Le store sert de cache pour
+  // l'affichage instantané ; on ne bascule en skeleton que si aucune
+  // donnée n'est encore disponible (SWR-like). Nécessaire car aucun
+  // event SSE ne pousse les subscriptions à ce jour.
   const refresh = async () => {
-    setState({ loading: true });
+    const empty = Object.keys(useSubscriptionStore.getState().subscriptions).length === 0;
+    if (empty) setState({ loading: true });
     try {
       const list = await fetchSubscriptions();
       setList(list);
@@ -49,11 +55,9 @@ export function useSubscriptionsList(): {
   };
 
   useEffect(() => {
-    if (!listLoaded) {
-      void refresh();
-    }
+    void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listLoaded]);
+  }, []);
 
   return { subscriptions, loading: state.loading, error: state.error, refresh };
 }

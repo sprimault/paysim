@@ -43,13 +43,17 @@ describe('usePayments', () => {
     expect(result.current.payments[0].uuid).toBe('p1');
   });
 
-  it('usePaymentsList ne re-fetch pas si listLoaded déjà true', () => {
+  it('usePaymentsList refetch au mount même si le store est peuplé (SWR silencieux)', async () => {
+    // Contrat : le hook refetch toujours au mount pour repartir de la
+    // vérité serveur ; il ne bascule pas en `loading:true` si le store
+    // a déjà des données (pas de skeleton pendant la mise à jour).
     usePaymentStore.getState().setList([summary]);
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify([]), { status: 200 }),
+      new Response(JSON.stringify([summary]), { status: 200 }),
     );
-    renderHook(() => usePaymentsList());
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    const { result } = renderHook(() => usePaymentsList());
+    expect(result.current.loading).toBe(false);
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
   });
 
   it('usePayment fetch le détail si events absent', async () => {

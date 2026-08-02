@@ -26,17 +26,20 @@ export function usePaymentMethodsList(): {
   refresh: () => Promise<void>;
 } {
   const record = usePaymentMethodStore((s) => s.methods);
-  const listLoaded = usePaymentMethodStore((s) => s.listLoaded);
   const setList = usePaymentMethodStore((s) => s.setList);
   const methods = useMemo(
     () =>
       Object.values(record).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [record],
   );
-  const [state, setState] = useState<FetchState>({ loading: !listLoaded });
+  const [state, setState] = useState<FetchState>({
+    loading: Object.keys(record).length === 0,
+  });
 
+  // Refetch au mount à chaque fois — cf. useSubscriptionsList.
   const refresh = async () => {
-    setState({ loading: true });
+    const empty = Object.keys(usePaymentMethodStore.getState().methods).length === 0;
+    if (empty) setState({ loading: true });
     try {
       const list = await fetchPaymentMethods();
       setList(list);
@@ -47,11 +50,9 @@ export function usePaymentMethodsList(): {
   };
 
   useEffect(() => {
-    if (!listLoaded) {
-      void refresh();
-    }
+    void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listLoaded]);
+  }, []);
 
   return { methods, loading: state.loading, error: state.error, refresh };
 }

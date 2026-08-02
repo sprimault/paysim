@@ -6,6 +6,8 @@ import { CreditCard, Trash2 } from 'lucide-react';
 import { Button } from '@/shared/ui/Button';
 import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
 import { EmptyState } from '@/shared/ui/EmptyState';
+import { ProviderTabs } from '@/shared/ui/ProviderTabs';
+import { RefreshButton } from '@/shared/ui/RefreshButton';
 import { Skeleton } from '@/shared/ui/Skeleton';
 import { toast } from '@/shared/ui/toastStore';
 import { deletePayment, purgePayments } from '@/entities/payment/api/paymentApi';
@@ -13,11 +15,6 @@ import { usePaymentsList } from '@/entities/payment/model/usePayments';
 import { usePaymentStore } from '@/entities/payment/model/paymentStore';
 import type { PaymentSummary } from '@/shared/model';
 import { PaymentRow } from './PaymentRow';
-
-// Providers connus côté UI. Ajouter Stripe ici quand la feature
-// arrivera (phase 5). Le tab « Tous » n'est qu'un filtre vide côté
-// front — le backend renvoie déjà tous les paiements.
-const KNOWN_PROVIDERS: readonly string[] = ['payzen'];
 
 /**
  * Écran principal. Table dense — pas de cards ombrés. C'est ce qu'un
@@ -84,34 +81,22 @@ export function PaymentList() {
               : `${filtered.length} paiement${filtered.length > 1 ? 's' : ''} en mémoire`}
           </p>
         </div>
-        {filtered.length > 0 && (
-          <Button
-            variant="danger"
-            size="sm"
-            leftIcon={<Trash2 size={14} />}
-            onClick={() => setPurgeOpen(true)}
-          >
-            {providerFilter ? `Vider ${providerFilter}` : 'Vider tout'}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <RefreshButton onRefresh={refresh} />
+          {filtered.length > 0 && (
+            <Button
+              variant="danger"
+              size="sm"
+              leftIcon={<Trash2 size={14} />}
+              onClick={() => setPurgeOpen(true)}
+            >
+              {providerFilter ? `Vider ${providerFilter}` : 'Vider tout'}
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Tabs de provider — extensibles pour Stripe (phase 5). */}
-      <div className="mb-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800" role="tablist">
-        <ProviderTab
-          label="Tous"
-          active={providerFilter === ''}
-          onClick={() => setProviderFilter('')}
-        />
-        {KNOWN_PROVIDERS.map((prov) => (
-          <ProviderTab
-            key={prov}
-            label={prov}
-            active={providerFilter === prov}
-            onClick={() => setProviderFilter(prov)}
-          />
-        ))}
-      </div>
+      <ProviderTabs value={providerFilter} onChange={setProviderFilter} />
 
       {error && (
         <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
@@ -197,30 +182,3 @@ export function PaymentList() {
   );
 }
 
-function ProviderTab({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={
-        'inline-flex items-center border-b-2 px-3 py-2 text-sm font-medium transition-colors ' +
-        (active
-          ? 'border-brand-600 text-brand-700 dark:border-brand-400 dark:text-brand-300'
-          : 'border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-800 ' +
-            'dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:text-zinc-200')
-      }
-    >
-      {label}
-    </button>
-  );
-}
