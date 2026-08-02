@@ -127,7 +127,7 @@ export function PaymentList() {
         <EmptyState
           icon={CreditCard}
           title="Aucun paiement"
-          hint="Les paiements créés via l'API PayZen apparaîtront ici en temps réel."
+          hint="Les paiements créés via l'API apparaîtront ici en temps réel."
         />
       ) : (
         <div className="overflow-hidden rounded-panel border border-zinc-200 dark:border-zinc-800">

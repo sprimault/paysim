@@ -71,6 +71,26 @@ func (s Step) Validate() error {
 			return errors.New("payload charge_token manquant")
 		}
 		return s.ChargeToken.Validate()
+	case ActionCreateSubscription:
+		if s.CreateSubscription == nil {
+			return errors.New("payload create_subscription manquant")
+		}
+		return s.CreateSubscription.Validate()
+	case ActionTriggerBilling:
+		if s.TriggerBilling == nil {
+			return errors.New("payload trigger_billing manquant")
+		}
+		return s.TriggerBilling.Validate()
+	case ActionAssertSubscription:
+		if s.AssertSubscription == nil {
+			return errors.New("payload assert_subscription manquant")
+		}
+		return s.AssertSubscription.Validate()
+	case ActionCancelSubscription:
+		if s.CancelSubscription == nil {
+			return errors.New("payload cancel_subscription manquant")
+		}
+		return s.CancelSubscription.Validate()
 	default:
 		return fmt.Errorf("action inconnue: %q", s.Action)
 	}
@@ -136,6 +156,32 @@ func (c *ChargeToken) Validate() error {
 	}
 	return errors.Join(errs...)
 }
+
+// Validate contrôle un CreateSubscription. Token vide → runner utilise
+// state.currentToken (cohérent avec charge_token).
+func (c *CreateSubscription) Validate() error {
+	var errs []error
+	if c.Amount <= 0 {
+		errs = append(errs, errors.New("amount doit etre strictement positif"))
+	}
+	if c.Currency == "" {
+		errs = append(errs, errors.New("currency vide"))
+	}
+	if c.OrderID == "" {
+		errs = append(errs, errors.New("order_id vide"))
+	}
+	return errors.Join(errs...)
+}
+
+// Validate contrôle un TriggerBilling. Aucun champ requis — SubscriptionID
+// vide utilisera state.currentSubID côté runner.
+func (t *TriggerBilling) Validate() error { return nil }
+
+// Validate contrôle un AssertSubscription. Aucun champ requis.
+func (a *AssertSubscription) Validate() error { return nil }
+
+// Validate contrôle un CancelSubscription. Aucun champ requis.
+func (c *CancelSubscription) Validate() error { return nil }
 
 // Validate contrôle qu'un Simulate porte bien un status. Le vocabulaire est
 // délégué à l'exécuteur — le loader n'a pas à connaître la liste des états.

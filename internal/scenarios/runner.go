@@ -125,11 +125,14 @@ func (r *Runner) Run(ctx context.Context, s *Scenario) *Report {
 // les assertions qui n'ont pas de champ id explicite (voir D4 de la
 // note de conception 4.4.2), et token du dernier moyen de paiement
 // enregistré pour les rejeux one-click (charge_token sans token
-// explicite, cf. 4.4.5c).
+// explicite, cf. 4.4.5c). currentSubID mémorise le dernier abonnement
+// créé pour trigger_billing/assert_subscription/cancel_subscription
+// sans ID explicite (4.4.6).
 type state struct {
 	startedAt    time.Time
 	currentUUID  string // dernier paiement créé, référence implicite
 	currentToken string // dernier paymentMethodToken vu, pour charge_token
+	currentSubID string // dernier abonnement créé, pour trigger_billing
 }
 
 // exec dispatche une étape sur son handler concret. Le contrat sortant
@@ -150,6 +153,14 @@ func (r *Runner) exec(ctx context.Context, st *state, step Step) error {
 		return r.doAssertState(ctx, st, step.AssertState)
 	case ActionChargeToken:
 		return r.doChargeToken(ctx, st, step.ChargeToken)
+	case ActionCreateSubscription:
+		return r.doCreateSubscription(ctx, st, step.CreateSubscription)
+	case ActionTriggerBilling:
+		return r.doTriggerBilling(ctx, st, step.TriggerBilling)
+	case ActionAssertSubscription:
+		return r.doAssertSubscription(ctx, st, step.AssertSubscription)
+	case ActionCancelSubscription:
+		return r.doCancelSubscription(ctx, st, step.CancelSubscription)
 	default:
 		return fmt.Errorf("action inconnue: %q", step.Action)
 	}
@@ -275,6 +286,82 @@ func (r *Runner) doAssertState(ctx context.Context, st *state, in *AssertState) 
 		return fmt.Errorf("%w: etat: obtenu %q, veut %q", ErrAssertion, got.State, in.State)
 	}
 	return nil
+}
+
+// doCreateSubscription crée un abonnement et mémorise son ID dans
+// state.currentSubID pour les trigger_billing/assert/cancel suivants.
+// Token vide → dernier token vu (miroir de charge_token).
+func (r *Runner) doCreateSubscription(ctx context.Context, st *state, in *CreateSubscription) error {
+	token := in.Token
+	if token == "" {
+		token = st.currentToken
+	}
+	if token == "" {
+		return errors.New("create_subscription sans token : place un create_payment avec card avant, ou fournis token explicitement")
+	}
+	provider := in.Provider
+	if provider == "" {
+		provider = "payzen"
+	}
+	got, err := r.client.CreateSubscription(ctx, provider, token,
+		in.Amount, in.Currency, in.OrderID, in.EffectDate, in.Rrule, in.Metadata)
+	if err != nil {
+		return err
+	}
+	st.currentSubID = got.ID
+	return nil
+}
+
+// doTriggerBilling déclenche une échéance. Le paiement créé devient le
+// currentUUID pour que les assert_state suivants ciblent ce renewal.
+func (r *Runner) doTriggerBilling(ctx context.Context, st *state, in *TriggerBilling) error {
+	id := in.SubscriptionID
+	if id == "" {
+		id = st.currentSubID
+	}
+	if id == "" {
+		return errors.New("trigger_billing sans subscription_id : place un create_subscription avant")
+	}
+	got, err := r.client.TriggerBilling(ctx, id)
+	if err != nil {
+		return err
+	}
+	st.currentUUID = got.PaymentUUID
+	return nil
+}
+
+// doAssertSubscription vérifie l'existence et éventuellement le
+// champ Cancelled d'un abonnement. Cancelled non fourni → check
+// existence uniquement.
+func (r *Runner) doAssertSubscription(ctx context.Context, st *state, in *AssertSubscription) error {
+	id := in.SubscriptionID
+	if id == "" {
+		id = st.currentSubID
+	}
+	if id == "" {
+		return errors.New("assert_subscription sans subscription_id : place un create_subscription avant")
+	}
+	got, err := r.client.GetSubscription(ctx, id)
+	if err != nil {
+		return err
+	}
+	if in.Cancelled != nil && got.Cancelled != *in.Cancelled {
+		return fmt.Errorf("%w: cancelled: obtenu %v, veut %v",
+			ErrAssertion, got.Cancelled, *in.Cancelled)
+	}
+	return nil
+}
+
+// doCancelSubscription annule un abonnement. Idempotent côté serveur.
+func (r *Runner) doCancelSubscription(ctx context.Context, st *state, in *CancelSubscription) error {
+	id := in.SubscriptionID
+	if id == "" {
+		id = st.currentSubID
+	}
+	if id == "" {
+		return errors.New("cancel_subscription sans subscription_id : place un create_subscription avant")
+	}
+	return r.client.CancelSubscription(ctx, id)
 }
 
 // mapDomainToOutcome traduit un état-cible du domaine (vocabulaire des

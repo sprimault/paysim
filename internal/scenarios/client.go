@@ -123,6 +123,87 @@ func (c *Client) RevokePaymentMethod(ctx context.Context, token string) error {
 	return c.do(ctx, http.MethodPost, path, nil, nil)
 }
 
+// createSubReq est le miroir de api.CreateSubscriptionInput.
+type createSubReq struct {
+	Provider           string            `json:"provider,omitempty"`
+	PaymentMethodToken string            `json:"paymentMethodToken"`
+	Amount             int64             `json:"amount"`
+	Currency           string            `json:"currency"`
+	OrderID            string            `json:"orderId,omitempty"`
+	EffectDate         string            `json:"effectDate,omitempty"`
+	Rrule              string            `json:"rrule,omitempty"`
+	Metadata           map[string]string `json:"metadata,omitempty"`
+}
+
+// SubscriptionDetail est la vue minimale d'un abonnement retournée par
+// l'API. Champs alignés sur api.SubscriptionOutput ; suffisamment pour
+// les assertions et la mémorisation côté runner.
+type SubscriptionDetail struct {
+	ID                 string `json:"id"`
+	Provider           string `json:"provider"`
+	PaymentMethodToken string `json:"paymentMethodToken"`
+	Cancelled          bool   `json:"cancelled"`
+}
+
+// CreatedBilling résume un renewal déclenché par TriggerBilling.
+type CreatedBilling struct {
+	SubscriptionID string `json:"subscriptionId"`
+	PaymentUUID    string `json:"paymentUuid"`
+	State          string `json:"state"`
+}
+
+// CreateSubscription appelle POST /paysim/api/v1/subscriptions.
+// Provider vide → payzen par défaut côté serveur.
+func (c *Client) CreateSubscription(
+	ctx context.Context,
+	provider, token string,
+	amount int64,
+	currency, orderID, effectDate, rrule string,
+	metadata map[string]string,
+) (*SubscriptionDetail, error) {
+	body := createSubReq{
+		Provider:           provider,
+		PaymentMethodToken: token,
+		Amount:             amount,
+		Currency:           currency,
+		OrderID:            orderID,
+		EffectDate:         effectDate,
+		Rrule:              rrule,
+		Metadata:           metadata,
+	}
+	var out SubscriptionDetail
+	if err := c.do(ctx, http.MethodPost, "/paysim/api/v1/subscriptions", body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetSubscription appelle GET /paysim/api/v1/subscriptions/{id}.
+func (c *Client) GetSubscription(ctx context.Context, id string) (*SubscriptionDetail, error) {
+	var out SubscriptionDetail
+	if err := c.do(ctx, http.MethodGet, "/paysim/api/v1/subscriptions/"+id, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// TriggerBilling appelle POST .../{id}/trigger-billing. Retourne
+// l'uuid du paiement créé et son état (captured ou declined).
+func (c *Client) TriggerBilling(ctx context.Context, id string) (*CreatedBilling, error) {
+	var out CreatedBilling
+	if err := c.do(ctx, http.MethodPost,
+		"/paysim/api/v1/subscriptions/"+id+"/trigger-billing", nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CancelSubscription appelle POST .../{id}/cancel. Idempotent.
+func (c *Client) CancelSubscription(ctx context.Context, id string) error {
+	return c.do(ctx, http.MethodPost,
+		"/paysim/api/v1/subscriptions/"+id+"/cancel", nil, nil)
+}
+
 // simulateReq est le miroir de api.SimulatePaymentRequest. Le vocabulaire
 // est celui de PayZen (PAID/AUTHORISED/UNPAID/EXPIRED/ABANDONED) — le
 // mapping depuis le vocabulaire domain du scénario est fait dans le runner.

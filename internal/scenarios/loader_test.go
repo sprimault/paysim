@@ -265,6 +265,17 @@ steps:
 `,
 			wantSub: "amount doit etre strictement positif",
 		},
+		{
+			name: "create_subscription sans currency",
+			yaml: `
+name: x
+steps:
+  - action: create_subscription
+    amount: 1000
+    order_id: O
+`,
+			wantSub: "currency vide",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -297,6 +308,41 @@ steps:
 		if !strings.Contains(msg, sub) {
 			t.Errorf("message d'erreur ne contient pas %q\nobtenu: %s", sub, msg)
 		}
+	}
+}
+
+func TestLoadFile_subscriptionScenario(t *testing.T) {
+	t.Parallel()
+	s, err := LoadFile(filepath.Join("testdata", "subscription.yml"))
+	if err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	if len(s.Steps) != 9 {
+		t.Fatalf("nb etapes = %d, veut 9", len(s.Steps))
+	}
+	// Étape 2 = create_subscription avec metadata.
+	cs := s.Steps[1].CreateSubscription
+	if cs == nil {
+		t.Fatalf("create_subscription absent en etape 2")
+	}
+	if cs.Amount != 2990 || cs.Rrule != "RRULE:FREQ=MONTHLY;INTERVAL=1" {
+		t.Errorf("create_subscription = %+v", cs)
+	}
+	if cs.Metadata["plan"] != "pro" {
+		t.Errorf("Metadata[plan] = %q, veut pro", cs.Metadata["plan"])
+	}
+	// Étape 3 = assert_subscription cancelled=false (pointeur *bool
+	// distingue « non fourni » de « false »).
+	as := s.Steps[2].AssertSubscription
+	if as == nil || as.Cancelled == nil {
+		t.Fatalf("assert_subscription.Cancelled nil")
+	}
+	if *as.Cancelled != false {
+		t.Errorf("Cancelled = %v, veut false", *as.Cancelled)
+	}
+	// Étape 8 = cancel_subscription (payload vide légitime).
+	if s.Steps[7].CancelSubscription == nil {
+		t.Fatalf("cancel_subscription absent en etape 8")
 	}
 }
 

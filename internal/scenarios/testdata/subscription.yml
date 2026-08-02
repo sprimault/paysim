@@ -1,0 +1,31 @@
+name: subscription-monthly
+description: Abonnement mensuel PSP-driven — enrôlement, création de la sub, deux échéances déclenchées manuellement, annulation.
+steps:
+  - action: create_payment
+    provider: payzen
+    amount: 100
+    currency: EUR
+    order_id: INIT
+    card:
+      pan: "4111111111111111"
+      expiry_month: 12
+      expiry_year: 2028
+  - action: create_subscription
+    amount: 2990
+    currency: EUR
+    order_id: SUB-42
+    effect_date: "2026-09-01"
+    rrule: "RRULE:FREQ=MONTHLY;INTERVAL=1"
+    metadata:
+      plan: pro
+  - action: assert_subscription
+    cancelled: false
+  - action: trigger_billing
+  - action: assert_state
+    state: captured
+  - action: trigger_billing
+  - action: assert_state
+    state: captured
+  - action: cancel_subscription
+  - action: assert_subscription
+    cancelled: true

@@ -30,13 +30,17 @@ import (
 // changer entre versions sans un renommage explicite dans les scénarios
 // commités des utilisateurs.
 const (
-	ActionCreatePayment = "create_payment"
-	ActionSimulate      = "simulate"
-	ActionInject        = "inject"
-	ActionWait          = "wait"
-	ActionAssertWebhook = "assert_webhook"
-	ActionAssertState   = "assert_state"
-	ActionChargeToken   = "charge_token"
+	ActionCreatePayment      = "create_payment"
+	ActionSimulate           = "simulate"
+	ActionInject             = "inject"
+	ActionWait               = "wait"
+	ActionAssertWebhook      = "assert_webhook"
+	ActionAssertState        = "assert_state"
+	ActionChargeToken        = "charge_token"
+	ActionCreateSubscription = "create_subscription"
+	ActionTriggerBilling     = "trigger_billing"
+	ActionAssertSubscription = "assert_subscription"
+	ActionCancelSubscription = "cancel_subscription"
 )
 
 // Scenario est un scénario complet chargé depuis un fichier YAML. Une fois
@@ -55,13 +59,17 @@ type Scenario struct {
 type Step struct {
 	Action string
 
-	CreatePayment *CreatePayment
-	Simulate      *Simulate
-	Inject        *Inject
-	Wait          *Wait
-	AssertWebhook *AssertWebhook
-	AssertState   *AssertState
-	ChargeToken   *ChargeToken
+	CreatePayment      *CreatePayment
+	Simulate           *Simulate
+	Inject             *Inject
+	Wait               *Wait
+	AssertWebhook      *AssertWebhook
+	AssertState        *AssertState
+	ChargeToken        *ChargeToken
+	CreateSubscription *CreateSubscription
+	TriggerBilling     *TriggerBilling
+	AssertSubscription *AssertSubscription
+	CancelSubscription *CancelSubscription
 }
 
 // CreatePayment demande à Paysim de créer un paiement via un provider.
@@ -118,6 +126,47 @@ type ChargeToken struct {
 	Currency        string `yaml:"currency"`
 	OrderID         string `yaml:"order_id"`
 	NotificationURL string `yaml:"notification_url,omitempty"`
+}
+
+// CreateSubscription crée un abonnement PSP-driven — Paysim retient la
+// définition (moyen de paiement, montant, rrule, effect_date), l'appelant
+// déclenche ensuite chaque échéance via trigger_billing (pas de moteur
+// RRule qui tourne en fond côté simulateur, choix explicite 4.4.6).
+// Token vide → utilise le dernier paymentMethodToken vu, cohérent avec
+// charge_token. Provider vide → payzen par défaut.
+type CreateSubscription struct {
+	Provider   string            `yaml:"provider,omitempty"`
+	Token      string            `yaml:"token,omitempty"`
+	Amount     int64             `yaml:"amount"`
+	Currency   string            `yaml:"currency"`
+	OrderID    string            `yaml:"order_id"`
+	EffectDate string            `yaml:"effect_date,omitempty"`
+	Rrule      string            `yaml:"rrule,omitempty"`
+	Metadata   map[string]string `yaml:"metadata,omitempty"`
+}
+
+// TriggerBilling déclenche manuellement une échéance d'un abonnement.
+// Le paiement résultant devient le paiement courant (currentUUID) pour
+// les assertions suivantes. SubscriptionID vide → utilise
+// state.currentSubID (dernier abonnement créé).
+type TriggerBilling struct {
+	SubscriptionID string `yaml:"subscription_id,omitempty"`
+}
+
+// AssertSubscription vérifie l'existence d'un abonnement et
+// optionnellement son état cancelled. Cancelled est un pointeur pour
+// distinguer « non fourni, on ne vérifie que l'existence » de
+// « fourni avec false, on veut cancelled=false ».
+// SubscriptionID vide → utilise state.currentSubID.
+type AssertSubscription struct {
+	SubscriptionID string `yaml:"subscription_id,omitempty"`
+	Cancelled      *bool  `yaml:"cancelled,omitempty"`
+}
+
+// CancelSubscription annule un abonnement. Idempotent côté serveur.
+// SubscriptionID vide → utilise state.currentSubID.
+type CancelSubscription struct {
+	SubscriptionID string `yaml:"subscription_id,omitempty"`
 }
 
 // Simulate avance le paiement dans la machine à états via l'API de simulation
@@ -212,6 +261,18 @@ func (s *Step) UnmarshalYAML(node *yaml.Node) error {
 	case ActionChargeToken:
 		s.ChargeToken = &ChargeToken{}
 		return node.Decode(s.ChargeToken)
+	case ActionCreateSubscription:
+		s.CreateSubscription = &CreateSubscription{}
+		return node.Decode(s.CreateSubscription)
+	case ActionTriggerBilling:
+		s.TriggerBilling = &TriggerBilling{}
+		return node.Decode(s.TriggerBilling)
+	case ActionAssertSubscription:
+		s.AssertSubscription = &AssertSubscription{}
+		return node.Decode(s.AssertSubscription)
+	case ActionCancelSubscription:
+		s.CancelSubscription = &CancelSubscription{}
+		return node.Decode(s.CancelSubscription)
 	default:
 		return fmt.Errorf("action inconnue: %q", head.Action)
 	}

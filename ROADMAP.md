@@ -124,9 +124,14 @@ Découpage restant de la phase 4 :
   idempotent. `Subscription.Cancelled` + migration SQLite ADD COLUMN.
   Lien Transaction ↔ Subscription via `Metadata["subscriptionId"]`
   (Q2a). Log Debug quand provider vide → payzen défaut. 12 tests API.
-- **4.4.6b** — Enrichir scenarios : actions `create_subscription`,
-  `trigger_billing`, `assert_subscription`, `cancel_subscription`.
-  Runner mémorise `currentSubID`. Tests bout-en-bout via httptest.
+- **4.4.6b-scenarios fait** (2026-08-02) — Actions YAML
+  `create_subscription`, `trigger_billing`, `assert_subscription`,
+  `cancel_subscription`. Runner mémorise `state.currentSubID` (miroir
+  de currentUUID/currentToken). Défauts implicites : token vide →
+  currentToken, subscription_id vide → currentSubID. Client HTTP
+  enrichi. Fake serveur étendu. 6 tests bout-en-bout +
+  `testdata/subscription.yml` canonique. UI fix : le placeholder
+  "Aucun paiement" retire la mention PayZen (générique cross-provider).
 - **4.4.6c** — Doc dédiée `docs/subscriptions.md` bilingue + exemples
   multi-provider dans testing-cards.md.
 - **4.4.4** — Scénarios canoniques d'exemple (one-shot, token pattern, subscription)
@@ -137,9 +142,10 @@ Découpage restant de la phase 4 :
   la liste des paiements (aujourd'hui provider invisible en vue cross-provider) ;
   nouvelles vues liste + détail pour les subscriptions ; nouvelles vues pour les
   moyens de paiement enregistrés (avec PAN masqué, brand, expiration, révocation
-  depuis l'UI). Prérequis : endpoints API génériques `GET /paysim/api/v1/subscriptions`
-  et `GET /paysim/api/v1/payment-methods` (à ajouter au passage des verticaux 4.4.5/6
-  ou en ouverture de 4.4.7).
+  depuis l'UI). Prérequis : endpoint `GET /paysim/api/v1/payment-methods` (à ajouter
+  au passage), `GET /paysim/api/v1/subscriptions` déjà là (6a). **Mode sombre/clair
+  à prévoir** : sélecteur utilisateur, détection `prefers-color-scheme`,
+  persistance localStorage. Tailwind supporte nativement (`dark:` variant).
 - **4.4.2b** (mineur, à programmer) — Rendre l'action `inject` fonctionnelle : le
   runner accepte l'action mais retourne actuellement `errInjectUnsupported`. Enrichir
   `SimulatePaymentRequest` avec un champ `chaos` structuré (`WebhookChaos`) et

@@ -18,18 +18,26 @@ import (
 
 // fakeServer simule les endpoints de contrôle Paysim consommés par le
 // runner. Suffisamment complet pour exécuter les scénarios nominaux
-// (one-shot, enrôlement + rejeu one-click, révocation). La logique
-// métier reproduite ici est intentionnellement plus étroite que celle
-// du vrai serveur — on teste le runner, pas le PSP.
+// (one-shot, enrôlement + rejeu one-click, subscriptions natives,
+// révocation). La logique métier reproduite ici est intentionnellement
+// plus étroite que celle du vrai serveur — on teste le runner, pas le PSP.
 type fakeServer struct {
 	mu       sync.Mutex
 	payments map[string]string      // uuid -> state courant
 	methods  map[string]*fakeMethod // token -> moyen de paiement
+	subs     map[string]*fakeSub    // subscriptionId -> abonnement
 	webhooks []WebhookEntry
 	// hooks permettent aux tests de forcer une réponse anormale sur un
 	// endpoint donné (nil = comportement nominal).
 	failCreate func(w http.ResponseWriter) bool
 	failGet    func(w http.ResponseWriter) bool
+}
+
+// fakeSub est la vue minimale d'un abonnement côté fake.
+type fakeSub struct {
+	ID        string
+	Token     string
+	Cancelled bool
 }
 
 // fakeMethod porte les infos minimales sur une carte enregistrée qui
@@ -55,6 +63,7 @@ func newFakeServer(t *testing.T) (*fakeServer, *httptest.Server) {
 	fs := &fakeServer{
 		payments: make(map[string]string),
 		methods:  make(map[string]*fakeMethod),
+		subs:     make(map[string]*fakeSub),
 	}
 	srv := httptest.NewServer(fs.router())
 	t.Cleanup(srv.Close)
@@ -68,7 +77,79 @@ func (fs *fakeServer) router() http.Handler {
 	mux.HandleFunc("GET /paysim/api/v1/payments/{uuid}", fs.get)
 	mux.HandleFunc("GET /paysim/api/v1/webhooks", fs.list)
 	mux.HandleFunc("POST /paysim/api/v1/payment-methods/{token}/revoke", fs.revoke)
+	mux.HandleFunc("POST /paysim/api/v1/subscriptions", fs.createSub)
+	mux.HandleFunc("GET /paysim/api/v1/subscriptions/{id}", fs.getSub)
+	mux.HandleFunc("POST /paysim/api/v1/subscriptions/{id}/trigger-billing", fs.triggerBilling)
+	mux.HandleFunc("POST /paysim/api/v1/subscriptions/{id}/cancel", fs.cancelSub)
 	return mux
+}
+
+func (fs *fakeServer) createSub(w http.ResponseWriter, r *http.Request) {
+	var body createSubReq
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	if _, ok := fs.methods[body.PaymentMethodToken]; !ok {
+		http.Error(w, "payment method inconnu", http.StatusBadRequest)
+		return
+	}
+	id := "sub-" + timestamp()
+	fs.subs[id] = &fakeSub{ID: id, Token: body.PaymentMethodToken}
+	writeJSONResp(w, http.StatusCreated, SubscriptionDetail{
+		ID: id, Provider: "payzen", PaymentMethodToken: body.PaymentMethodToken,
+	})
+}
+
+func (fs *fakeServer) getSub(w http.ResponseWriter, r *http.Request) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	sub, ok := fs.subs[r.PathValue("id")]
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	writeJSONResp(w, http.StatusOK, SubscriptionDetail{
+		ID: sub.ID, Provider: "payzen", PaymentMethodToken: sub.Token,
+		Cancelled: sub.Cancelled,
+	})
+}
+
+func (fs *fakeServer) triggerBilling(w http.ResponseWriter, r *http.Request) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	sub, ok := fs.subs[r.PathValue("id")]
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if sub.Cancelled {
+		http.Error(w, "subscription cancelled", http.StatusBadRequest)
+		return
+	}
+	pm, ok := fs.methods[sub.Token]
+	if !ok {
+		http.Error(w, "payment method inconnu", http.StatusBadRequest)
+		return
+	}
+	uuid := "uuid-" + timestamp()
+	state := "captured"
+	if pm.Revoked || fakeIsExpired(pm) || fakeDeclinedPANs[pm.PAN] {
+		state = "declined"
+	}
+	fs.payments[uuid] = state
+	writeJSONResp(w, http.StatusCreated, CreatedBilling{
+		SubscriptionID: sub.ID, PaymentUUID: uuid, State: state,
+	})
+}
+
+func (fs *fakeServer) cancelSub(w http.ResponseWriter, r *http.Request) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	if sub, ok := fs.subs[r.PathValue("id")]; ok {
+		sub.Cancelled = true
+	}
+	// Idempotent : ID inconnu → 204 quand même.
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // create couvre les trois flows du vrai handler.Create : nominal (ni
@@ -585,6 +666,164 @@ func TestClient_RevokePaymentMethod(t *testing.T) {
 	// Idempotent : token inconnu → 204, pas d'erreur.
 	if err := c.RevokePaymentMethod(context.Background(), "unknown"); err != nil {
 		t.Errorf("RevokePaymentMethod(inconnu) = %v, veut nil (idempotent)", err)
+	}
+}
+
+// --- Tests 4.4.6b : subscriptions natives côté scénarios ------------------
+
+func TestRunner_subscriptionNominal(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	// Enrôlement → create_subscription (utilise currentToken) →
+	// trigger_billing (utilise currentSubID) → assert_state captured.
+	s := &Scenario{
+		Name: "sub-nominal",
+		Steps: []Step{
+			{Action: ActionCreatePayment, CreatePayment: &CreatePayment{
+				Provider: "payzen", Amount: 100, Currency: "EUR", OrderID: "INIT",
+				Card: &Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
+			}},
+			{Action: ActionCreateSubscription, CreateSubscription: &CreateSubscription{
+				Amount: 2990, Currency: "EUR", OrderID: "SUB",
+				EffectDate: "2026-09-01", Rrule: "RRULE:FREQ=MONTHLY",
+			}},
+			{Action: ActionTriggerBilling, TriggerBilling: &TriggerBilling{}},
+			{Action: ActionAssertState, AssertState: &AssertState{State: "captured"}},
+		},
+	}
+	rep := r.Run(context.Background(), s)
+	if err := rep.Err(); err != nil {
+		t.Fatalf("scenario a echoue: %v", err)
+	}
+}
+
+func TestRunner_subscriptionSansTokenPrealable(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	s := &Scenario{
+		Name: "sub-orphan",
+		Steps: []Step{
+			{Action: ActionCreateSubscription, CreateSubscription: &CreateSubscription{
+				Amount: 1000, Currency: "EUR", OrderID: "SUB",
+			}},
+		},
+	}
+	rep := r.Run(context.Background(), s)
+	if err := rep.Err(); err == nil || !strings.Contains(err.Error(), "sans token") {
+		t.Errorf("erreur = %v, veut contenir 'sans token'", err)
+	}
+}
+
+func TestRunner_triggerBillingSansSub(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	s := &Scenario{
+		Name: "trigger-orphan",
+		Steps: []Step{
+			{Action: ActionTriggerBilling, TriggerBilling: &TriggerBilling{}},
+		},
+	}
+	rep := r.Run(context.Background(), s)
+	if err := rep.Err(); err == nil || !strings.Contains(err.Error(), "sans subscription_id") {
+		t.Errorf("erreur = %v, veut contenir 'sans subscription_id'", err)
+	}
+}
+
+func TestRunner_triggerBillingRefusMagicPAN(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	s := &Scenario{
+		Name: "sub-refus-magic",
+		Steps: []Step{
+			{Action: ActionCreatePayment, CreatePayment: &CreatePayment{
+				Provider: "payzen", Amount: 100, Currency: "EUR", OrderID: "INIT",
+				Card: &Card{PAN: "4000000000000002", ExpiryMonth: 12, ExpiryYear: 2028},
+			}},
+			{Action: ActionCreateSubscription, CreateSubscription: &CreateSubscription{
+				Amount: 1000, Currency: "EUR", OrderID: "SUB",
+			}},
+			{Action: ActionTriggerBilling, TriggerBilling: &TriggerBilling{}},
+			{Action: ActionAssertState, AssertState: &AssertState{State: "declined"}},
+		},
+	}
+	rep := r.Run(context.Background(), s)
+	if err := rep.Err(); err != nil {
+		t.Errorf("scenario a echoue: %v", err)
+	}
+}
+
+func TestRunner_cancelSubscriptionPuisTriggerRefuse(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	// Cancel puis trigger doit remonter une erreur d'exécution
+	// (le fake retourne 400).
+	trueVal := true
+	s := &Scenario{
+		Name: "sub-cancel-then-trigger",
+		Steps: []Step{
+			{Action: ActionCreatePayment, CreatePayment: &CreatePayment{
+				Provider: "payzen", Amount: 100, Currency: "EUR", OrderID: "INIT",
+				Card: &Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
+			}},
+			{Action: ActionCreateSubscription, CreateSubscription: &CreateSubscription{
+				Amount: 1000, Currency: "EUR", OrderID: "SUB",
+			}},
+			{Action: ActionCancelSubscription, CancelSubscription: &CancelSubscription{}},
+			{Action: ActionAssertSubscription, AssertSubscription: &AssertSubscription{Cancelled: &trueVal}},
+			{Action: ActionTriggerBilling, TriggerBilling: &TriggerBilling{}},
+		},
+	}
+	rep := r.Run(context.Background(), s)
+	err := rep.Err()
+	if err == nil {
+		t.Fatalf("attendait erreur (trigger apres cancel)")
+	}
+	// Doit être une ErrHTTP (400 du fake), pas ErrAssertion.
+	if !errors.Is(err, ErrHTTP) || errors.Is(err, ErrAssertion) {
+		t.Errorf("veut erreur HTTP, obtenu: %v", err)
+	}
+}
+
+func TestRunner_assertSubscriptionMismatch(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	// On assert cancelled=true alors qu'il vaut false → erreur assertion.
+	trueVal := true
+	s := &Scenario{
+		Name: "sub-assert-mismatch",
+		Steps: []Step{
+			{Action: ActionCreatePayment, CreatePayment: &CreatePayment{
+				Provider: "payzen", Amount: 100, Currency: "EUR", OrderID: "INIT",
+				Card: &Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
+			}},
+			{Action: ActionCreateSubscription, CreateSubscription: &CreateSubscription{
+				Amount: 1000, Currency: "EUR", OrderID: "SUB",
+			}},
+			{Action: ActionAssertSubscription, AssertSubscription: &AssertSubscription{Cancelled: &trueVal}},
+		},
+	}
+	rep := r.Run(context.Background(), s)
+	err := rep.Err()
+	if err == nil {
+		t.Fatalf("attendait erreur d'assertion")
+	}
+	if !errors.Is(err, ErrAssertion) {
+		t.Errorf("veut ErrAssertion, obtenu: %v", err)
+	}
+	if !strings.Contains(err.Error(), "cancelled") {
+		t.Errorf("erreur = %v, veut mentionner 'cancelled'", err)
 	}
 }
 
