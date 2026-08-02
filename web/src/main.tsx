@@ -3,7 +3,7 @@
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router';
+import { RouterProvider } from 'react-router';
 
 // Fonts self-hosted — bundlées par Vite, aucun appel réseau au runtime.
 import '@fontsource/inter/latin-400.css';
@@ -13,7 +13,7 @@ import '@fontsource/inter/latin-700.css';
 import '@fontsource-variable/jetbrains-mono';
 
 import './index.css';
-import { App } from './app/App';
+import { router } from './app/router';
 
 const root = document.getElementById('root');
 if (!root) {
@@ -22,8 +22,6 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <RouterProvider router={router} />
   </StrictMode>,
 );

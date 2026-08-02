@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Radio, Zap } from 'lucide-react';
-import { Link } from 'react-router';
+import { Link, NavLink } from 'react-router';
 import { ThemeToggle } from '@/shared/ui/ThemeToggle';
 
 interface HeaderProps {
@@ -13,19 +13,43 @@ export function Header({ connected = true }: HeaderProps) {
   return (
     <header className="sticky top-0 z-30 border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-6">
-        <Link
-          to="/"
-          className="flex items-center gap-2 font-semibold tracking-tight text-zinc-900 dark:text-zinc-100"
-        >
-          <Zap size={18} className="text-brand-600 dark:text-brand-400" strokeWidth={2.5} />
-          Paysim
-        </Link>
+        <div className="flex items-center gap-6">
+          <Link
+            to="/"
+            className="flex items-center gap-2 font-semibold tracking-tight text-zinc-900 dark:text-zinc-100"
+          >
+            <Zap size={18} className="text-brand-600 dark:text-brand-400" strokeWidth={2.5} />
+            Paysim
+          </Link>
+          <nav className="flex items-center gap-1 text-sm" aria-label="Navigation principale">
+            <NavItem to="/" end>Paiements</NavItem>
+            <NavItem to="/subscriptions">Abonnements</NavItem>
+            <NavItem to="/payment-methods">Moyens de paiement</NavItem>
+          </nav>
+        </div>
         <div className="flex items-center gap-3">
           <ConnectionIndicator connected={connected} />
           <ThemeToggle />
         </div>
       </div>
     </header>
+  );
+}
+
+function NavItem({ to, end, children }: { to: string; end?: boolean; children: React.ReactNode }) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        'rounded px-2.5 py-1 transition-colors ' +
+        (isActive
+          ? 'bg-brand-100 text-brand-800 dark:bg-brand-900/40 dark:text-brand-300'
+          : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100')
+      }
+    >
+      {children}
+    </NavLink>
   );
 }
 

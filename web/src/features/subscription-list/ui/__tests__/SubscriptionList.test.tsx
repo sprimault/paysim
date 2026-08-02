@@ -1,0 +1,94 @@
+// Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
+// SPDX-License-Identifier: Apache-2.0
+
+import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SubscriptionList } from '@/features/subscription-list/ui/SubscriptionList';
+import { useSubscriptionStore } from '@/entities/subscription/model/subscriptionStore';
+import type { SubscriptionOutput } from '@/shared/model';
+
+function makeSub(overrides: Partial<SubscriptionOutput> = {}): SubscriptionOutput {
+  return {
+    id: 'sub-1',
+    provider: 'payzen',
+    paymentMethodToken: 'pmt-x',
+    amount: 2990,
+    currency: 'EUR',
+    orderId: 'SUB-42',
+    effectDate: '2026-09-01',
+    rrule: 'RRULE:FREQ=MONTHLY;INTERVAL=1',
+    cancelled: false,
+    createdAt: '2026-08-02T10:00:00Z',
+    ...overrides,
+  };
+}
+
+describe('<SubscriptionList />', () => {
+  beforeEach(() => {
+    useSubscriptionStore.setState({ subscriptions: {}, listLoaded: true });
+    vi.spyOn(global, 'fetch').mockImplementation(async () => new Response('[]'));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('affiche l\'empty state quand aucun abonnement', async () => {
+    render(
+      <MemoryRouter>
+        <SubscriptionList />
+      </MemoryRouter>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText('Aucun abonnement')).toBeInTheDocument();
+    });
+  });
+
+  it('affiche un abonnement actif', () => {
+    useSubscriptionStore.setState({
+      subscriptions: { 'sub-1': makeSub() },
+      listLoaded: true,
+    });
+    render(
+      <MemoryRouter>
+        <SubscriptionList />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Actif')).toBeInTheDocument();
+    expect(screen.getByText('SUB-42')).toBeInTheDocument();
+    expect(screen.getByText('payzen')).toBeInTheDocument();
+  });
+
+  it('affiche un abonnement annulé', () => {
+    useSubscriptionStore.setState({
+      subscriptions: { 'sub-2': makeSub({ id: 'sub-2', cancelled: true }) },
+      listLoaded: true,
+    });
+    render(
+      <MemoryRouter>
+        <SubscriptionList />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Annulé')).toBeInTheDocument();
+  });
+
+  it('trie par createdAt décroissant', () => {
+    useSubscriptionStore.setState({
+      subscriptions: {
+        old: makeSub({ id: 'old', orderId: 'OLD', createdAt: '2026-08-01T00:00:00Z' }),
+        recent: makeSub({ id: 'recent', orderId: 'RECENT', createdAt: '2026-08-02T00:00:00Z' }),
+      },
+      listLoaded: true,
+    });
+    render(
+      <MemoryRouter>
+        <SubscriptionList />
+      </MemoryRouter>,
+    );
+    const rows = screen.getAllByRole('row');
+    // rows[0] = header, rows[1] = première ligne data
+    expect(rows[1]).toHaveTextContent('RECENT');
+    expect(rows[2]).toHaveTextContent('OLD');
+  });
+});

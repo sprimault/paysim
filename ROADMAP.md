@@ -179,6 +179,27 @@ Découpage restant de la phase 4 :
   éviter le flash. Favicon SVG inline (data URI) ajouté : icône
   éclair indigo, cohérent avec le logo Header. 16 nouveaux tests
   (`theme.test.ts` + `ThemeToggle.test.tsx`).
+- **4.4.7c fait** (2026-08-02) — Feature UI subscriptions + `DataTable`
+  shared + migration router data mode. `entities/subscription/` (api +
+  store Zustand + hooks list/detail miroir de payment),
+  `features/subscription-list/` (table dense, badge Actif/Annulé, tri
+  par createdAt), `features/subscription-detail/` (toutes les
+  métadonnées + boutons Trigger + Cancel). Nouveau composant
+  `shared/ui/DataTable` générique (colonnes déclaratives, empty state,
+  loading skeleton) — utilisable par sub, methods et éventuellement
+  payments (refactor futur non urgent). Navigation ajoutée au Header
+  (3 liens Paiements / Abonnements / Moyens de paiement avec NavLink
+  actif). Routes migrées dans nouveau `web/src/app/router.tsx` en mode
+  data (createBrowserRouter, react-router v6.4+ / v7) plutôt que
+  Routes/Route déclaratif — cohérence avec Cadensio, prépare loaders
+  futurs. `main.tsx` utilise RouterProvider. **Séparation des
+  responsabilités** : `App.tsx` = layout root (Header + Outlet +
+  ToastContainer + SSE), `router.tsx` = mapping URL → composant.
+  **Bonus** :
+  `basename: getBasePath()` passé au router, corrige un bug latent où
+  les Link/NavLink absolus ne prenaient pas le préfixe ingress en
+  compte. Types TS régénérés via `make web-types`. 5 nouveaux tests
+  DataTable + 4 tests SubscriptionList.
 - **4.4.7 — Extensions UI** — la mécanique 4.4.5/4.4.6 crée des entités que l'UI
   actuelle n'affiche pas. À ajouter : colonne « Provider » dans l'onglet « Tous » de
   la liste des paiements (aujourd'hui provider invisible en vue cross-provider) ;

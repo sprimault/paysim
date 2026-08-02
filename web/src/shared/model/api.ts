@@ -20,12 +20,18 @@ endpoints /paysim/*).
 
 /**
  * Deps regroupe les dépendances de l'API UI. Struct plutôt que
- * 6 paramètres positionnels — plus lisible et extensible sans
+ * paramètres positionnels — plus lisible et extensible sans
  * breaking change côté cmd/paysim.
+ * SubscriptionRepo et PaymentMethodRepo sont optionnels — nil en
+ * mode mémoire, les endpoints listing correspondants retournent alors
+ * une liste vide (comportement cohérent avec le mode dégradé mémoire :
+ * les entités survivent au run mais ne sont pas listées globalement).
  */
 export interface Deps {
   Store: any /* payzen.Store */;
   PaymentRepo: any /* store.PaymentRepository */; // optionnel — nil en mode mémoire ; permet les endpoints DELETE cross-provider
+  SubscriptionRepo: any /* store.SubscriptionRepository */; // optionnel — mode SQLite uniquement pour listing global
+  PaymentMethodRepo: any /* store.PaymentMethodRepository */; // optionnel — mode SQLite uniquement
   Queue?: any /* delivery.Queue */;
   Publisher?: any /* bus.Bus */;
   Logger?: any /* slog.Logger */;
@@ -90,6 +96,46 @@ export interface WebhookDetail {
   body: string;
 }
 /**
+ * CreatePaymentInput est le corps de POST /paysim/api/v1/payments,
+ * endpoint générique de création cross-provider. Le champ Provider
+ * choisit l'adaptateur qui matérialise le paiement (seul "payzen"
+ * est câblé aujourd'hui ; Stripe arrivera en phase 5). Vide = payzen
+ * par défaut pour ne pas alourdir les scénarios monoprovider.
+ * FormAction, NotificationURL, Card et PaymentMethodToken ouvrent le
+ * support des paiements récurrents (4.4.5) :
+ *   - FormAction=REGISTER_PAY|ASK_REGISTER_PAY + Card : enregistre le
+ *     moyen de paiement à l'issue, retourne un paymentMethodToken.
+ *   - PaymentMethodToken sans Card : rejeu one-click à partir du moyen
+ *     stocké — capture directe, webhook émis (si NotificationURL et
+ *     token de la boutique configurés côté serveur).
+ */
+export interface CreatePaymentInput {
+  provider?: string;
+  amount: any /* format.Amount */;
+  currency: string;
+  orderId: string;
+  formAction?: string;
+  notificationUrl?: string;
+  card?: any /* payzen.Card */;
+  paymentMethodToken?: string;
+}
+/**
+ * CreatePaymentOutput retourne l'uuid attribué au paiement et son
+ * état à l'issue de l'appel. PaymentMethodToken est renseigné dans
+ * deux cas :
+ *   - après un enrôlement (Card + FormAction REGISTER_PAY),
+ *   - après un rejeu one-click (echo du token utilisé).
+ * Le marchand n'a pas besoin de GET juste après pour lire l'état,
+ * State est présent dans la réponse même en cas de rejeu (où l'état
+ * devient captured ou declined dès le retour HTTP).
+ */
+export interface CreatePaymentOutput {
+  uuid: string;
+  provider: string;
+  state: string;
+  paymentMethodToken?: string;
+}
+/**
  * SimulatePaymentRequest est le corps de POST
  * /paysim/api/v1/payments/{uuid}/simulate. L'UI n'a pas à connaître
  * le formToken interne — Paysim le retrouve depuis l'uuid. Le champ
@@ -104,6 +150,21 @@ export interface SimulatePaymentRequest {
   threeDSStatus?: string;
   errorCode?: string;
   errorMessage?: string;
+  /**
+   * Chaos active des modes de panne sur le webhook émis par cet
+   * appel — chaque flag indépendant, tous inertes par défaut. Ces
+   * modes sont ceux qui n'ont pas de sens côté REST V4 native mais
+   * sont critiques pour tester la robustesse d'un intégrateur :
+   * duplicate (double envoi), badSignature (kr-hash altéré),
+   * raceBeforeResponse (webhook part avant le retour HTTP).
+   */
+  chaos?: any /* payzen.WebhookChaos */;
+  /**
+   * DeliveryDelayMs retarde l'envoi du webhook (millisecondes).
+   * Compose avec deux appels successifs pour simuler du out-of-order
+   * sans flag dédié.
+   */
+  deliveryDelayMs?: number /* int */;
 }
 /**
  * SimulatePaymentResponse retourne le deliveryId et le hash calculé.
@@ -120,4 +181,66 @@ export interface SimulatePaymentResponse {
  */
 export interface ReplayWebhookResponse {
   newDeliveryId: string;
+}
+/**
+ * CreateSubscriptionInput est le corps de POST /paysim/api/v1/subscriptions,
+ * endpoint générique cross-provider pour créer un abonnement. Le champ
+ * Provider distingue l'adaptateur (payzen par défaut). PaymentMethodToken
+ * doit correspondre à un moyen de paiement précédemment enregistré via
+ * POST /paysim/api/v1/payments avec Card.
+ * EffectDate et Rrule reprennent le vocabulaire PayZen / iCalendar
+ * (RFC 5545) — recopiés tels quels, cf. providers.md.
+ */
+export interface CreateSubscriptionInput {
+  provider?: string;
+  paymentMethodToken: string;
+  amount: any /* format.Amount */;
+  currency: string;
+  orderId?: string;
+  effectDate?: string;
+  rrule?: string;
+  metadata?: { [key: string]: string};
+}
+/**
+ * SubscriptionOutput est la vue exposée d'un abonnement. Cancelled
+ * remonte pour que le marchand puisse le voir sans recharger.
+ */
+export interface SubscriptionOutput {
+  id: string;
+  provider: string;
+  paymentMethodToken: string;
+  amount: any /* format.Amount */;
+  currency: string;
+  orderId?: string;
+  effectDate?: string;
+  rrule?: string;
+  metadata?: { [key: string]: string};
+  cancelled: boolean;
+  createdAt: string /* RFC 3339 */;
+}
+/**
+ * TriggerBillingOutput retourne l'identifiant du paiement créé par
+ * le trigger d'échéance. L'appelant peut ensuite GET /payments/{uuid}
+ * pour lire l'état complet et la trace du domaine.
+ */
+export interface TriggerBillingOutput {
+  subscriptionId: string;
+  paymentUuid: string;
+  state: string;
+}
+/**
+ * PaymentMethodOutput est la vue exposée d'un moyen de paiement
+ * enregistré. PANFull volontairement absent — le simulateur stocke en
+ * clair, mais l'API l'expose sous forme masquée uniquement (comme un
+ * vrai PSP dans son back-office).
+ */
+export interface PaymentMethodOutput {
+  token: string;
+  provider: string;
+  panMasked: string;
+  brand?: string;
+  expiryMonth: number /* int */;
+  expiryYear: number /* int */;
+  revoked: boolean;
+  createdAt: string /* RFC 3339 */;
 }

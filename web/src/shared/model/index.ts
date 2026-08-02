@@ -21,6 +21,10 @@ import type {
   SimulatePaymentRequest as SimulatePaymentRequestRaw,
   SimulatePaymentResponse as SimulatePaymentResponseRaw,
   ReplayWebhookResponse,
+  SubscriptionOutput,
+  CreateSubscriptionInput,
+  TriggerBillingOutput,
+  PaymentMethodOutput,
 } from './api';
 import type {
   PaymentState,
@@ -61,6 +65,15 @@ export type SimulatePaymentResponse = Omit<SimulatePaymentResponseRaw, 'channel'
 };
 
 export type { ReplayWebhookResponse };
+// Types 4.4.5/6/7 — subscriptions & payment methods. Réexports directs :
+// pas d'affinage d'unions à faire côté front (les booléens et strings
+// libres restent tels quels).
+export type {
+  SubscriptionOutput,
+  CreateSubscriptionInput,
+  TriggerBillingOutput,
+  PaymentMethodOutput,
+};
 export type {
   PaymentState,
   EventKind,
