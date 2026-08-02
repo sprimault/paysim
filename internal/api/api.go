@@ -27,6 +27,7 @@ import (
 	"github.com/sprimault/paysim/internal/format"
 	"github.com/sprimault/paysim/internal/providers/payzen"
 	"github.com/sprimault/paysim/internal/store"
+	"github.com/sprimault/paysim/internal/webui"
 )
 
 // Deps regroupe les dépendances de l'API UI. Struct plutôt que
@@ -97,8 +98,18 @@ func NewHandler(deps Deps) http.Handler {
 	mux.HandleFunc("POST /paysim/api/v1/subscriptions/{id}/trigger-billing", h.triggerBilling)
 	mux.HandleFunc("POST /paysim/api/v1/subscriptions/{id}/cancel", h.cancelSubscription)
 	mux.HandleFunc("GET /paysim/api/v1/events/stream", h.streamEvents)
+	mux.HandleFunc("GET /paysim/api/v1/version", h.getVersion)
 
 	return withBearer(mux, deps.Token, deps.Logger)
+}
+
+// getVersion retourne le hash du bundle Vite embarqué. Le front
+// interroge cet endpoint pour proposer un rechargement quand une
+// nouvelle version est déployée. Public (avant le Bearer serait plus
+// propre à terme, mais l'API entière l'est déjà quand PAYSIM_API_TOKEN
+// est vide — le comportement attendu en dev).
+func (h *Handler) getVersion(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"hash": webui.Version()})
 }
 
 // withBearer applique un contrôle Bearer si token != "". Cohérent

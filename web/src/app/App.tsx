@@ -4,6 +4,7 @@
 import { Outlet } from 'react-router';
 import { Header } from '@/widgets/header/Header';
 import { ToastContainer } from '@/shared/ui/Toast';
+import { UpdateBanner } from '@/shared/ui/UpdateBanner';
 import { usePaysimEvents } from '@/shared/hooks/usePaysimEvents';
 
 /**
@@ -23,6 +24,7 @@ export function App() {
       <Header connected={connected} />
       <Outlet />
       <ToastContainer />
+      <UpdateBanner />
     </div>
   );
 }
