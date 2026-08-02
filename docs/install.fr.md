@@ -35,6 +35,36 @@ pour monter un Secret K8s sans écrire la valeur en clair.
 | `PAYSIM_CHAOS_LATENCY_MS` | Latence injectée sur chaque requête REST V4. `0` désactive. |
 | `PAYSIM_CHAOS_ERROR_RATE` | Pourcentage de requêtes REST V4 renvoyant une 500. `0-100`. |
 
+## Matrice des deux URL
+
+Paysim manipule deux URL indépendantes :
+
+- **`PAYSIM_PUBLIC_URL`** — URL par laquelle un **navigateur** atteint
+  Paysim (redirections, liens absolus rendus dans l'UI).
+- **`PAYSIM_CALLBACK_URL`** — URL par défaut vers laquelle **Paysim**
+  livre les webhooks quand un paiement n'a pas de `notificationUrl`
+  explicite. C'est la vue **réseau interne** du marchand, depuis le
+  pod Paysim.
+
+**Elles ne se dérivent pas l'une de l'autre** (invariant 7). Deviner
+l'une à partir de l'autre marche en local mais casse dans tout
+Compose et tout cluster. L'en-tête `Host` d'une requête entrante
+n'aide pas non plus : derrière un ingress, il ment.
+
+| Scénario | `PAYSIM_PUBLIC_URL` | `PAYSIM_CALLBACK_URL` |
+|---|---|---|
+| Binaire local seul (dev) | `http://localhost:8080` | `http://localhost:<port-marchand>` |
+| Marchand sur l'hôte, Paysim en conteneur | `http://localhost:8080` | `http://host.docker.internal:<port-marchand>` |
+| Marchand + Paysim dans le même Compose | `http://localhost:8080` | `http://<service-marchand>:<port-interne>` (DNS de service) |
+| Kubernetes NodePort | `http://<ip-noeud>:30880` | `http://<svc-marchand>.<ns>.svc.cluster.local:<port>` |
+| Kubernetes derrière Ingress | `https://paysim.example.com` | `http://<svc-marchand>.<ns>.svc.cluster.local:<port>` |
+
+**Cas non couvert** : un paiement peut inclure son propre
+`notificationUrl` dans le body du `simulate` — il prime sur
+`PAYSIM_CALLBACK_URL`. Recommandé pour un test CI qui envoie le
+webhook vers un mock local sans dépendre d'une variable
+d'environnement partagée.
+
 ## Option 1 — Docker Compose
 
 Le chemin le plus simple pour tester en local. Copier

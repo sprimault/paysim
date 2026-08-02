@@ -35,6 +35,34 @@ mounts.
 | `PAYSIM_CHAOS_LATENCY_MS` | Injected latency on every REST V4 request. `0` disables. |
 | `PAYSIM_CHAOS_ERROR_RATE` | Percentage of REST V4 requests returning a 500. `0-100`. |
 
+## The two-URL matrix
+
+Paysim manipulates two independent URLs:
+
+- **`PAYSIM_PUBLIC_URL`** — the URL a **browser** uses to reach Paysim
+  (redirects, absolute links rendered in the UI).
+- **`PAYSIM_CALLBACK_URL`** — the default URL **Paysim** uses to deliver
+  webhooks when a payment has no explicit `notificationUrl`. This is
+  the **internal-network** view of the merchant, from the Paysim pod.
+
+**They do not derive from each other** (invariant 7). Guessing one
+from the other works locally but breaks in every Compose stack and
+every cluster. The incoming request's `Host` header does not help
+either: behind an ingress it lies.
+
+| Scenario | `PAYSIM_PUBLIC_URL` | `PAYSIM_CALLBACK_URL` |
+|---|---|---|
+| Standalone local binary (dev) | `http://localhost:8080` | `http://localhost:<merchant-port>` |
+| Merchant on host, Paysim in a container | `http://localhost:8080` | `http://host.docker.internal:<merchant-port>` |
+| Merchant + Paysim in the same Compose | `http://localhost:8080` | `http://<merchant-service>:<internal-port>` (service DNS) |
+| Kubernetes NodePort | `http://<node-ip>:30880` | `http://<merchant-svc>.<ns>.svc.cluster.local:<port>` |
+| Kubernetes behind Ingress | `https://paysim.example.com` | `http://<merchant-svc>.<ns>.svc.cluster.local:<port>` |
+
+**Edge case**: a payment can carry its own `notificationUrl` in the
+`simulate` body — it takes precedence over `PAYSIM_CALLBACK_URL`.
+Recommended for CI tests that deliver the webhook to a local mock
+without depending on a shared environment variable.
+
 ## Option 1 — Docker Compose
 
 The simplest path for local testing. Copy [`deploy/compose.yml`](../deploy/compose.yml) into your existing stack and set the environment variables.
