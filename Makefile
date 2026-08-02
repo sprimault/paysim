@@ -1,4 +1,4 @@
-.PHONY: dev test lint vulncheck sec build fixtures web-types web-build web-test web-lint image image-push
+.PHONY: dev test lint vulncheck sec build fixtures web-types web-build web-test web-lint web-audit image image-push
 
 dev:
 	@echo "dev: pas encore implémenté (phase 3)" && exit 1
@@ -45,10 +45,16 @@ web-build:
 	cd web && npm run build
 
 web-test:
-	cd web && npm run test:run
+	cd web && npm run audit:high && npm run test:run
 
 web-lint:
 	cd web && npm run lint
+
+# web-audit : contrôle indépendant des vulnérabilités npm au niveau high+.
+# Déjà inclus dans web-test, exposé séparément pour un check rapide sans
+# lancer la suite tests. Retourne code non nul si vuln high+ détectée.
+web-audit:
+	cd web && npm run audit:high
 
 # ── Image OCI multi-arch ────────────────────────────────────────────
 # Nécessite Docker Buildx et un builder buildkit actif (typiquement

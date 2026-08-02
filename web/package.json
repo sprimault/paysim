@@ -11,7 +11,8 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "audit:high": "npm audit --audit-level=high"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.1.2",
