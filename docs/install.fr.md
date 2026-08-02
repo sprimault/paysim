@@ -54,8 +54,8 @@ n'aide pas non plus : derrière un ingress, il ment.
 | Scénario | `PAYSIM_PUBLIC_URL` | `PAYSIM_CALLBACK_URL` |
 |---|---|---|
 | Binaire local seul (dev) | `http://localhost:8080` | `http://localhost:<port-marchand>` |
-| Marchand sur l'hôte, Paysim en conteneur | `http://localhost:8080` | `http://host.docker.internal:<port-marchand>` |
-| Marchand + Paysim dans le même Compose | `http://localhost:8080` | `http://<service-marchand>:<port-interne>` (DNS de service) |
+| Marchand sur l'hôte, Paysim en conteneur | `http://localhost:30880` | `http://host.docker.internal:<port-marchand>` |
+| Marchand + Paysim dans le même Compose | `http://localhost:30880` | `http://<service-marchand>:<port-interne>` (DNS de service) |
 | Kubernetes NodePort | `http://<ip-noeud>:30880` | `http://<svc-marchand>.<ns>.svc.cluster.local:<port>` |
 | Kubernetes derrière Ingress | `https://paysim.example.com` | `http://<svc-marchand>.<ns>.svc.cluster.local:<port>` |
 
@@ -75,7 +75,19 @@ existant et fixer les variables d'environnement.
 docker compose -f deploy/compose.yml up -d
 ```
 
-Navigateur sur `http://localhost:8080/`.
+Navigateur sur `http://localhost:30880/` — un port haut dédié qui
+évite le conflit avec ce que les devs font déjà tourner (Tomcat,
+Jenkins, Portainer, XDebug, front-ends occupent souvent 8080/8081).
+Même convention que MailHog en cluster (30825). Le conteneur écoute
+en interne sur 8080.
+
+Si 30880 est également pris, le surcharger — `PAYSIM_PUBLIC_URL`
+suit automatiquement :
+
+```bash
+PAYSIM_HOST_PORT=30890 docker compose -f deploy/compose.yml up -d
+# désormais http://localhost:30890/
+```
 
 Pour valider le parcours complet avec un marchand PHP qui reçoit et
 vérifie les webhooks :
@@ -290,20 +302,19 @@ voir les états de l'UI (captured / declined / actif / révoqué /
 expiré) sans écrire de curl à la main. Utile pour une première prise
 en main :
 
-Le défaut `PAYSIM_URL` est `http://localhost:30880` (NodePort
-Kubernetes). Pour un Docker Compose exposé sur le port 8080, le
-surcharger explicitement.
+Le défaut `PAYSIM_URL` est `http://localhost:30880` — fonctionne
+d'emblée pour Docker Compose comme pour Kubernetes NodePort.
+Surcharger `PAYSIM_URL` seulement si Paysim est déployé sur un autre
+port ou une autre machine.
 
 ```bash
 # Bash / Linux / macOS / Windows git-bash
 bash examples/seed-paysim.sh
-# Docker Compose : PAYSIM_URL=http://localhost:8080 bash examples/seed-paysim.sh
 ```
 
 ```powershell
 # PowerShell natif sous Windows
 ./examples/seed-paysim.ps1
-# Docker Compose : $env:PAYSIM_URL = 'http://localhost:8080'; ./examples/seed-paysim.ps1
 ```
 
 Les deux scripts produisent les mêmes 11 cas : capture nominale,

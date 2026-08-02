@@ -71,7 +71,7 @@ permet de monter un Secret Kubernetes sans écrire la valeur en clair dans le ma
 
 | Variable | Rôle |
 |---|---|
-| `PAYSIM_PUBLIC_URL` | Ce que voit le navigateur : hôte d'ingress, ou `localhost:8080`. |
+| `PAYSIM_PUBLIC_URL` | Ce que voit le navigateur : hôte d'ingress, ou `localhost:30880`. |
 | `PAYSIM_CALLBACK_URL` | Cible des webhooks côté réseau interne : nom de service. |
 | `PAYSIM_BASE_PATH` | Préfixe quand l'ingress sert Paysim sous un sous-chemin. |
 | `PAYSIM_API_TOKEN` (+ `_FILE`) | Protège l'API de contrôle. Vide = ouvert, pour le local. |

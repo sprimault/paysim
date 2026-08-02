@@ -32,7 +32,7 @@ Dans trois terminaux distincts :
 ### 1. Lancer Paysim
 
 ```bash
-export PAYSIM_PUBLIC_URL="http://localhost:8080"
+export PAYSIM_PUBLIC_URL="http://localhost:30880"
 export PAYSIM_CALLBACK_URL="http://localhost:9000"
 export PAYSIM_PAYZEN_HMAC_KEY="cle-hmac-de-test"
 ./paysim

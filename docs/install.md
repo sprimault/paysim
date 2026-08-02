@@ -53,8 +53,8 @@ either: behind an ingress it lies.
 | Scenario | `PAYSIM_PUBLIC_URL` | `PAYSIM_CALLBACK_URL` |
 |---|---|---|
 | Standalone local binary (dev) | `http://localhost:8080` | `http://localhost:<merchant-port>` |
-| Merchant on host, Paysim in a container | `http://localhost:8080` | `http://host.docker.internal:<merchant-port>` |
-| Merchant + Paysim in the same Compose | `http://localhost:8080` | `http://<merchant-service>:<internal-port>` (service DNS) |
+| Merchant on host, Paysim in a container | `http://localhost:30880` | `http://host.docker.internal:<merchant-port>` |
+| Merchant + Paysim in the same Compose | `http://localhost:30880` | `http://<merchant-service>:<internal-port>` (service DNS) |
 | Kubernetes NodePort | `http://<node-ip>:30880` | `http://<merchant-svc>.<ns>.svc.cluster.local:<port>` |
 | Kubernetes behind Ingress | `https://paysim.example.com` | `http://<merchant-svc>.<ns>.svc.cluster.local:<port>` |
 
@@ -71,7 +71,19 @@ The simplest path for local testing. Copy [`deploy/compose.yml`](../deploy/compo
 docker compose -f deploy/compose.yml up -d
 ```
 
-Browse to `http://localhost:8080/`.
+Browse to `http://localhost:30880/` — a high dedicated port that
+avoids clashing with what devs usually already run (Tomcat, Jenkins,
+Portainer, XDebug, front-ends often occupy 8080/8081). Same
+convention MailHog uses on Kubernetes clusters (30825). The
+container internally still listens on 8080.
+
+If 30880 is also taken, override it — `PAYSIM_PUBLIC_URL` follows
+automatically:
+
+```bash
+PAYSIM_HOST_PORT=30890 docker compose -f deploy/compose.yml up -d
+# now http://localhost:30890/
+```
 
 To validate the full flow with a PHP merchant that receives and verifies webhooks:
 
@@ -79,7 +91,8 @@ To validate the full flow with a PHP merchant that receives and verifies webhook
 docker compose -f deploy/compose.yml -f deploy/compose.demo.yml up
 ```
 
-The demo merchant listens on port 9000 and writes verified signatures to
+The demo merchant listens on port 30881 (override with
+`MERCHANT_HOST_PORT`) and writes verified signatures to
 `examples/php/retours.log`.
 
 ## Option 2 — Kubernetes as an internal dev tool (NodePort)
@@ -277,20 +290,18 @@ Once Paysim is up, populate it with a varied dataset to see the UI
 states (captured / declined / active / revoked / expired) without
 crafting curl calls by hand. Useful for a first walkthrough:
 
-Default `PAYSIM_URL` is `http://localhost:30880` (Kubernetes
-NodePort). For a Docker Compose deployment exposed on port 8080,
-override it accordingly.
+Default `PAYSIM_URL` is `http://localhost:30880` — works out of the
+box for both Docker Compose and Kubernetes NodePort. Override
+`PAYSIM_URL` only if you deployed Paysim on a different port or host.
 
 ```bash
 # Bash / Linux / macOS / Windows git-bash
 bash examples/seed-paysim.sh
-# Docker Compose: PAYSIM_URL=http://localhost:8080 bash examples/seed-paysim.sh
 ```
 
 ```powershell
 # Native Windows PowerShell
 ./examples/seed-paysim.ps1
-# Docker Compose: $env:PAYSIM_URL = 'http://localhost:8080'; ./examples/seed-paysim.ps1
 ```
 
 Both scripts create the same 11 cases: nominal capture, magic-amount

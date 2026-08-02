@@ -7,8 +7,8 @@
 #
 # Variables d'environnement :
 #   PAYSIM_URL   URL de base de Paysim (défaut http://localhost:30880 —
-#                NodePort Kubernetes ; pour un Docker Compose exposé
-#                sur 8080, définir $env:PAYSIM_URL='http://localhost:30880').
+#                port haut dédié, défaut identique en Docker Compose et
+#                Kubernetes NodePort). Surcharger si Paysim est ailleurs.
 #   NOTIF_URL    URL des webhooks (défaut http://localhost:1/discard,
 #                port fermé, échec immédiat).
 #
