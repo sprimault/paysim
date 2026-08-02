@@ -2,6 +2,10 @@
 
 # PHP integration example
 
+> **Shell examples**: `bash` snippets below assume Git Bash on Windows
+> or a POSIX shell. For native Windows PowerShell, replace
+> `VAR=value cmd` with `$env:VAR="value"; cmd`.
+
 This folder demonstrates a full merchant-side payment flow against
 Paysim, in plain PHP (no Composer dependency). Three scripts:
 

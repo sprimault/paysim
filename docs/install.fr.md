@@ -7,6 +7,12 @@ stack, configuré par variables d'environnement, consommé par les
 autres services. Ce document couvre Docker Compose, Kubernetes
 (NodePort ou Ingress), et les points de configuration.
 
+> **Exemples shell** : les blocs `bash` ci-dessous supposent Git Bash
+> sous Windows ou un shell POSIX. Pour PowerShell natif, remplacer
+> `VAR=value cmd` par `$env:VAR="value"; cmd`, et `curl` par
+> `Invoke-RestMethod`. Les commandes Docker CLI sont identiques
+> sur les deux.
+
 ## Prérequis
 
 - **Docker** 20+ pour les builds locaux et Compose.

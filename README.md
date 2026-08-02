@@ -38,6 +38,15 @@ provoke these on demand, in dev and in CI.
 
 ## Quick start (Docker Compose)
 
+Get the source first (same command on both platforms):
+
+```bash
+git clone https://github.com/sprimault/paysim.git
+cd paysim
+```
+
+Then:
+
 **Linux / macOS / Git Bash:**
 
 ```bash
@@ -129,7 +138,25 @@ expiration, token revocation. Details in
 
 ## Scenarios (YAML)
 
-Replay a payment flow in CI without hand-writing curl:
+Replay a payment flow in CI without hand-writing curl. Canonical
+scenarios live in [`examples/scenarios/`](examples/scenarios/). Run
+one against the container:
+
+**Linux / macOS / Git Bash:**
+
+```bash
+docker compose -f deploy/compose.yml cp examples/scenarios/one-shot.yml paysim:/tmp/one-shot.yml
+docker compose -f deploy/compose.yml exec -e PAYSIM_URL=http://localhost:8080 paysim /paysim run /tmp/one-shot.yml
+```
+
+**Windows PowerShell:**
+
+```powershell
+docker compose -f deploy/compose.yml cp examples/scenarios/one-shot.yml paysim:/tmp/one-shot.yml
+docker compose -f deploy/compose.yml exec -e PAYSIM_URL=http://localhost:8080 paysim /paysim run /tmp/one-shot.yml
+```
+
+A minimal scenario file looks like:
 
 ```yaml
 - action: create_payment
@@ -159,7 +186,9 @@ $response = $client->post('/api-payment/V4/Charge/CreatePayment', [...]);
 
 Full merchant with webhook verification: [`examples/php`](examples/php/README.md).
 
-Or directly with `curl` — same body a PayZen REST V4 client would send:
+Or directly with `curl` — same body a PayZen REST V4 client would send.
+
+**Linux / macOS / Git Bash:**
 
 ```bash
 curl -X POST http://localhost:30880/api-payment/V4/Charge/CreatePayment \
@@ -168,11 +197,23 @@ curl -X POST http://localhost:30880/api-payment/V4/Charge/CreatePayment \
   -d '{"amount":4990,"currency":"EUR","orderId":"CMD-42","customer":{"email":"a@b.io"}}'
 ```
 
+**Windows PowerShell** (native — `curl` is an alias for `Invoke-WebRequest`
+with a different syntax, so use `Invoke-RestMethod` here):
+
+```powershell
+$cred = New-Object PSCredential('00000000', (ConvertTo-SecureString 'testpassword_XXXX' -AsPlainText -Force))
+Invoke-RestMethod -Method Post -Uri http://localhost:30880/api-payment/V4/Charge/CreatePayment `
+  -Credential $cred -ContentType 'application/json' `
+  -Body '{"amount":4990,"currency":"EUR","orderId":"CMD-42","customer":{"email":"a@b.io"}}'
+```
+
 ## Web UI
 
-Embedded React SPA — payments, subscriptions, payment methods,
-webhooks (with one-click replay), all live via SSE. Dark mode,
-auto-reload when a new build is deployed, refresh button per view.
+Embedded React SPA served at the same port as the API (default
+`http://localhost:30880/`) — payments, subscriptions, payment
+methods, webhooks (with one-click replay), all live via SSE. Dark
+mode, auto-reload when a new build is deployed, refresh button per
+view.
 
 ## Status
 

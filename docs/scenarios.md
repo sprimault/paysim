@@ -8,6 +8,10 @@ sequence of steps and assert the outcome. Same runner in local dev,
 in CI, and against a Paysim deployed in a cluster — only
 `PAYSIM_URL` changes.
 
+> **Shell examples**: `bash` snippets below assume Git Bash on Windows
+> or a POSIX shell. For native Windows PowerShell, replace
+> `VAR=value cmd` with `$env:VAR="value"; cmd`.
+
 Canonical examples live in [examples/scenarios/](../examples/scenarios/) —
 five short files covering one-shot, recurring-token and subscription
 patterns.

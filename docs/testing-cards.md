@@ -2,6 +2,11 @@
 
 # Test cards and decline scenarios
 
+> **Shell examples**: `curl` snippets below assume Git Bash on Windows
+> or a POSIX shell. For native Windows PowerShell, use
+> `Invoke-RestMethod` with equivalent arguments (`-Method`, `-Uri`,
+> `-Body`, `-ContentType`).
+
 Paysim ships four reserved test card numbers that trigger a systematic
 decline on recurring charges (`charge_token`). Together with three other
 independent levers, they let an integration client (CI pipelines,

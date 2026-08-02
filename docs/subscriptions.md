@@ -2,6 +2,11 @@
 
 # Subscriptions
 
+> **Shell examples**: `curl` snippets below assume Git Bash on Windows
+> or a POSIX shell. For native Windows PowerShell, use
+> `Invoke-RestMethod` with equivalent arguments (`-Method`, `-Uri`,
+> `-Body`, `-ContentType`).
+
 Paysim simulates two recurring-payment patterns supported by the
 providers it emulates (PayZen today, Stripe upcoming):
 

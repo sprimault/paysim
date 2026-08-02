@@ -7,6 +7,11 @@ via environment variables, and consume from your other services.
 This document covers Docker Compose, Kubernetes (NodePort or Ingress),
 and the configuration knobs.
 
+> **Shell examples**: `bash` snippets below assume Git Bash on Windows
+> or a POSIX shell. For native Windows PowerShell, replace
+> `VAR=value cmd` with `$env:VAR="value"; cmd`, and `curl` with
+> `Invoke-RestMethod`. Docker CLI commands are identical on both.
+
 ## Prerequisites
 
 - **Docker** 20+ for local builds and Compose.

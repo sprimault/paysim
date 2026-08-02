@@ -8,6 +8,10 @@ séquence d'étapes contre Paysim et asserter l'issue. Même runner en
 local, en CI, ou contre un Paysim déployé sur un cluster — seule
 `PAYSIM_URL` change.
 
+> **Exemples shell** : les blocs `bash` ci-dessous supposent Git Bash
+> sous Windows ou un shell POSIX. Pour PowerShell natif, remplacer
+> `VAR=value cmd` par `$env:VAR="value"; cmd`.
+
 Les exemples canoniques vivent dans
 [examples/scenarios/](../examples/scenarios/) — cinq fichiers courts
 qui couvrent one-shot, token pattern et subscription native.

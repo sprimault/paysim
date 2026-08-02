@@ -2,6 +2,11 @@
 
 # Cartes de test et scénarios de refus
 
+> **Exemples shell** : les blocs `curl` ci-dessous supposent Git Bash
+> sous Windows ou un shell POSIX. Pour PowerShell natif, utiliser
+> `Invoke-RestMethod` avec les arguments équivalents (`-Method`,
+> `-Uri`, `-Body`, `-ContentType`).
+
 Paysim embarque quatre numéros de carte de test réservés qui déclenchent
 un refus systématique lors d'un rejeu récurrent (`charge_token`).
 Combinés à trois autres leviers indépendants, ils permettent à un client

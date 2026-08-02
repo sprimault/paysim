@@ -2,6 +2,10 @@
 
 # Exemple d'intégration PHP
 
+> **Exemples shell** : les blocs `bash` ci-dessous supposent Git Bash
+> sous Windows ou un shell POSIX. Pour PowerShell natif, remplacer
+> `VAR=value cmd` par `$env:VAR="value"; cmd`.
+
 Ce dossier illustre un parcours de paiement complet contre Paysim, du
 côté marchand, en PHP pur (aucune dépendance Composer). Trois scripts :
 

@@ -40,6 +40,15 @@ pour provoquer ces cas à la demande, en dev et en CI.
 
 ## Démarrage rapide (Docker Compose)
 
+Récupérer le code d'abord (même commande sur les deux plateformes) :
+
+```bash
+git clone https://github.com/sprimault/paysim.git
+cd paysim
+```
+
+Puis :
+
 **Linux / macOS / Git Bash :**
 
 ```bash
@@ -55,7 +64,7 @@ bash examples/seed-paysim.sh --purge
 
 ```powershell
 docker compose -f deploy/compose.yml up -d
-.\examples\seed-paysim.ps1 -Purge
+.\examples\seed-paysim.ps1
 # http://localhost:30880/
 
 # Re-lance pour repartir sur des paiements propres :
@@ -133,7 +142,26 @@ canoniques, expiration de carte, révocation de token. Détails dans
 
 ## Scénarios (YAML)
 
-Rejouer un flux de paiement en CI sans écrire de curl à la main :
+Rejouer un flux de paiement en CI sans écrire de curl à la main.
+Les scénarios canoniques sont dans
+[`examples/scenarios/`](examples/scenarios/). Lancer un scénario
+contre le conteneur :
+
+**Linux / macOS / Git Bash :**
+
+```bash
+docker compose -f deploy/compose.yml cp examples/scenarios/one-shot.yml paysim:/tmp/one-shot.yml
+docker compose -f deploy/compose.yml exec -e PAYSIM_URL=http://localhost:8080 paysim /paysim run /tmp/one-shot.yml
+```
+
+**Windows PowerShell :**
+
+```powershell
+docker compose -f deploy/compose.yml cp examples/scenarios/one-shot.yml paysim:/tmp/one-shot.yml
+docker compose -f deploy/compose.yml exec -e PAYSIM_URL=http://localhost:8080 paysim /paysim run /tmp/one-shot.yml
+```
+
+Un fichier scénario minimal ressemble à :
 
 ```yaml
 - action: create_payment
@@ -164,7 +192,9 @@ $response = $client->post('/api-payment/V4/Charge/CreatePayment', [...]);
 Marchand complet avec vérification du webhook :
 [`examples/php`](examples/php/README.fr.md).
 
-Ou directement avec `curl` — même body qu'un client PayZen REST V4 :
+Ou directement avec `curl` — même body qu'un client PayZen REST V4.
+
+**Linux / macOS / Git Bash :**
 
 ```bash
 curl -X POST http://localhost:30880/api-payment/V4/Charge/CreatePayment \
@@ -173,12 +203,23 @@ curl -X POST http://localhost:30880/api-payment/V4/Charge/CreatePayment \
   -d '{"amount":4990,"currency":"EUR","orderId":"CMD-42","customer":{"email":"a@b.io"}}'
 ```
 
+**Windows PowerShell natif** (`curl` y est un alias pour
+`Invoke-WebRequest` à syntaxe différente, utiliser `Invoke-RestMethod`) :
+
+```powershell
+$cred = New-Object PSCredential('00000000', (ConvertTo-SecureString 'testpassword_XXXX' -AsPlainText -Force))
+Invoke-RestMethod -Method Post -Uri http://localhost:30880/api-payment/V4/Charge/CreatePayment `
+  -Credential $cred -ContentType 'application/json' `
+  -Body '{"amount":4990,"currency":"EUR","orderId":"CMD-42","customer":{"email":"a@b.io"}}'
+```
+
 ## Interface web
 
-SPA React embarquée — paiements, abonnements, moyens de paiement,
-webhooks (avec rejeu en un click), tout en temps réel via SSE. Mode
-sombre, rechargement automatique quand un nouveau build est déployé,
-bouton d'actualisation par vue.
+SPA React embarquée servie sur le même port que l'API (par défaut
+`http://localhost:30880/`) — paiements, abonnements, moyens de
+paiement, webhooks (avec rejeu en un click), tout en temps réel via
+SSE. Mode sombre, rechargement automatique quand un nouveau build
+est déployé, bouton d'actualisation par vue.
 
 ## Statut
 
