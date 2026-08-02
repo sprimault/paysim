@@ -79,16 +79,34 @@ $env:PAYSIM_URL="http://localhost:30890"; .\examples\seed-paysim.ps1 -Purge
 # http://localhost:30890/
 ```
 
-Rebuild after code changes — forces image rebuild and container recreate:
+Rebuild after code changes — forces image rebuild and container recreate.
+Same command on both platforms:
+
+**Linux / macOS / Git Bash:**
 
 ```bash
+docker compose -f deploy/compose.yml up -d --build --force-recreate
+```
+
+**Windows PowerShell:**
+
+```powershell
 docker compose -f deploy/compose.yml up -d --build --force-recreate
 ```
 
 If it fails with `No such container`, Docker Compose lost track of the
 container state (manual `docker rm` outside compose, etc.). Reset first:
 
+**Linux / macOS / Git Bash:**
+
 ```bash
+docker compose -f deploy/compose.yml down --remove-orphans
+docker compose -f deploy/compose.yml up -d
+```
+
+**Windows PowerShell:**
+
+```powershell
 docker compose -f deploy/compose.yml down --remove-orphans
 docker compose -f deploy/compose.yml up -d
 ```

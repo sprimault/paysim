@@ -82,16 +82,34 @@ $env:PAYSIM_URL="http://localhost:30890"; .\examples\seed-paysim.ps1 -Purge
 ```
 
 Reconstruire après un changement de code — force le rebuild de
-l'image et la recréation du conteneur :
+l'image et la recréation du conteneur. Même commande sur les deux
+plateformes :
+
+**Linux / macOS / Git Bash :**
 
 ```bash
+docker compose -f deploy/compose.yml up -d --build --force-recreate
+```
+
+**Windows PowerShell :**
+
+```powershell
 docker compose -f deploy/compose.yml up -d --build --force-recreate
 ```
 
 Si erreur `No such container`, Docker Compose a perdu la trace du
 conteneur (`docker rm` manuel hors compose, etc.). Reset d'abord :
 
+**Linux / macOS / Git Bash :**
+
 ```bash
+docker compose -f deploy/compose.yml down --remove-orphans
+docker compose -f deploy/compose.yml up -d
+```
+
+**Windows PowerShell :**
+
+```powershell
 docker compose -f deploy/compose.yml down --remove-orphans
 docker compose -f deploy/compose.yml up -d
 ```
