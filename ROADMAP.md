@@ -116,12 +116,19 @@ Découpage restant de la phase 4 :
   `charge_token`. Aucune validation Luhn (simulateur), pas de whitelist PAN, clock
   injectable pour tests déterministes. **Rappel : n'utilisez jamais ce store avec de
   vraies CB, aucune protection.**
-- **4.4.6** — Subscriptions natives PSP-driven. Endpoint générique
-  `POST /paysim/api/v1/subscriptions` (paymentMethodToken + amount + currency + rrule
-  + effectDate). Endpoint de contrôle `POST /paysim/api/v1/subscriptions/{id}/trigger-renewal`
-  qui déclenche manuellement la prochaine échéance (compromis honnête : pas de moteur
-  RRule qui tourne en fond). Actions YAML : `create_subscription`, `trigger_billing`,
-  `assert_subscription`.
+- **4.4.6a-serveur fait** (2026-08-02) — Endpoints API subscriptions :
+  POST/GET /paysim/api/v1/subscriptions[/{id}], POST .../trigger-billing,
+  POST .../cancel. `payzen.Handler.CreateSubscription` publique (miroir
+  de `Create`), `TriggerBilling` qui crée une Transaction via
+  `decideReplayOutcome` (même mécanique que charge_token), `Cancel`
+  idempotent. `Subscription.Cancelled` + migration SQLite ADD COLUMN.
+  Lien Transaction ↔ Subscription via `Metadata["subscriptionId"]`
+  (Q2a). Log Debug quand provider vide → payzen défaut. 12 tests API.
+- **4.4.6b** — Enrichir scenarios : actions `create_subscription`,
+  `trigger_billing`, `assert_subscription`, `cancel_subscription`.
+  Runner mémorise `currentSubID`. Tests bout-en-bout via httptest.
+- **4.4.6c** — Doc dédiée `docs/subscriptions.md` bilingue + exemples
+  multi-provider dans testing-cards.md.
 - **4.4.4** — Scénarios canoniques d'exemple (one-shot, token pattern, subscription)
   + `docs/scenarios.md` bilingue. Livré en dernier pour couvrir les trois patterns
   d'un seul jet.

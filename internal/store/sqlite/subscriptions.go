@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sprimault/paysim/internal/format"
@@ -45,6 +46,7 @@ func (r *SubscriptionsRepository) migrate(ctx context.Context) error {
 			rrule TEXT NOT NULL DEFAULT '',
 			metadata_json TEXT NOT NULL DEFAULT '{}',
 			provider_data_json TEXT NOT NULL DEFAULT '{}',
+			cancelled INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,
@@ -58,7 +60,26 @@ func (r *SubscriptionsRepository) migrate(ctx context.Context) error {
 			return fmt.Errorf("stmt %q: %w", firstLine(stmt), err)
 		}
 	}
+	// ALTER TABLE ADD COLUMN pour les bases préexistantes (5a livré
+	// sans cette colonne). SQLite renvoie "duplicate column" si elle
+	// existe déjà — on ignore silencieusement, l'état demandé est
+	// atteint. Approche standard SQLite pour migration incrémentale.
+	if _, err := r.db.ExecContext(ctx,
+		`ALTER TABLE subscriptions ADD COLUMN cancelled INTEGER NOT NULL DEFAULT 0`); err != nil {
+		// Ignorer "duplicate column" ; propager toute autre erreur.
+		if !isDuplicateColumnErr(err) {
+			return fmt.Errorf("add cancelled column: %w", err)
+		}
+	}
 	return nil
+}
+
+// isDuplicateColumnErr identifie l'erreur SQLite renvoyée par
+// ALTER TABLE ADD COLUMN quand la colonne existe déjà. modernc.org/sqlite
+// expose le message brut — pas de code sentinelle typé — on matche sur
+// la sous-chaîne stable de SQLite.
+func isDuplicateColumnErr(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "duplicate column")
 }
 
 // Save insère ou met à jour un SubscriptionRecord.
@@ -75,9 +96,9 @@ func (r *SubscriptionsRepository) Save(rec *store.SubscriptionRecord) error {
 		INSERT INTO subscriptions (
 			id, provider, order_id, amount, currency,
 			payment_method_token, effect_date, rrule,
-			metadata_json, provider_data_json,
+			metadata_json, provider_data_json, cancelled,
 			created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			provider = excluded.provider,
 			order_id = excluded.order_id,
@@ -88,11 +109,12 @@ func (r *SubscriptionsRepository) Save(rec *store.SubscriptionRecord) error {
 			rrule = excluded.rrule,
 			metadata_json = excluded.metadata_json,
 			provider_data_json = excluded.provider_data_json,
+			cancelled = excluded.cancelled,
 			updated_at = excluded.updated_at`
 	_, err := r.db.ExecContext(ctx, upsert,
 		rec.ID, rec.Provider, rec.OrderID, int64(rec.Amount), rec.Currency,
 		rec.PaymentMethodToken, rec.EffectDate, rec.Rrule,
-		rec.MetadataJSON, rec.ProviderDataJSON,
+		rec.MetadataJSON, rec.ProviderDataJSON, boolToInt(rec.Cancelled),
 		rec.CreatedAt.UTC().Format(time.RFC3339Nano),
 		rec.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	)
@@ -108,7 +130,7 @@ func (r *SubscriptionsRepository) ByID(id string) (*store.SubscriptionRecord, er
 	defer cancel()
 	const q = `SELECT id, provider, order_id, amount, currency,
 		payment_method_token, effect_date, rrule,
-		metadata_json, provider_data_json, created_at, updated_at
+		metadata_json, provider_data_json, cancelled, created_at, updated_at
 		FROM subscriptions WHERE id = ?`
 	row := r.db.QueryRowContext(ctx, q, id)
 	rec, err := scanSubscription(row.Scan)
@@ -125,7 +147,7 @@ func (r *SubscriptionsRepository) ByProvider(provider string) ([]*store.Subscrip
 	defer cancel()
 	const q = `SELECT id, provider, order_id, amount, currency,
 		payment_method_token, effect_date, rrule,
-		metadata_json, provider_data_json, created_at, updated_at
+		metadata_json, provider_data_json, cancelled, created_at, updated_at
 		FROM subscriptions WHERE provider = ? ORDER BY updated_at DESC`
 	rows, err := r.db.QueryContext(ctx, q, provider)
 	if err != nil {
@@ -176,23 +198,35 @@ func (r *SubscriptionsRepository) DeleteByProvider(provider string) (int, error)
 // Close no-op — le DB sous-jacent est possédé par l'appelant.
 func (r *SubscriptionsRepository) Close() error { return nil }
 
+// Cancel marque l'abonnement comme annulé. Idempotent (ID inconnu
+// → no-op sans erreur, cf. contrat).
+func (r *SubscriptionsRepository) Cancel(id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE subscriptions SET cancelled = 1 WHERE id = ?`, id)
+	return err
+}
+
 // scanSubscription est le lecteur commun à ByID et ByProvider,
 // factorisé pour éviter la duplication de l'ordre des colonnes.
 func scanSubscription(scan func(dest ...any) error) (*store.SubscriptionRecord, error) {
 	var (
-		rec                    store.SubscriptionRecord
-		amount                 int64
-		createdAt, updatedAt   string
+		rec                  store.SubscriptionRecord
+		amount               int64
+		cancelled            int
+		createdAt, updatedAt string
 	)
 	if err := scan(
 		&rec.ID, &rec.Provider, &rec.OrderID, &amount, &rec.Currency,
 		&rec.PaymentMethodToken, &rec.EffectDate, &rec.Rrule,
-		&rec.MetadataJSON, &rec.ProviderDataJSON,
+		&rec.MetadataJSON, &rec.ProviderDataJSON, &cancelled,
 		&createdAt, &updatedAt,
 	); err != nil {
 		return nil, err
 	}
 	rec.Amount = format.Amount(amount)
+	rec.Cancelled = cancelled != 0
 	ca, err := time.Parse(time.RFC3339Nano, createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("parse created_at: %w", err)

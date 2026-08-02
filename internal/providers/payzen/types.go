@@ -225,9 +225,11 @@ type SubscriptionGetAnswer struct {
 }
 
 // Subscription est le contexte d'un abonnement simule cote Paysim.
-// Stub minimaliste en phase 1 : aucune mecanique de facturation
-// periodique, aucun etat "annule" ou "suspendu". A etendre si le
-// besoin d'une vraie simulation des renewals s'exprime.
+// Le champ Cancelled marque une annulation manuelle (via /cancel) ;
+// une subscription annulée refuse tout trigger-billing ultérieur.
+// Aucun moteur d'échéancier RRule ne tourne en fond — les renewals
+// sont déclenchés explicitement par appel à /trigger-billing, choix
+// de conception cohérent avec un simulateur (déterminisme total).
 type Subscription struct {
 	ID                 string
 	OrderID            string
@@ -238,6 +240,7 @@ type Subscription struct {
 	Rrule              string
 	Metadata           map[string]string
 	CreatedAt          time.Time
+	Cancelled          bool
 }
 
 // Outcomes supportes pour les APIs de controle

@@ -492,6 +492,197 @@ func (h *Handler) RevokeMethod(token string) error {
 	return h.store.RevokeMethod(token)
 }
 
+// ErrSubscriptionUnknown est retournée quand un subscriptionId ne
+// correspond à aucun abonnement enregistré.
+var ErrSubscriptionUnknown = errors.New("abonnement inconnu")
+
+// ErrSubscriptionCancelled est retournée par TriggerBilling sur un
+// abonnement déjà annulé — un renewal après annulation n'a pas de sens
+// et signale probablement un défaut du scénario.
+var ErrSubscriptionCancelled = errors.New("abonnement annule")
+
+// CreateSubscriptionInput regroupe les paramètres de création
+// programmatique d'un abonnement. Utilisé par l'endpoint générique
+// et le handler HTTP natif partagent la même mécanique.
+type CreateSubscriptionInput struct {
+	PaymentMethodToken string
+	Amount             format.Amount
+	Currency           string
+	OrderID            string
+	EffectDate         string
+	Rrule              string
+	Metadata           map[string]string
+}
+
+// CreateSubscription matérialise un abonnement PayZen : vérifie que
+// le paymentMethodToken existe, génère un subscriptionId, persiste
+// la Subscription, publie l'event `subscription_created`. Retourne la
+// Subscription complète.
+//
+// Exportée pour partager la logique avec l'endpoint API générique
+// (POST /paysim/api/v1/subscriptions), miroir de Create() pour les
+// paiements one-shot.
+func (h *Handler) CreateSubscription(in CreateSubscriptionInput) (*Subscription, error) {
+	if in.Amount <= 0 {
+		return nil, fmt.Errorf("%w: amount doit etre strictement positif", domain.ErrInvalidAmount)
+	}
+	if !domain.IsCurrencyCode(in.Currency) {
+		return nil, fmt.Errorf("%w: currency %q invalide", domain.ErrInvalidCurrency, in.Currency)
+	}
+	if in.PaymentMethodToken == "" {
+		return nil, errors.New("paymentMethodToken manquant")
+	}
+	pm, err := h.store.MethodByToken(in.PaymentMethodToken)
+	if err != nil {
+		return nil, fmt.Errorf("lookup payment method: %w", err)
+	}
+	if pm == nil {
+		return nil, fmt.Errorf("%w: %s", ErrPaymentMethodUnknown, in.PaymentMethodToken)
+	}
+	subID, err := newUUID()
+	if err != nil {
+		return nil, fmt.Errorf("generation subscriptionId: %w", err)
+	}
+	sub := &Subscription{
+		ID:                 subID,
+		OrderID:            in.OrderID,
+		Amount:             in.Amount,
+		Currency:           in.Currency,
+		PaymentMethodToken: in.PaymentMethodToken,
+		EffectDate:         in.EffectDate,
+		Rrule:              in.Rrule,
+		Metadata:           in.Metadata,
+		CreatedAt:          h.clock().Now(),
+	}
+	if err := h.store.SaveSubscription(sub); err != nil {
+		return nil, fmt.Errorf("store SaveSubscription: %w", err)
+	}
+	h.cfg.Publisher.Publish(bus.Event{
+		Type: "subscription_created",
+		At:   sub.CreatedAt,
+		Data: map[string]any{
+			"subscriptionId": subID,
+			"orderId":        in.OrderID,
+			"amount":         in.Amount,
+			"currency":       in.Currency,
+		},
+	})
+	return sub, nil
+}
+
+// SubscriptionByID lit un abonnement, retourne nil, nil si inconnu.
+// Wrapper direct sur le store — même motivation que RevokeMethod.
+func (h *Handler) SubscriptionByID(id string) (*Subscription, error) {
+	return h.store.SubscriptionByID(id)
+}
+
+// CancelSubscription marque un abonnement comme annulé. Idempotent
+// sur ID inconnu. Un renewal ultérieur sera refusé.
+func (h *Handler) CancelSubscription(id string) error {
+	sub, err := h.store.SubscriptionByID(id)
+	if err != nil {
+		return err
+	}
+	if sub == nil {
+		return nil // idempotent : l'état demandé « annulé » est vrai pour un ID inexistant
+	}
+	if sub.Cancelled {
+		return nil
+	}
+	sub.Cancelled = true
+	return h.store.SaveSubscription(sub)
+}
+
+// TriggerBilling déclenche une échéance manuelle d'un abonnement : crée
+// une Transaction, applique l'outcome selon la même mécanique que le
+// rejeu one-click (evaluateMethodOutcome + magic amount), émet le
+// webhook, retourne la Transaction. Le lien vers la Subscription se
+// fait via Metadata["subscriptionId"] sur la Transaction.
+//
+// L'appelant décide de la fréquence des billings : le simulateur n'a
+// pas de moteur RRule qui tourne en fond (déterminisme total).
+func (h *Handler) TriggerBilling(subID string) (*Transaction, error) {
+	sub, err := h.store.SubscriptionByID(subID)
+	if err != nil {
+		return nil, fmt.Errorf("lookup subscription: %w", err)
+	}
+	if sub == nil {
+		return nil, fmt.Errorf("%w: %s", ErrSubscriptionUnknown, subID)
+	}
+	if sub.Cancelled {
+		return nil, fmt.Errorf("%w: %s", ErrSubscriptionCancelled, subID)
+	}
+	pm, err := h.store.MethodByToken(sub.PaymentMethodToken)
+	if err != nil {
+		return nil, fmt.Errorf("lookup payment method: %w", err)
+	}
+	if pm == nil {
+		// Le moyen a été supprimé (edge case — les tests le forcent
+		// via revoke normalement). On refuse le renewal proprement.
+		return nil, fmt.Errorf("%w: %s", ErrPaymentMethodUnknown, sub.PaymentMethodToken)
+	}
+
+	uuid, err := newUUID()
+	if err != nil {
+		return nil, fmt.Errorf("generation uuid: %w", err)
+	}
+	payment, err := domain.New(uuid, sub.Amount, sub.Currency)
+	if err != nil {
+		return nil, err
+	}
+	formToken, err := newFormToken()
+	if err != nil {
+		return nil, fmt.Errorf("generation formToken: %w", err)
+	}
+	now := h.clock().Now()
+	// Lien Transaction ↔ Subscription : via metadata (choix Q2(a)).
+	// Enrichit la metadata existante de la sub sans la remplacer.
+	meta := map[string]string{"subscriptionId": subID}
+	for k, v := range sub.Metadata {
+		if _, exists := meta[k]; !exists {
+			meta[k] = v
+		}
+	}
+	tx := &Transaction{
+		FormToken:          formToken,
+		UUID:               uuid,
+		OrderID:            sub.OrderID,
+		Amount:             sub.Amount,
+		Currency:           sub.Currency,
+		Metadata:           meta,
+		Payment:            payment,
+		PaymentMethodToken: pm.Token,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+
+	outcome, reason := decideReplayOutcome(pm, sub.Amount, now)
+	if err := applyOutcome(tx, outcome, reason); err != nil {
+		return nil, fmt.Errorf("apply outcome: %w", err)
+	}
+	tx.UpdatedAt = h.clock().Now()
+
+	if err := h.store.Save(tx); err != nil {
+		return nil, fmt.Errorf("store Save: %w", err)
+	}
+	h.cfg.Publisher.Publish(bus.Event{
+		Type: "subscription_billed",
+		At:   now,
+		Data: map[string]any{
+			"subscriptionId": subID,
+			"uuid":           uuid,
+			"state":          string(payment.State()),
+			"amount":         sub.Amount,
+		},
+	})
+	// Webhook : émis si le PSP réel enverrait un IPN et qu'on a l'URL.
+	// Pour l'instant on n'a pas de NotificationURL au niveau
+	// Subscription — on ne peut donc émettre que si un jour on l'ajoute
+	// à Subscription. Éviter d'émettre à l'aveugle vers un endpoint
+	// inconnu.
+	return tx, nil
+}
+
 // updatePayment traite POST /api-payment/V4/Charge/UpdatePayment. Met
 // a jour le contexte associe a un formToken existant : coordonnees
 // client, metadata. N'affecte pas l'etat du domain.Payment.

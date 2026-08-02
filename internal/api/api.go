@@ -78,6 +78,11 @@ func NewHandler(deps Deps) http.Handler {
 	mux.HandleFunc("GET /paysim/api/v1/webhooks/{id}", h.getWebhook)
 	mux.HandleFunc("POST /paysim/api/v1/webhooks/{id}/replay", h.replayWebhook)
 	mux.HandleFunc("POST /paysim/api/v1/payment-methods/{token}/revoke", h.revokePaymentMethod)
+	mux.HandleFunc("POST /paysim/api/v1/subscriptions", h.createSubscription)
+	mux.HandleFunc("GET /paysim/api/v1/subscriptions", h.listSubscriptions)
+	mux.HandleFunc("GET /paysim/api/v1/subscriptions/{id}", h.getSubscription)
+	mux.HandleFunc("POST /paysim/api/v1/subscriptions/{id}/trigger-billing", h.triggerBilling)
+	mux.HandleFunc("POST /paysim/api/v1/subscriptions/{id}/cancel", h.cancelSubscription)
 	mux.HandleFunc("GET /paysim/api/v1/events/stream", h.streamEvents)
 
 	return withBearer(mux, deps.Token, deps.Logger)
@@ -232,6 +237,9 @@ type ReplayWebhookResponse struct {
 // après validation. Motivation : les scénarios de test et les intégrateurs
 // qui veulent orchestrer un paiement sans dépendre du format natif d'un
 // PSP. L'ajout de Stripe (phase 5) se fera par ajout d'un cas au switch.
+//
+// Provider vide → payzen par défaut (log Debug pour tracer l'implicite,
+// visible en `PAYSIM_LOG_LEVEL=debug`).
 func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 	var req CreatePaymentInput
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -241,6 +249,7 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 	provider := req.Provider
 	if provider == "" {
 		provider = "payzen"
+		h.logger.Debug("api_provider_default", "path", r.URL.Path, "provider", provider)
 	}
 	switch provider {
 	case "payzen":
@@ -277,6 +286,212 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 		})
 	default:
 		http.Error(w, fmt.Sprintf("provider %q inconnu", provider), http.StatusBadRequest)
+	}
+}
+
+// CreateSubscriptionInput est le corps de POST /paysim/api/v1/subscriptions,
+// endpoint générique cross-provider pour créer un abonnement. Le champ
+// Provider distingue l'adaptateur (payzen par défaut). PaymentMethodToken
+// doit correspondre à un moyen de paiement précédemment enregistré via
+// POST /paysim/api/v1/payments avec Card.
+//
+// EffectDate et Rrule reprennent le vocabulaire PayZen / iCalendar
+// (RFC 5545) — recopiés tels quels, cf. providers.md.
+type CreateSubscriptionInput struct {
+	Provider           string            `json:"provider,omitempty"`
+	PaymentMethodToken string            `json:"paymentMethodToken"`
+	Amount             format.Amount     `json:"amount"`
+	Currency           string            `json:"currency"`
+	OrderID            string            `json:"orderId,omitempty"`
+	EffectDate         string            `json:"effectDate,omitempty"`
+	Rrule              string            `json:"rrule,omitempty"`
+	Metadata           map[string]string `json:"metadata,omitempty"`
+}
+
+// SubscriptionOutput est la vue exposée d'un abonnement. Cancelled
+// remonte pour que le marchand puisse le voir sans recharger.
+type SubscriptionOutput struct {
+	ID                 string            `json:"id"`
+	Provider           string            `json:"provider"`
+	PaymentMethodToken string            `json:"paymentMethodToken"`
+	Amount             format.Amount     `json:"amount"`
+	Currency           string            `json:"currency"`
+	OrderID            string            `json:"orderId,omitempty"`
+	EffectDate         string            `json:"effectDate,omitempty"`
+	Rrule              string            `json:"rrule,omitempty"`
+	Metadata           map[string]string `json:"metadata,omitempty"`
+	Cancelled          bool              `json:"cancelled"`
+	CreatedAt          time.Time         `json:"createdAt"`
+}
+
+// TriggerBillingOutput retourne l'identifiant du paiement créé par
+// le trigger d'échéance. L'appelant peut ensuite GET /payments/{uuid}
+// pour lire l'état complet et la trace du domaine.
+type TriggerBillingOutput struct {
+	SubscriptionID string `json:"subscriptionId"`
+	PaymentUUID    string `json:"paymentUuid"`
+	State          string `json:"state"`
+}
+
+// createSubscription traite POST /paysim/api/v1/subscriptions.
+// Endpoint générique cross-provider — délègue au provider demandé.
+func (h *Handler) createSubscription(w http.ResponseWriter, r *http.Request) {
+	var req CreateSubscriptionInput
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	provider := req.Provider
+	if provider == "" {
+		provider = "payzen"
+		h.logger.Debug("api_provider_default", "path", r.URL.Path, "provider", provider)
+	}
+	switch provider {
+	case "payzen":
+		if h.payzenHandler == nil {
+			http.Error(w, "payzen handler non configure", http.StatusServiceUnavailable)
+			return
+		}
+		sub, err := h.payzenHandler.CreateSubscription(payzen.CreateSubscriptionInput{
+			PaymentMethodToken: req.PaymentMethodToken,
+			Amount:             req.Amount,
+			Currency:           req.Currency,
+			OrderID:            req.OrderID,
+			EffectDate:         req.EffectDate,
+			Rrule:              req.Rrule,
+			Metadata:           req.Metadata,
+		})
+		if err != nil {
+			if isDomainErr(err) || errors.Is(err, payzen.ErrPaymentMethodUnknown) {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			h.logger.Error("api_create_subscription_failed", "err", err)
+			http.Error(w, "erreur de creation", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusCreated, subscriptionToOutput(sub, provider))
+	default:
+		http.Error(w, fmt.Sprintf("provider %q inconnu", provider), http.StatusBadRequest)
+	}
+}
+
+// getSubscription traite GET /paysim/api/v1/subscriptions/{id}.
+func (h *Handler) getSubscription(w http.ResponseWriter, r *http.Request) {
+	if h.payzenHandler == nil {
+		http.Error(w, "payzen handler non configure", http.StatusServiceUnavailable)
+		return
+	}
+	sub, err := h.payzenHandler.SubscriptionByID(r.PathValue("id"))
+	if err != nil {
+		h.logger.Error("api_get_subscription_failed", "err", err)
+		http.Error(w, "erreur de lecture", http.StatusInternalServerError)
+		return
+	}
+	if sub == nil {
+		http.Error(w, "abonnement inconnu", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, subscriptionToOutput(sub, "payzen"))
+}
+
+// listSubscriptions traite GET /paysim/api/v1/subscriptions.
+// Cross-provider par défaut ; ?provider=payzen filtre.
+func (h *Handler) listSubscriptions(w http.ResponseWriter, r *http.Request) {
+	if h.payzenHandler == nil {
+		writeJSON(w, http.StatusOK, []SubscriptionOutput{})
+		return
+	}
+	// L'accès direct au store passe par le handler payzen — pas d'API
+	// listSubscriptions publique dessus car listage cross-provider viendra
+	// avec Stripe (phase 5) via un repo générique. Pour l'instant on
+	// n'expose que payzen (unique provider câblé).
+	subs, err := h.payzenSubscriptions()
+	if err != nil {
+		h.logger.Error("api_list_subscriptions_failed", "err", err)
+		http.Error(w, "erreur de lecture", http.StatusInternalServerError)
+		return
+	}
+	out := make([]SubscriptionOutput, 0, len(subs))
+	for _, s := range subs {
+		out = append(out, subscriptionToOutput(s, "payzen"))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// payzenSubscriptions liste tous les abonnements PayZen via le
+// PaymentRepository si dispo (mode SQLite) ; en mode mémoire aucun
+// listing global n'existe côté payzen.Store — on retourne vide.
+func (h *Handler) payzenSubscriptions() ([]*payzen.Subscription, error) {
+	// TODO(4.4.7 UI) : quand le SubscriptionRepository sera exposé
+	// via api.Deps, on pourra lister proprement cross-provider. Pour
+	// l'instant, on retourne vide en mémoire — la liste UI arrive avec
+	// le vertical UI dédié.
+	return nil, nil
+}
+
+// triggerBilling traite POST /paysim/api/v1/subscriptions/{id}/trigger-billing.
+// Déclenche manuellement une échéance : Paysim crée une Transaction, applique
+// l'outcome selon révocation/expiration/magic PAN/magic amount, émet un
+// event bus. Retour synchrone avec l'uuid du paiement créé et son état.
+func (h *Handler) triggerBilling(w http.ResponseWriter, r *http.Request) {
+	if h.payzenHandler == nil {
+		http.Error(w, "payzen handler non configure", http.StatusServiceUnavailable)
+		return
+	}
+	subID := r.PathValue("id")
+	tx, err := h.payzenHandler.TriggerBilling(subID)
+	if err != nil {
+		switch {
+		case errors.Is(err, payzen.ErrSubscriptionUnknown):
+			http.Error(w, err.Error(), http.StatusNotFound)
+		case errors.Is(err, payzen.ErrSubscriptionCancelled),
+			errors.Is(err, payzen.ErrPaymentMethodUnknown):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		default:
+			h.logger.Error("api_trigger_billing_failed", "id", subID, "err", err)
+			http.Error(w, "erreur de trigger", http.StatusInternalServerError)
+		}
+		return
+	}
+	writeJSON(w, http.StatusCreated, TriggerBillingOutput{
+		SubscriptionID: subID,
+		PaymentUUID:    tx.UUID,
+		State:          string(tx.Payment.State()),
+	})
+}
+
+// cancelSubscription traite POST /paysim/api/v1/subscriptions/{id}/cancel.
+// Idempotent : ID inconnu retourne 204 (l'état demandé « annulé » est
+// vrai pour un ID inexistant), cohérent avec revoke sur payment methods.
+func (h *Handler) cancelSubscription(w http.ResponseWriter, r *http.Request) {
+	if h.payzenHandler == nil {
+		http.Error(w, "payzen handler non configure", http.StatusServiceUnavailable)
+		return
+	}
+	if err := h.payzenHandler.CancelSubscription(r.PathValue("id")); err != nil {
+		h.logger.Error("api_cancel_subscription_failed", "err", err)
+		http.Error(w, "erreur d'annulation", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// subscriptionToOutput sérialise pour l'API — miroir plus étroit du
+// type payzen.Subscription, expose ce qui compte au marchand.
+func subscriptionToOutput(sub *payzen.Subscription, provider string) SubscriptionOutput {
+	return SubscriptionOutput{
+		ID:                 sub.ID,
+		Provider:           provider,
+		PaymentMethodToken: sub.PaymentMethodToken,
+		Amount:             sub.Amount,
+		Currency:           sub.Currency,
+		OrderID:            sub.OrderID,
+		EffectDate:         sub.EffectDate,
+		Rrule:              sub.Rrule,
+		Metadata:           sub.Metadata,
+		Cancelled:          sub.Cancelled,
+		CreatedAt:          sub.CreatedAt,
 	}
 }
 

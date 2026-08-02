@@ -54,6 +54,11 @@ type SubscriptionRecord struct {
 	// ProviderDataJSON porte les champs spécifiques provider.
 	ProviderDataJSON string
 
+	// Cancelled : true après une annulation manuelle. Un renewal
+	// ultérieur est refusé (mécanique symétrique à
+	// PaymentMethodRecord.Revoked).
+	Cancelled bool
+
 	// CreatedAt / UpdatedAt : timestamps de l'enveloppe subscription
 	// (pas des renewals individuels, qui sont des paiements distincts).
 	CreatedAt time.Time
@@ -85,6 +90,11 @@ type SubscriptionRepository interface {
 	// DeleteByProvider supprime tous les abonnements d'un provider.
 	// Retourne le nombre effectivement supprimé.
 	DeleteByProvider(provider string) (int, error)
+
+	// Cancel marque l'abonnement comme annulé. Idempotent : ID inconnu
+	// ne remonte pas d'erreur (l'état demandé « abonnement annulé »
+	// est atteint pour un ID inexistant).
+	Cancel(id string) error
 
 	// Close libère les ressources sous-jacentes.
 	Close() error
