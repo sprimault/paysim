@@ -132,8 +132,15 @@ Découpage restant de la phase 4 :
   enrichi. Fake serveur étendu. 6 tests bout-en-bout +
   `testdata/subscription.yml` canonique. UI fix : le placeholder
   "Aucun paiement" retire la mention PayZen (générique cross-provider).
-- **4.4.6c** — Doc dédiée `docs/subscriptions.md` bilingue + exemples
-  multi-provider dans testing-cards.md.
+- **4.4.6c-doc fait** (2026-08-02) — `docs/subscriptions.md` + `.fr.md`
+  bilingues : vue d'ensemble, choix « pas de scheduler en fond »,
+  cycle de vie, endpoints, conditions de refus (partagées avec
+  charge_token), scénario YAML type, HTTP curl équivalent, section
+  cross-provider. Section `Multi-provider` ajoutée à `testing-cards.md`
+  + `.fr.md` avec exemple `provider: payzen` explicite, mention Stripe
+  en commentaire pour phase 5, note sur défaut payzen et log Debug,
+  distinction SDK natif (URL discriminante) vs API générique
+  (champ `provider`).
 - **4.4.4** — Scénarios canoniques d'exemple (one-shot, token pattern, subscription)
   + `docs/scenarios.md` bilingue. Livré en dernier pour couvrir les trois patterns
   d'un seul jet.

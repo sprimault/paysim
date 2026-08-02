@@ -127,6 +127,39 @@ Any PAN that is *not* one of the four reserved values is accepted by
 Paysim as a normal card, regardless of Luhn validity — Paysim never
 rejects on Luhn failure alone (it is a simulator).
 
+## Multi-provider
+
+The `provider` field on `POST /paysim/api/v1/payments` (and every
+generic endpoint) selects the adapter. Omitting it defaults to
+`payzen` — the server logs the fallback at Debug level so you can
+trace implicit choices in a busy CI log.
+
+Explicit `provider` for future-proofing (the API surface will remain
+identical when Stripe joins in phase 5):
+
+```bash
+# Explicit — same behaviour today, resilient to future adapters
+curl -X POST http://paysim:8080/paysim/api/v1/payments \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "provider": "payzen",
+    "amount": 1000, "currency": "EUR", "orderId": "O-1"
+  }'
+
+# Coming in phase 5 — same endpoint, different provider
+# curl -X POST http://paysim:8080/paysim/api/v1/payments \
+#   -d '{"provider":"stripe","amount":1000,"currency":"EUR","orderId":"O-1"}'
+```
+
+Merchants using an official PSP SDK (Lyra client, `stripe-php`, …)
+never touch this generic API — they hit the provider-native URLs
+(`/api-payment/V4/*` for PayZen, `/v1/payment_intents` for Stripe).
+The URL is the discriminant there; no `provider` field needed.
+The generic API is meant for scenarios, UI, and integration scripts
+that speak "Paysim" directly.
+
+Details in [subscriptions.md](subscriptions.md#cross-provider).
+
 ## Security reminder
 
 **Never store real card numbers in Paysim.** The `pan` field is

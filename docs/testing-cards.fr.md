@@ -132,6 +132,41 @@ Paysim comme une carte normale, indépendamment de la validité Luhn —
 Paysim ne rejette jamais un paiement uniquement sur l'échec Luhn (c'est
 un simulateur).
 
+## Multi-provider
+
+Le champ `provider` de `POST /paysim/api/v1/payments` (et de chaque
+endpoint générique) sélectionne l'adaptateur. L'omettre retombe sur
+`payzen` par défaut — le serveur logge le fallback en niveau Debug
+pour permettre de tracer les choix implicites dans un log CI dense.
+
+`provider` explicite pour préparer l'avenir (la surface API restera
+identique quand Stripe arrivera en phase 5) :
+
+```bash
+# Explicite — comportement identique aujourd'hui, résilient aux
+# futurs adaptateurs
+curl -X POST http://paysim:8080/paysim/api/v1/payments \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "provider": "payzen",
+    "amount": 1000, "currency": "EUR", "orderId": "O-1"
+  }'
+
+# À venir en phase 5 — même endpoint, provider différent
+# curl -X POST http://paysim:8080/paysim/api/v1/payments \
+#   -d '{"provider":"stripe","amount":1000,"currency":"EUR","orderId":"O-1"}'
+```
+
+Les marchands qui utilisent un SDK officiel PSP (client Lyra,
+`stripe-php`, …) ne touchent jamais à cette API générique — ils
+tapent les URLs natives du provider (`/api-payment/V4/*` pour PayZen,
+`/v1/payment_intents` pour Stripe). Là, c'est l'URL qui fait le
+discriminant, pas besoin de champ `provider`. L'API générique vise
+les scénarios, l'UI, et les scripts d'intégration qui parlent
+« Paysim » directement.
+
+Détails dans [subscriptions.fr.md](subscriptions.fr.md#cross-provider).
+
 ## Rappel de sécurité
 
 **Ne jamais stocker de vraies CB dans Paysim.** Le champ `pan` est
