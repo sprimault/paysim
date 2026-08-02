@@ -63,6 +63,20 @@ docker compose -f deploy/compose.yml up -d
 Override `PAYSIM_HOST_PORT` (and pass the same to `PAYSIM_URL` on
 the seed line) if `30880` is already taken on the machine.
 
+**Linux / macOS / Git Bash:**
+
+```bash
+PAYSIM_HOST_PORT=30890 docker compose -f deploy/compose.yml up -d
+PAYSIM_URL=http://localhost:30890 bash examples/seed-paysim.sh --purge
+```
+
+**Windows PowerShell:**
+
+```powershell
+$env:PAYSIM_HOST_PORT="30890"; docker compose -f deploy/compose.yml up -d
+$env:PAYSIM_URL="http://localhost:30890"; .\examples\seed-paysim.ps1 -Purge
+```
+
 Rebuild after code changes — forces image rebuild and container recreate:
 
 ```bash
