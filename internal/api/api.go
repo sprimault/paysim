@@ -89,6 +89,7 @@ func NewHandler(deps Deps) http.Handler {
 	mux.HandleFunc("GET /paysim/api/v1/webhooks/{id}", h.getWebhook)
 	mux.HandleFunc("POST /paysim/api/v1/webhooks/{id}/replay", h.replayWebhook)
 	mux.HandleFunc("GET /paysim/api/v1/payment-methods", h.listPaymentMethods)
+	mux.HandleFunc("GET /paysim/api/v1/payment-methods/{token}", h.getPaymentMethod)
 	mux.HandleFunc("POST /paysim/api/v1/payment-methods/{token}/revoke", h.revokePaymentMethod)
 	mux.HandleFunc("POST /paysim/api/v1/subscriptions", h.createSubscription)
 	mux.HandleFunc("GET /paysim/api/v1/subscriptions", h.listSubscriptions)
@@ -592,6 +593,39 @@ func (h *Handler) listPaymentMethods(w http.ResponseWriter, _ *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// getPaymentMethod traite GET /paysim/api/v1/payment-methods/{token}.
+// Charge un moyen de paiement isolé sans passer par le listing — utile
+// pour un bookmark UI ou une navigation directe vers l'URL du détail.
+// En mode mémoire (aucun repo branché), retourne 404 par défaut : sans
+// listing global côté payzen.Store, l'accès unitaire n'est pas exposé.
+func (h *Handler) getPaymentMethod(w http.ResponseWriter, r *http.Request) {
+	if h.paymentMethodRepo == nil {
+		http.Error(w, "moyen de paiement inconnu", http.StatusNotFound)
+		return
+	}
+	token := r.PathValue("token")
+	rec, err := h.paymentMethodRepo.ByToken(token)
+	if err != nil {
+		h.logger.Error("api_get_payment_method_failed", "token", token, "err", err)
+		http.Error(w, "erreur de lecture", http.StatusInternalServerError)
+		return
+	}
+	if rec == nil {
+		http.Error(w, "moyen de paiement inconnu", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, PaymentMethodOutput{
+		Token:       rec.Token,
+		Provider:    rec.Provider,
+		PANMasked:   rec.PANMasked,
+		Brand:       rec.Brand,
+		ExpiryMonth: rec.ExpiryMonth,
+		ExpiryYear:  rec.ExpiryYear,
+		Revoked:     rec.Revoked,
+		CreatedAt:   rec.CreatedAt,
+	})
 }
 
 // revokePaymentMethod traite POST /paysim/api/v1/payment-methods/{token}/revoke.

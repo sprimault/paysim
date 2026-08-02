@@ -5,6 +5,8 @@ import { createBrowserRouter, Navigate } from 'react-router';
 import { App } from '@/app/App';
 import { PaymentDetail } from '@/features/payment-detail/ui/PaymentDetail';
 import { PaymentList } from '@/features/payment-list/ui/PaymentList';
+import { PaymentMethodDetail } from '@/features/payment-method-detail/ui/PaymentMethodDetail';
+import { PaymentMethodList } from '@/features/payment-method-list/ui/PaymentMethodList';
 import { SubscriptionDetail } from '@/features/subscription-detail/ui/SubscriptionDetail';
 import { SubscriptionList } from '@/features/subscription-list/ui/SubscriptionList';
 import { WebhookDetail } from '@/features/webhook-detail/ui/WebhookDetail';
@@ -37,6 +39,8 @@ export const router = createBrowserRouter(
         { path: 'webhooks/:id', element: <WebhookDetail /> },
         { path: 'subscriptions', element: <SubscriptionList /> },
         { path: 'subscriptions/:id', element: <SubscriptionDetail /> },
+        { path: 'payment-methods', element: <PaymentMethodList /> },
+        { path: 'payment-methods/:token', element: <PaymentMethodDetail /> },
         { path: '*', element: <Navigate to="/" replace /> },
       ],
     },

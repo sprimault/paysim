@@ -1343,3 +1343,59 @@ func TestListSubscriptions_afterCreateWithSQLite(t *testing.T) {
 		t.Errorf("sub = %+v, veut amount 2990 + bon token", out[0])
 	}
 }
+
+func TestGetPaymentMethod_afterEnroll(t *testing.T) {
+	t.Parallel()
+	server := setupWithSQLite(t)
+
+	// Enroll une CB.
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider:   "payzen",
+		Amount:     1000, Currency: "EUR", OrderID: "O",
+		FormAction: "REGISTER_PAY",
+		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
+	})
+	createResp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	var created CreatePaymentOutput
+	_ = json.NewDecoder(createResp.Body).Decode(&created)
+	_ = createResp.Body.Close()
+
+	getResp, err := http.Get(server.URL + "/paysim/api/v1/payment-methods/" + created.PaymentMethodToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = getResp.Body.Close() }()
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, veut 200", getResp.StatusCode)
+	}
+	var out PaymentMethodOutput
+	_ = json.NewDecoder(getResp.Body).Decode(&out)
+	if out.Token != created.PaymentMethodToken {
+		t.Errorf("Token = %q, veut %q", out.Token, created.PaymentMethodToken)
+	}
+	if out.Brand != "VISA" || out.PANMasked != "411111XXXXXX1111" {
+		t.Errorf("Brand/PANMasked = %q/%q", out.Brand, out.PANMasked)
+	}
+}
+
+func TestGetPaymentMethod_unknown(t *testing.T) {
+	t.Parallel()
+	server := setupWithSQLite(t)
+	resp, _ := http.Get(server.URL + "/paysim/api/v1/payment-methods/does-not-exist")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, veut 404", resp.StatusCode)
+	}
+}
+
+func TestGetPaymentMethod_inMemoryMode(t *testing.T) {
+	t.Parallel()
+	// setupWithPayzen ne branche pas PaymentMethodRepo → 404.
+	server, _ := setupWithPayzen(t, "")
+	resp, _ := http.Get(server.URL + "/paysim/api/v1/payment-methods/any-token")
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("status = %d, veut 404 (mode memoire sans repo)", resp.StatusCode)
+	}
+}

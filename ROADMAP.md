@@ -200,15 +200,18 @@ Découpage restant de la phase 4 :
   les Link/NavLink absolus ne prenaient pas le préfixe ingress en
   compte. Types TS régénérés via `make web-types`. 5 nouveaux tests
   DataTable + 4 tests SubscriptionList.
-- **4.4.7 — Extensions UI** — la mécanique 4.4.5/4.4.6 crée des entités que l'UI
-  actuelle n'affiche pas. À ajouter : colonne « Provider » dans l'onglet « Tous » de
-  la liste des paiements (aujourd'hui provider invisible en vue cross-provider) ;
-  nouvelles vues liste + détail pour les subscriptions ; nouvelles vues pour les
-  moyens de paiement enregistrés (avec PAN masqué, brand, expiration, révocation
-  depuis l'UI). Prérequis : endpoint `GET /paysim/api/v1/payment-methods` (à ajouter
-  au passage), `GET /paysim/api/v1/subscriptions` déjà là (6a). **Mode sombre/clair
-  à prévoir** : sélecteur utilisateur, détection `prefers-color-scheme`,
-  persistance localStorage. Tailwind supporte nativement (`dark:` variant).
+- **4.4.7d fait** (2026-08-02) — Feature UI payment methods (dernière
+  du 4.4.7). Nouvel endpoint backend `GET /paysim/api/v1/payment-methods/{token}`
+  pour accès unitaire (bookmark/navigation directe). `entities/payment-method/`
+  (api + store + hooks list/detail miroir de subscription).
+  `features/payment-method-list/` (DataTable réutilisé, colonnes État/
+  Provider/Marque/PAN/Expiration/Token/Créé). `features/payment-method-detail/`
+  (métadonnées + bouton Révoquer avec confirm). Lien depuis
+  SubscriptionDetail vers le détail du moyen (paymentMethodToken devient
+  cliquable). Routes /payment-methods et /payment-methods/:token ajoutées.
+  3 tests API + 4 tests PaymentMethodList. **DataTable prouvé** :
+  3e usage sans refactor, factorisation en 7c validée.
+- **4.4.7 tout entier** (a+b+c+d) fait le 2026-08-02.
 - **4.4.2b fait** (2026-08-02) — `inject` fonctionnel : `SimulatePaymentRequest`
   enrichi côté API (`chaos` structuré + `deliveryDelayMs`), client scenarios
   a un `SimulateOpts` optionnel, runner porte `pendingChaos`/`pendingDelayMs`

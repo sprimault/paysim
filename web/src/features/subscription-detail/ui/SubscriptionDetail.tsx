@@ -148,7 +148,12 @@ export function SubscriptionDetail() {
             label="Payment method token"
             value={
               <div className="flex items-center gap-1">
-                <code className="font-mono text-xs">{subscription.paymentMethodToken}</code>
+                <Link
+                  to={`/payment-methods/${subscription.paymentMethodToken}`}
+                  className="font-mono text-xs text-brand-700 hover:underline dark:text-brand-300"
+                >
+                  {subscription.paymentMethodToken}
+                </Link>
                 <CopyButton value={subscription.paymentMethodToken} className="p-0.5" />
               </div>
             }
