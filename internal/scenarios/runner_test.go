@@ -199,6 +199,14 @@ func TestRunner_assertStateEchoue(t *testing.T) {
 	if !strings.Contains(err.Error(), `obtenu "initiated"`) {
 		t.Errorf("erreur = %v, veut contenir 'obtenu \"initiated\"'", err)
 	}
+	// Classification : c'est une erreur d'assertion, pas d'exécution.
+	// La CLI s'appuie sur ce marquage pour choisir son code retour.
+	if !errors.Is(err, ErrAssertion) {
+		t.Errorf("errors.Is(err, ErrAssertion) = false, veut true")
+	}
+	if errors.Is(err, ErrHTTP) {
+		t.Errorf("errors.Is(err, ErrHTTP) = true, veut false")
+	}
 	// La 2e étape échoue ; la 1re a réussi.
 	if rep.Steps[0].Err != nil {
 		t.Errorf("etape 1 = %v, veut nil", rep.Steps[0].Err)

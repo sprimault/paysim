@@ -74,6 +74,19 @@ func (r *Report) Duration() time.Duration { return r.EndedAt.Sub(r.StartedAt) }
 // pas pénaliser l'écriture des scénarios en avance de phase.
 var errInjectUnsupported = errors.New("action inject non supportee par le runner v4.4.2 (canal chaos serveur a livrer)")
 
+// ErrAssertion identifie une erreur d'assertion (assert_state ou
+// assert_webhook qui ne matche pas l'état observé). Distinguée des
+// erreurs d'exécution (HTTP down, fichier YAML invalide, action non
+// supportée) pour que la CLI puisse choisir un code retour différent :
+// une CI qui reçoit 1 sait qu'il s'agit d'un défaut de conformité
+// (le simulé ne correspond pas au scénario), 2 signale un problème
+// d'infra qui empêche même d'évaluer le scénario.
+//
+// Wrapping via `fmt.Errorf("%w: …", ErrAssertion, …)` dans les
+// méthodes doAssert*. Compatible avec `errors.Is(joined, ErrAssertion)`
+// après agrégation via `errors.Join`.
+var ErrAssertion = errors.New("assertion echouee")
+
 // Run exécute s séquentiellement contre le client HTTP. S'arrête à la
 // première erreur : un scénario correspond à un cas de test, un échec
 // invalide les étapes suivantes (l'état du paiement diverge de ce qui
@@ -204,10 +217,10 @@ func (r *Runner) doAssertWebhook(ctx context.Context, st *state, in *AssertWebho
 	}
 	if got != in.Count {
 		if in.Status != "" {
-			return fmt.Errorf("nombre de webhooks avec status=%q: obtenu %d, veut %d",
-				in.Status, got, in.Count)
+			return fmt.Errorf("%w: nombre de webhooks avec status=%q: obtenu %d, veut %d",
+				ErrAssertion, in.Status, got, in.Count)
 		}
-		return fmt.Errorf("nombre de webhooks: obtenu %d, veut %d", got, in.Count)
+		return fmt.Errorf("%w: nombre de webhooks: obtenu %d, veut %d", ErrAssertion, got, in.Count)
 	}
 	return nil
 }
@@ -223,7 +236,7 @@ func (r *Runner) doAssertState(ctx context.Context, st *state, in *AssertState) 
 		return err
 	}
 	if got.State != in.State {
-		return fmt.Errorf("etat: obtenu %q, veut %q", got.State, in.State)
+		return fmt.Errorf("%w: etat: obtenu %q, veut %q", ErrAssertion, got.State, in.State)
 	}
 	return nil
 }

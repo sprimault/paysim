@@ -50,6 +50,14 @@ const shutdownGrace = 2 * time.Second
 const shutdownTimeout = 30 * time.Second
 
 func main() {
+	// Sous-commande `paysim run <scenario.yml>` : le binaire bascule
+	// en mode client, exécute le scénario contre un Paysim distant
+	// puis sort avec un code exploitable en CI. Toute autre invocation
+	// (aucun arg, ou premier arg différent) démarre le serveur —
+	// comportement préservé pour compat docker/k8s.
+	if len(os.Args) > 1 && os.Args[1] == "run" {
+		os.Exit(runCommand(context.Background(), os.Args[2:], os.Getenv, os.Stdout, os.Stderr))
+	}
 	if err := run(context.Background(), os.Stdout, os.Stderr); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "paysim:", err)
 		os.Exit(1)

@@ -92,18 +92,20 @@ panne injectée. Ce GIF est l'actif principal du projet — il vaut plus que le 
 État au 2026-08-02 : conteneur, cluster (avec overlay Kustomize SQLite optionnel validé
 end-to-end sur k3d), plafond de rétention en ring buffer, protection API par jeton,
 `docs/install.md` bilingue, **loader YAML des scénarios** (`internal/scenarios`, format
-impératif à discriminant `action:`, six actions, validation agrégée) et **moteur
+impératif à discriminant `action:`, six actions, validation agrégée), **moteur
 d'exécution** (client HTTP + runner + endpoint générique `POST /paysim/api/v1/payments`
-cross-provider) — faits. Restent : sous-commande `paysim run scenario.yml` avec code
-retour CI, support token pattern + fausse CB stockée, subscriptions natives, scénarios
-canoniques d'exemple, `docs/scenarios.md` bilingue, et la matrice des deux URL dans
-`docs/install.md`.
+cross-provider) et **CLI `paysim run scenario.yml`** (dispatch args dans `cmd/paysim`,
+config `PAYSIM_URL` + `PAYSIM_API_TOKEN`, codes retour 0/1/2, flag `--verbose`) —
+faits. Restent : support token pattern + fausse CB stockée, subscriptions natives,
+scénarios canoniques d'exemple, `docs/scenarios.md` bilingue, et la matrice des deux
+URL dans `docs/install.md`.
 
 Découpage restant de la phase 4 :
 
-- **4.4.3** — Sous-commande `paysim run scenario.yml` dans `cmd/paysim/main.go`, code
-  retour CI (0 OK, 1 assertion échouée, 2 erreur d'exécution), config `PAYSIM_URL` et
-  `PAYSIM_API_TOKEN` pour cibler un Paysim distant.
+- **4.4.3** — fait : dispatch `paysim run <file>` dans `cmd/paysim`, `runCommand`
+  testable (args + env + writers injectés), classification erreurs via nouvelle
+  sentinelle `scenarios.ErrAssertion` pour distinguer exit 1 (assertion) vs 2
+  (exécution).
 - **4.4.5** — Token pattern PayZen + fausse CB stockée avec vérification d'expiration.
   Enrôlement via `formAction: REGISTER_PAY`, `paymentMethodToken` retourné dans le
   webhook et réutilisable dans un `CreatePayment` suivant sans formulaire. Store des
