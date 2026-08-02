@@ -68,6 +68,7 @@ the seed line) if `30880` is already taken on the machine.
 ```bash
 PAYSIM_HOST_PORT=30890 docker compose -f deploy/compose.yml up -d
 PAYSIM_URL=http://localhost:30890 bash examples/seed-paysim.sh --purge
+# http://localhost:30890/
 ```
 
 **Windows PowerShell:**
@@ -75,6 +76,7 @@ PAYSIM_URL=http://localhost:30890 bash examples/seed-paysim.sh --purge
 ```powershell
 $env:PAYSIM_HOST_PORT="30890"; docker compose -f deploy/compose.yml up -d
 $env:PAYSIM_URL="http://localhost:30890"; .\examples\seed-paysim.ps1 -Purge
+# http://localhost:30890/
 ```
 
 Rebuild after code changes — forces image rebuild and container recreate:
