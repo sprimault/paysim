@@ -125,7 +125,15 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 			return fmt.Errorf("initialisation repository SQLite payments: %w", err)
 		}
 		paymentRepo = repo
-		payzenStore = payzen.NewSQLiteStore(repo)
+		subsRepo, err := sqlitepkg.NewSubscriptionsRepository(db)
+		if err != nil {
+			return fmt.Errorf("initialisation repository SQLite subscriptions: %w", err)
+		}
+		methodsRepo, err := sqlitepkg.NewPaymentMethodsRepository(db)
+		if err != nil {
+			return fmt.Errorf("initialisation repository SQLite payment methods: %w", err)
+		}
+		payzenStore = payzen.NewSQLiteStore(repo, subsRepo, methodsRepo)
 
 		webhookRepo, err := sqlitepkg.NewWebhooksRepository(db)
 		if err != nil {

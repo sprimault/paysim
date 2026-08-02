@@ -60,6 +60,20 @@ type Store interface {
 	// (pas les abonnements). Retourne le nombre supprimé.
 	DeleteAllTransactions() (int, error)
 
+	// SaveMethod indexe un moyen de paiement enregistré par son Token.
+	// Écrase silencieusement une entrée existante — utile pour marquer
+	// un revoke ou une mise à jour de contexte.
+	SaveMethod(m *PaymentMethod) error
+
+	// MethodByToken retourne le PaymentMethod indexé, ou nil, nil si
+	// inconnu.
+	MethodByToken(token string) (*PaymentMethod, error)
+
+	// RevokeMethod marque le PaymentMethod comme révoqué. Idempotent :
+	// un token inconnu ne remonte pas d'erreur (l'état demandé « ce
+	// token n'est plus utilisable » est atteint).
+	RevokeMethod(token string) error
+
 	// Close libère les ressources (utile pour SQLiteStore ; no-op
 	// pour MemoryStore). L'appelant doit toujours l'appeler à
 	// l'arrêt propre.

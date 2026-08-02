@@ -7,46 +7,47 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync"
 
 	"github.com/sprimault/paysim/internal/domain"
 	"github.com/sprimault/paysim/internal/store"
 )
 
-// SQLiteStore est l'impl PayZen du contrat Store — wrapper sur
-// store.PaymentRepository (schéma générique cross-provider). Les
-// champs spécifiques PayZen (Customer, Metadata, ReturnURL,
-// NotificationURL, FormAction) sont sérialisés dans les blobs JSON de
-// PaymentRecord ; les converters payzenToRecord / recordToPayzen
-// concentrent la mécanique.
+// SQLiteStore est l'impl PayZen du contrat Store — wrapper sur trois
+// repositories génériques cross-provider :
+//   - store.PaymentRepository pour les transactions et leur journal
+//   - store.SubscriptionRepository pour les abonnements récurrents
+//   - store.PaymentMethodRepository pour les moyens de paiement enregistrés
 //
-// Le PaymentRepository est fourni par l'appelant (typiquement
-// cmd/paysim/main.go) — il peut être partagé avec d'autres providers
-// et avec l'API UI cross-provider.
+// Les champs spécifiques PayZen (Customer, Metadata, ReturnURL,
+// NotificationURL, FormAction) sont sérialisés dans les blobs JSON des
+// PaymentRecord/SubscriptionRecord/PaymentMethodRecord ; les converters
+// payzenToRecord / recordToPayzen (et leurs équivalents subscription
+// et method) concentrent la mécanique.
 //
-// Les abonnements PayZen sont stub côté v1 : conservés dans une map
-// en mémoire au sein du SQLiteStore, non persistés. Quand un vrai
-// besoin de persistance d'abonnements se manifestera, un
-// SubscriptionRepository générique s'ajoutera à internal/store/.
+// Tous les repos sont fournis par l'appelant (typiquement
+// cmd/paysim/main.go) — ils peuvent être partagés avec d'autres
+// providers et avec l'API UI cross-provider. L'appelant garde la
+// propriété et la responsabilité de leur fermeture — un
+// SQLiteStore.Close() ne les ferme pas.
 type SQLiteStore struct {
-	repo store.PaymentRepository
-
-	// Abonnements en mémoire — stub v1.
-	subMu sync.RWMutex
-	subs  map[string]*Subscription
+	repo    store.PaymentRepository
+	subRepo store.SubscriptionRepository
+	pmRepo  store.PaymentMethodRepository
 }
 
 // providerName identifie PayZen dans la colonne payments.provider.
 const providerName = "payzen"
 
-// NewSQLiteStore construit un SQLiteStore autour du PaymentRepository
-// fourni. L'appelant garde la propriété du repository (et donc la
-// responsabilité de sa fermeture) — un SQLiteStore.Close() ne ferme
-// pas le repo partagé.
-func NewSQLiteStore(repo store.PaymentRepository) *SQLiteStore {
+// NewSQLiteStore construit un SQLiteStore autour des trois repositories.
+func NewSQLiteStore(
+	payments store.PaymentRepository,
+	subs store.SubscriptionRepository,
+	methods store.PaymentMethodRepository,
+) *SQLiteStore {
 	return &SQLiteStore{
-		repo: repo,
-		subs: make(map[string]*Subscription),
+		repo:    payments,
+		subRepo: subs,
+		pmRepo:  methods,
 	}
 }
 
@@ -128,32 +129,71 @@ func (s *SQLiteStore) AllTransactions() ([]*Transaction, error) {
 }
 
 // -----------------------------------------------------------------------------
-// Abonnements — mémoire (v1 stub, à migrer si vrai besoin métier)
+// Abonnements — persistance SQL via subRepo (fin du stub v1 mémoire)
 // -----------------------------------------------------------------------------
 
-// SaveSubscription stocke en mémoire.
+// SaveSubscription sérialise et délègue au repo générique.
 func (s *SQLiteStore) SaveSubscription(sub *Subscription) error {
 	if sub == nil || sub.ID == "" {
 		return nil
 	}
-	s.subMu.Lock()
-	defer s.subMu.Unlock()
-	s.subs[sub.ID] = sub
-	return nil
+	rec, err := payzenSubToRecord(sub)
+	if err != nil {
+		return err
+	}
+	return s.subRepo.Save(rec)
 }
 
-// SubscriptionByID lit depuis la mémoire.
+// SubscriptionByID lit via le repo générique et désérialise.
 func (s *SQLiteStore) SubscriptionByID(id string) (*Subscription, error) {
-	s.subMu.RLock()
-	defer s.subMu.RUnlock()
-	return s.subs[id], nil
+	rec, err := s.subRepo.ByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if rec == nil || rec.Provider != providerName {
+		return nil, nil
+	}
+	return recordToPayzenSub(rec), nil
 }
 
-// LenSubscriptions compte les abonnements en mémoire.
+// LenSubscriptions compte les abonnements PayZen uniquement.
 func (s *SQLiteStore) LenSubscriptions() (int, error) {
-	s.subMu.RLock()
-	defer s.subMu.RUnlock()
-	return len(s.subs), nil
+	recs, err := s.subRepo.ByProvider(providerName)
+	if err != nil {
+		return 0, err
+	}
+	return len(recs), nil
+}
+
+// -----------------------------------------------------------------------------
+// Moyens de paiement enregistrés — persistance SQL via pmRepo
+// -----------------------------------------------------------------------------
+
+// SaveMethod sérialise et délègue au repo générique.
+func (s *SQLiteStore) SaveMethod(m *PaymentMethod) error {
+	if m == nil || m.Token == "" {
+		return nil
+	}
+	return s.pmRepo.Save(payzenMethodToRecord(m))
+}
+
+// MethodByToken lit via le repo et désérialise. Filtre défensif sur
+// provider — un token de la table cross-provider pourrait appartenir
+// à Stripe ; on renvoie nil pour rester scoped PayZen.
+func (s *SQLiteStore) MethodByToken(token string) (*PaymentMethod, error) {
+	rec, err := s.pmRepo.ByToken(token)
+	if err != nil {
+		return nil, err
+	}
+	if rec == nil || rec.Provider != providerName {
+		return nil, nil
+	}
+	return recordToPayzenMethod(rec), nil
+}
+
+// RevokeMethod délègue au repo. Idempotent, cf. contrat.
+func (s *SQLiteStore) RevokeMethod(token string) error {
+	return s.pmRepo.Revoke(token)
 }
 
 // Delete supprime une transaction PayZen. Le repo cross-provider est
@@ -220,6 +260,95 @@ func payzenToRecord(tx *Transaction) (*store.PaymentRecord, error) {
 		CreatedAt:        tx.CreatedAt,
 		UpdatedAt:        tx.UpdatedAt,
 	}, nil
+}
+
+// -----------------------------------------------------------------------------
+// Converters Subscription (payzen ⇄ SubscriptionRecord)
+// -----------------------------------------------------------------------------
+
+// payzenSubToRecord sérialise une Subscription PayZen en record générique.
+// Les champs métier (EffectDate, Rrule, PaymentMethodToken) sont dans les
+// colonnes typées du record ; Metadata dans MetadataJSON.
+func payzenSubToRecord(sub *Subscription) (*store.SubscriptionRecord, error) {
+	if sub == nil {
+		return nil, errors.New("payzenSubToRecord(nil)")
+	}
+	metaJSON, err := json.Marshal(sub.Metadata)
+	if err != nil {
+		return nil, fmt.Errorf("marshal subscription metadata: %w", err)
+	}
+	// UpdatedAt calqué sur CreatedAt tant qu'aucun update n'a lieu — le
+	// modèle Subscription actuel ne trace pas de dernière modification.
+	return &store.SubscriptionRecord{
+		ID:                 sub.ID,
+		Provider:           providerName,
+		OrderID:            sub.OrderID,
+		Amount:             sub.Amount,
+		Currency:           sub.Currency,
+		PaymentMethodToken: sub.PaymentMethodToken,
+		EffectDate:         sub.EffectDate,
+		Rrule:              sub.Rrule,
+		MetadataJSON:       string(metaJSON),
+		ProviderDataJSON:   "{}",
+		CreatedAt:          sub.CreatedAt,
+		UpdatedAt:          sub.CreatedAt,
+	}, nil
+}
+
+// recordToPayzenSub désérialise. Metadata est vide si pas de JSON.
+func recordToPayzenSub(rec *store.SubscriptionRecord) *Subscription {
+	var metadata map[string]string
+	if rec.MetadataJSON != "" {
+		_ = json.Unmarshal([]byte(rec.MetadataJSON), &metadata)
+	}
+	return &Subscription{
+		ID:                 rec.ID,
+		OrderID:            rec.OrderID,
+		Amount:             rec.Amount,
+		Currency:           rec.Currency,
+		PaymentMethodToken: rec.PaymentMethodToken,
+		EffectDate:         rec.EffectDate,
+		Rrule:              rec.Rrule,
+		Metadata:           metadata,
+		CreatedAt:          rec.CreatedAt,
+	}
+}
+
+// -----------------------------------------------------------------------------
+// Converters PaymentMethod (payzen ⇄ PaymentMethodRecord)
+// -----------------------------------------------------------------------------
+
+// payzenMethodToRecord sérialise. Aucun champ PayZen-only pour l'instant —
+// les informations 3DS d'enrôlement peuvent enrichir ProviderDataJSON quand
+// on modélisera l'authentification initiale.
+func payzenMethodToRecord(m *PaymentMethod) *store.PaymentMethodRecord {
+	return &store.PaymentMethodRecord{
+		Token:            m.Token,
+		Provider:         providerName,
+		PANFull:          m.PANFull,
+		PANMasked:        m.PANMasked,
+		Brand:            m.Brand,
+		ExpiryMonth:      m.ExpiryMonth,
+		ExpiryYear:       m.ExpiryYear,
+		Revoked:          m.Revoked,
+		MetadataJSON:     "{}",
+		ProviderDataJSON: "{}",
+		CreatedAt:        m.CreatedAt,
+	}
+}
+
+// recordToPayzenMethod désérialise.
+func recordToPayzenMethod(rec *store.PaymentMethodRecord) *PaymentMethod {
+	return &PaymentMethod{
+		Token:       rec.Token,
+		PANFull:     rec.PANFull,
+		PANMasked:   rec.PANMasked,
+		Brand:       rec.Brand,
+		ExpiryMonth: rec.ExpiryMonth,
+		ExpiryYear:  rec.ExpiryYear,
+		CreatedAt:   rec.CreatedAt,
+		Revoked:     rec.Revoked,
+	}
 }
 
 // recordToPayzen désérialise un PaymentRecord vers Transaction PayZen.

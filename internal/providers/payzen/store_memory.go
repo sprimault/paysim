@@ -20,6 +20,7 @@ type MemoryStore struct {
 	byToken        map[string]*Transaction
 	byUUID         map[string]*Transaction
 	bySubscription map[string]*Subscription
+	byMethod       map[string]*PaymentMethod // token → moyen de paiement
 }
 
 // NewMemoryStore instancie un MemoryStore vide.
@@ -28,7 +29,37 @@ func NewMemoryStore() *MemoryStore {
 		byToken:        make(map[string]*Transaction),
 		byUUID:         make(map[string]*Transaction),
 		bySubscription: make(map[string]*Subscription),
+		byMethod:       make(map[string]*PaymentMethod),
 	}
+}
+
+// SaveMethod indexe un moyen de paiement par son Token.
+func (s *MemoryStore) SaveMethod(m *PaymentMethod) error {
+	if m == nil || m.Token == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.byMethod[m.Token] = m
+	return nil
+}
+
+// MethodByToken retourne le moyen ou nil si inconnu.
+func (s *MemoryStore) MethodByToken(token string) (*PaymentMethod, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.byMethod[token], nil
+}
+
+// RevokeMethod marque le moyen comme révoqué — idempotent sur token
+// inconnu (ne fait rien, ne remonte pas d'erreur).
+func (s *MemoryStore) RevokeMethod(token string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if m := s.byMethod[token]; m != nil {
+		m.Revoked = true
+	}
+	return nil
 }
 
 // Save indexe une transaction sous ses deux clés. Le pointeur passé

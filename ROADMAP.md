@@ -125,10 +125,26 @@ Découpage restant de la phase 4 :
 - **4.4.4** — Scénarios canoniques d'exemple (one-shot, token pattern, subscription)
   + `docs/scenarios.md` bilingue. Livré en dernier pour couvrir les trois patterns
   d'un seul jet.
+- **4.4.7 — Extensions UI** — la mécanique 4.4.5/4.4.6 crée des entités que l'UI
+  actuelle n'affiche pas. À ajouter : colonne « Provider » dans l'onglet « Tous » de
+  la liste des paiements (aujourd'hui provider invisible en vue cross-provider) ;
+  nouvelles vues liste + détail pour les subscriptions ; nouvelles vues pour les
+  moyens de paiement enregistrés (avec PAN masqué, brand, expiration, révocation
+  depuis l'UI). Prérequis : endpoints API génériques `GET /paysim/api/v1/subscriptions`
+  et `GET /paysim/api/v1/payment-methods` (à ajouter au passage des verticaux 4.4.5/6
+  ou en ouverture de 4.4.7).
 - **4.4.2b** (mineur, à programmer) — Rendre l'action `inject` fonctionnelle : le
   runner accepte l'action mais retourne actuellement `errInjectUnsupported`. Enrichir
   `SimulatePaymentRequest` avec un champ `chaos` structuré (`WebhookChaos`) et
   logique runner qui mémorise le mode entre étapes. ~50 lignes.
+- **4.4.5a-store fait** (2026-08-02) — Refactor `internal/store/` pour héberger
+  `SubscriptionRepository` et `PaymentMethodRepository` génériques cross-provider
+  (tables SQLite dédiées, migrations, tests). Extension `payzen.Store` interface
+  avec `SaveMethod`/`MethodByToken`/`RevokeMethod`, converters PayZen ⇄ records,
+  wiring `cmd/paysim` pour instancier les trois repos. Ferme le stub v1 mémoire
+  des subscriptions dans SQLiteStore. Types `PaymentMethod`, `Card`, `Clock`,
+  `NewPaymentMethod`, `maskPAN`, `BrandFromBIN`, `IsLuhnValid` dans
+  `internal/providers/payzen/method.go`.
 - **Matrice URL** dans `docs/install.md` (local, host+conteneur, compose, cluster).
 
 - Définition de scénarios en YAML, commités dans le dépôt de l'utilisateur — fait pour

@@ -13,8 +13,8 @@ import (
 )
 
 // openTestStore construit un SQLiteStore end-to-end : ouvre la base
-// SQLite, prépare le repository, wrappe dans un SQLiteStore.
-// Cleanup automatique via t.Cleanup.
+// SQLite, prépare les trois repositories (payments, subscriptions,
+// payment methods), wrappe dans un SQLiteStore. Cleanup automatique.
 func openTestStore(t *testing.T, path string) *SQLiteStore {
 	t.Helper()
 	db, err := sqlitepkg.Open(path)
@@ -26,8 +26,18 @@ func openTestStore(t *testing.T, path string) *SQLiteStore {
 		_ = db.Close()
 		t.Fatalf("NewPaymentsRepository: %v", err)
 	}
+	subsRepo, err := sqlitepkg.NewSubscriptionsRepository(db)
+	if err != nil {
+		_ = db.Close()
+		t.Fatalf("NewSubscriptionsRepository: %v", err)
+	}
+	methodsRepo, err := sqlitepkg.NewPaymentMethodsRepository(db)
+	if err != nil {
+		_ = db.Close()
+		t.Fatalf("NewPaymentMethodsRepository: %v", err)
+	}
 	t.Cleanup(func() { _ = db.Close() })
-	return NewSQLiteStore(repo)
+	return NewSQLiteStore(repo, subsRepo, methodsRepo)
 }
 
 // runContract lance le même scénario sur une Store — vérifie que
@@ -125,6 +135,111 @@ func TestMemoryStoreContract(t *testing.T) {
 	runContract(t, NewMemoryStore())
 }
 
+// runMethodContract vérifie les 3 méthodes de PaymentMethod du contrat
+// Store. Passé sur MemoryStore et SQLiteStore pour garantir la parité.
+func runMethodContract(t *testing.T, s Store) {
+	t.Helper()
+	m := &PaymentMethod{
+		Token:       "pmt-test",
+		PANFull:     "4111111111111111",
+		PANMasked:   "411111XXXXXX1111",
+		Brand:       "VISA",
+		ExpiryMonth: 12,
+		ExpiryYear:  2027,
+		CreatedAt:   time.Now().UTC(),
+	}
+	if err := s.SaveMethod(m); err != nil {
+		t.Fatalf("SaveMethod: %v", err)
+	}
+	got, err := s.MethodByToken("pmt-test")
+	if err != nil {
+		t.Fatalf("MethodByToken: %v", err)
+	}
+	if got == nil {
+		t.Fatal("MethodByToken = nil, veut le PaymentMethod")
+	}
+	if got.Brand != "VISA" || got.ExpiryYear != 2027 {
+		t.Errorf("Brand/ExpiryYear = %q/%d", got.Brand, got.ExpiryYear)
+	}
+	if got.Revoked {
+		t.Errorf("Revoked = true, veut false a l'init")
+	}
+
+	if err := s.RevokeMethod("pmt-test"); err != nil {
+		t.Fatalf("RevokeMethod: %v", err)
+	}
+	got2, _ := s.MethodByToken("pmt-test")
+	if got2 == nil || !got2.Revoked {
+		t.Errorf("apres RevokeMethod, Revoked = %+v, veut true", got2)
+	}
+
+	// Idempotence : revoke sur token inconnu ne remonte pas d'erreur.
+	if err := s.RevokeMethod("inconnu"); err != nil {
+		t.Errorf("RevokeMethod(inconnu) = %v, veut nil", err)
+	}
+	// ByToken sur inconnu retourne nil sans erreur.
+	if got3, err := s.MethodByToken("inconnu"); err != nil || got3 != nil {
+		t.Errorf("MethodByToken(inconnu) = %+v, %v ; veut nil, nil", got3, err)
+	}
+}
+
+// runSubscriptionContract vérifie les 3 méthodes de Subscription du
+// contrat Store. Passé sur MemoryStore et SQLiteStore.
+func runSubscriptionContract(t *testing.T, s Store) {
+	t.Helper()
+	sub := &Subscription{
+		ID:                 "sub-test",
+		OrderID:            "SUB-42",
+		Amount:             2990,
+		Currency:           "EUR",
+		PaymentMethodToken: "pmt-x",
+		EffectDate:         "2026-09-01T00:00:00Z",
+		Rrule:              "RRULE:FREQ=MONTHLY;INTERVAL=1",
+		Metadata:           map[string]string{"plan": "pro"},
+		CreatedAt:          time.Now().UTC(),
+	}
+	if err := s.SaveSubscription(sub); err != nil {
+		t.Fatalf("SaveSubscription: %v", err)
+	}
+	got, err := s.SubscriptionByID("sub-test")
+	if err != nil {
+		t.Fatalf("SubscriptionByID: %v", err)
+	}
+	if got == nil {
+		t.Fatal("SubscriptionByID = nil, veut la subscription")
+	}
+	if got.PaymentMethodToken != "pmt-x" || got.Rrule != "RRULE:FREQ=MONTHLY;INTERVAL=1" {
+		t.Errorf("token/rrule = %q/%q", got.PaymentMethodToken, got.Rrule)
+	}
+	n, _ := s.LenSubscriptions()
+	if n != 1 {
+		t.Errorf("LenSubscriptions = %d, veut 1", n)
+	}
+	if got.Metadata["plan"] != "pro" {
+		t.Errorf("Metadata[plan] = %q, veut pro (round-trip)", got.Metadata["plan"])
+	}
+}
+
+func TestSQLiteStoreMethodContract(t *testing.T) {
+	t.Parallel()
+	runMethodContract(t, openTestStore(t, filepath.Join(t.TempDir(), "methods.db")))
+}
+
+func TestMemoryStoreMethodContract(t *testing.T) {
+	t.Parallel()
+	runMethodContract(t, NewMemoryStore())
+}
+
+func TestSQLiteStoreSubscriptionContract(t *testing.T) {
+	t.Parallel()
+	runSubscriptionContract(t, openTestStore(t, filepath.Join(t.TempDir(), "subs.db")))
+}
+
+func TestMemoryStoreSubscriptionContract(t *testing.T) {
+	t.Parallel()
+	runSubscriptionContract(t, NewMemoryStore())
+}
+
 func TestSQLiteStoreSurvivesReopen(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "persist.db")
@@ -140,7 +255,15 @@ func TestSQLiteStoreSurvivesReopen(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		s1 := NewSQLiteStore(repo)
+		subsRepo, err := sqlitepkg.NewSubscriptionsRepository(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		methodsRepo, err := sqlitepkg.NewPaymentMethodsRepository(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s1 := NewSQLiteStore(repo, subsRepo, methodsRepo)
 		if err := s1.Save(buildSampleTx(t)); err != nil {
 			t.Fatal(err)
 		}
