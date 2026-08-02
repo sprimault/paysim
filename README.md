@@ -1,0 +1,126 @@
+> [🇬🇧 English](README.md) · [🇫🇷 Français](README.fr.md)
+
+# Paysim
+
+> Fake payment provider that provokes the failures a sandbox refuses to reproduce.
+
+## What Paysim is
+
+Paysim is a self-hosted fake payment provider. It reproduces the wire
+protocol of a real PSP (PayZen today, Stripe next) faithfully enough
+that a real merchant integration talks to it without modification —
+same endpoints, same signatures, same webhook shapes.
+
+## Why Paysim exists
+
+Sandboxes always succeed. Real payments don't. The most valuable
+integration tests aren't "does capture work" — sandboxes cover that
+— but "does my merchant survive when capture returns 500 halfway,
+when the webhook arrives before the HTTP response, when the same
+webhook is delivered twice, when 3DS is abandoned, when the customer
+is declared unpaid three days later". Paysim is what you use to
+provoke these on demand, in dev and in CI.
+
+## What you can do with it
+
+- Race the webhook against the HTTP response (the one race a sandbox never gives you).
+- Reorder or duplicate webhook delivery.
+- Inject latency, 5xx errors, invalid signatures.
+- Decline with magic amounts, magic PANs, expired cards, revoked tokens.
+- Replay any webhook from the UI or the API.
+
+## Providers
+
+| Provider | API | Coverage |
+|---|---|---|
+| PayZen / Lyra Collect | REST V4 | Full — see [`docs/providers/payzen.md`](docs/providers/payzen.md) |
+| Stripe | — | Later |
+
+## Quick start (Docker Compose)
+
+```bash
+docker compose -f deploy/compose.yml up -d
+bash examples/seed-paysim.sh
+# http://localhost:30880/
+
+# Re-run to reset payments to a clean state (the seed isn't idempotent):
+bash examples/seed-paysim.sh --purge
+```
+
+Paysim binds `30880` on the host — a high dedicated port like
+MailHog's `30825`, chosen to avoid clashing with `8080`/`8081`
+(usually taken by Tomcat, Jenkins, Portainer, front-ends). If
+`30880` is also taken, override with `PAYSIM_HOST_PORT=30890` and
+pass the same to `PAYSIM_URL` on the seed line.
+
+The seed script populates the UI with a varied dataset — payments,
+subscriptions, payment methods in every visual state (captured,
+declined, active, revoked, expired). Useful for a first walkthrough.
+
+## Full install
+
+[`docs/install.md`](docs/install.md) covers Docker Compose, Kubernetes
+(NodePort or Ingress), the **two-URL matrix** (the section you're
+actually looking for), and optional SQLite persistence.
+
+## Four rejection levers
+
+Magic amount ending in `01`, four canonical magic PANs, card
+expiration, token revocation. Details in
+[`docs/testing-cards.md`](docs/testing-cards.md).
+
+## Scenarios (YAML)
+
+Replay a payment flow in CI without hand-writing curl:
+
+```yaml
+- action: create_payment
+  amount: 4990
+  currency: EUR
+  register: true
+  card: { pan: "4111111111111111", expiry_month: 12, expiry_year: 2028 }
+- action: assert_state
+  state: captured
+```
+
+11 actions supported. See [`docs/scenarios.md`](docs/scenarios.md).
+
+## PHP integration example
+
+Switching a PayZen integration to Paysim is one URL change:
+
+```php
+$client = new PayzenClient([
+    'endpoint'  => 'http://localhost:30880',  // was https://api.payzen.eu
+    'username'  => '00000000',                 // any non-empty value
+    'password'  => 'testpassword_XXXX',
+    'hmac_key'  => 'dev-hmac-key',             // matches PAYSIM_PAYZEN_HMAC_KEY
+]);
+$response = $client->post('/api-payment/V4/Charge/CreatePayment', [...]);
+```
+
+Full merchant with webhook verification: [`examples/php`](examples/php/README.md).
+
+Or directly with `curl` — same body a PayZen REST V4 client would send:
+
+```bash
+curl -X POST http://localhost:30880/api-payment/V4/Charge/CreatePayment \
+  -u 00000000:testpassword_XXXX \
+  -H 'Content-Type: application/json' \
+  -d '{"amount":4990,"currency":"EUR","orderId":"CMD-42","customer":{"email":"a@b.io"}}'
+```
+
+## Web UI
+
+Embedded React SPA — payments, subscriptions, payment methods,
+webhooks (with one-click replay), all live via SSE. Dark mode,
+auto-reload when a new build is deployed, refresh button per view.
+
+## Status
+
+Preview release, tag `v0.4.0` (2026-08-02). Stripe support and a
+public release with a demo GIF are planned.
+
+## License
+
+Apache 2.0 — see [`LICENSE`](LICENSE).
