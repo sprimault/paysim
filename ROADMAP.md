@@ -3,7 +3,7 @@
 Chaque phase est livrable seule et a un critère de fin vérifiable. On ne commence pas la
 suivante avant que le critère soit atteint.
 
-**Phase en cours : 4**
+**Phase en cours : 5** (phase 4 close le 2026-08-02, tag `v0.4.0`)
 
 ---
 
@@ -89,16 +89,11 @@ panne injectée. Ce GIF est l'actif principal du projet — il vaut plus que le 
 
 ## Phase 4 — Scénarios, conteneur et cluster
 
-État au 2026-08-02 : conteneur, cluster (avec overlay Kustomize SQLite optionnel validé
-end-to-end sur k3d), plafond de rétention en ring buffer, protection API par jeton,
-`docs/install.md` bilingue, **loader YAML des scénarios** (`internal/scenarios`, format
-impératif à discriminant `action:`, six actions, validation agrégée), **moteur
-d'exécution** (client HTTP + runner + endpoint générique `POST /paysim/api/v1/payments`
-cross-provider) et **CLI `paysim run scenario.yml`** (dispatch args dans `cmd/paysim`,
-config `PAYSIM_URL` + `PAYSIM_API_TOKEN`, codes retour 0/1/2, flag `--verbose`) —
-faits. Restent : support token pattern + fausse CB stockée, subscriptions natives,
-scénarios canoniques d'exemple, `docs/scenarios.md` bilingue, et la matrice des deux
-URL dans `docs/install.md`.
+**Close le 2026-08-02**, tag `v0.4.0`. Tous les livrables prévus dans la « Fini quand »
+sont atteints, plus un bloc d'améliorations UI non planifiées (feature subscriptions,
+feature payment methods, DataTable partagé, mode sombre/clair, tabs providers, refetch
+au mount, bannière auto-reload sur nouveau build) et la publication du script de seed
+(`examples/seed-paysim.{sh,ps1}`).
 
 Découpage restant de la phase 4 :
 
@@ -256,7 +251,10 @@ Découpage restant de la phase 4 :
   `PAYSIM_EXPIRED_CARD`, `PAYSIM_REVOKED_CARD` ajoutés. 8 tests API +
   propagation `PaymentMethodToken` dans `KrTransaction` et
   `payzenProviderData` pour la persistance.
-- **Matrice URL** dans `docs/install.md` (local, host+conteneur, compose, cluster).
+- **Matrice URL fait** (2026-08-02) — cinq scénarios (binaire local, marchand hôte +
+  Paysim conteneur, tout Compose, K8s NodePort, K8s Ingress) dans `docs/install.md`
+  + `.fr.md`, en tête juste après la table des variables. Rappel de l'invariant 7 et
+  du override par `notificationUrl` dans le body `simulate`.
 
 - Définition de scénarios en YAML, commités dans le dépôt de l'utilisateur — fait pour
   le format et le loader (4.4.1) + moteur d'exécution (4.4.2).
@@ -283,8 +281,7 @@ Découpage restant de la phase 4 :
   section qui compte — **la matrice des deux URL selon le scénario** : tout en local, appli
   sur l'hôte et Paysim en conteneur (`host.docker.internal`), tout en `compose` (noms de
   services), cluster (nom de service interne et hôte d'ingress). C'est là que se posent
-  toutes les questions des utilisateurs ; le reste de la doc n'est que du confort. Base
-  bilingue faite ; la matrice URL reste à ajouter.
+  toutes les questions des utilisateurs ; le reste de la doc n'est que du confort. Fait.
 
 **Fini quand** : le même dépôt d'exemple passe ses tests en CI sans aucun identifiant, et
 tourne à l'identique en `compose` et sur un cluster K3s en suivant `docs/install.md` sans
