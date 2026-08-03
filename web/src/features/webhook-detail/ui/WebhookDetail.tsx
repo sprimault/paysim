@@ -11,11 +11,13 @@ import { CopyButton } from '@/shared/ui/CopyButton';
 import { Skeleton } from '@/shared/ui/Skeleton';
 import { formatShort, humanDuration } from '@/shared/lib/dates';
 import { webhookStatusMeta } from '@/shared/lib/statusMeta';
+import { useT } from '@/shared/i18n/useT';
 import { toast } from '@/shared/ui/toastStore';
 import { replayWebhook } from '@/entities/webhook/api/webhookApi';
 import { useWebhook } from '@/entities/webhook/model/useWebhooks';
 
 export function WebhookDetail() {
+  const t = useT();
   const { id = '' } = useParams();
   const { webhook: wh, loading, error } = useWebhook(id);
   const [replaying, setReplaying] = useState(false);
@@ -25,9 +27,9 @@ export function WebhookDetail() {
     setReplaying(true);
     try {
       const { newDeliveryId } = await replayWebhook(wh.id);
-      toast.success('Webhook rejoué', newDeliveryId);
+      toast.success(t('payment.detail.webhooks.toast.replaySuccess'), newDeliveryId);
     } catch (e) {
-      toast.error('Rejeu échoué', (e as Error).message);
+      toast.error(t('payment.detail.webhooks.toast.replayError'), (e as Error).message);
     } finally {
       setReplaying(false);
     }
@@ -47,13 +49,13 @@ export function WebhookDetail() {
     return (
       <div className="mx-auto max-w-4xl px-6 py-16 text-center">
         <p className="text-sm text-zinc-500">
-          {error ? `Erreur : ${error}` : `Webhook introuvable : ${id}`}
+          {error ? t('common.error.prefix', { error }) : t('webhook.detail.notFound', { id })}
         </p>
         <Link
           to="/"
           className="mt-4 inline-flex items-center gap-1 text-sm text-brand-600 hover:underline"
         >
-          <ArrowLeft size={14} /> Retour aux paiements
+          <ArrowLeft size={14} /> {t('common.nav.backToPayments')}
         </Link>
       </div>
     );
@@ -69,14 +71,14 @@ export function WebhookDetail() {
         to="/"
         className="mb-4 inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-brand-600 dark:text-zinc-400 dark:hover:text-brand-400"
       >
-        <ArrowLeft size={14} /> Retour aux paiements
+        <ArrowLeft size={14} /> {t('common.nav.backToPayments')}
       </Link>
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
             <Badge tone={meta.tone} icon={<StatusIcon size={12} />}>
-              {meta.label}
+              {t(meta.labelKey)}
             </Badge>
             {wh.statusCode ? (
               <span className="font-mono text-sm text-zinc-500 dark:text-zinc-400">
@@ -84,7 +86,7 @@ export function WebhookDetail() {
               </span>
             ) : null}
             <span className="text-sm text-zinc-500 dark:text-zinc-500">
-              · {wh.attempts} tentative{wh.attempts > 1 ? 's' : ''}
+              · {wh.attempts === 1 ? t('common.attempts.one') : t('common.attempts.many', { count: wh.attempts })}
               {rttMs > 0 && ` · ${humanDuration(rttMs)}`}
             </span>
           </div>
@@ -99,30 +101,30 @@ export function WebhookDetail() {
           loading={replaying}
           onClick={() => void handleReplay()}
         >
-          Rejouer
+          {t('webhook.detail.actionReplay')}
         </Button>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card padded>
           <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-            Requête
+            {t('webhook.detail.section.request')}
           </h3>
           <dl className="mb-3 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-xs">
-            <dt className="text-zinc-500">URL</dt>
+            <dt className="text-zinc-500">{t('webhook.detail.field.url')}</dt>
             <dd className="flex min-w-0 items-center gap-1">
               <code className="truncate font-mono text-zinc-800 dark:text-zinc-200">
                 {wh.url}
               </code>
               <CopyButton value={wh.url} className="p-0.5" />
             </dd>
-            <dt className="text-zinc-500">Créé</dt>
+            <dt className="text-zinc-500">{t('webhook.detail.field.createdAt')}</dt>
             <dd className="text-zinc-800 dark:text-zinc-200">{formatShort(wh.createdAt)}</dd>
           </dl>
-          {wh.headers && <HeadersBlock headers={wh.headers} />}
+          {wh.headers && <HeadersBlock headers={wh.headers} headersLabel={t('webhook.detail.field.headers')} />}
           <div className="mt-3">
             <h4 className="mb-1 text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-              Corps
+              {t('webhook.detail.field.body')}
             </h4>
             <BodyBlock body={wh.body ?? ''} />
           </div>
@@ -130,23 +132,23 @@ export function WebhookDetail() {
 
         <Card padded>
           <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-            Réponse
+            {t('webhook.detail.section.response')}
           </h3>
           {wh.status === 'pending' ? (
-            <p className="text-sm text-zinc-500">En attente d'envoi…</p>
+            <p className="text-sm text-zinc-500">{t('webhook.detail.pendingSend')}</p>
           ) : (
             <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-xs">
-              <dt className="text-zinc-500">Statut HTTP</dt>
+              <dt className="text-zinc-500">{t('webhook.detail.field.httpStatus')}</dt>
               <dd className="font-mono text-zinc-800 dark:text-zinc-200">
                 {wh.statusCode || '—'}
               </dd>
-              <dt className="text-zinc-500">Reçue</dt>
+              <dt className="text-zinc-500">{t('webhook.detail.field.receivedAt')}</dt>
               <dd className="text-zinc-800 dark:text-zinc-200">
                 {formatShort(wh.completedAt)}
               </dd>
               {wh.errorMsg && (
                 <>
-                  <dt className="text-zinc-500">Erreur</dt>
+                  <dt className="text-zinc-500">{t('webhook.detail.field.error')}</dt>
                   <dd className="text-rose-700 dark:text-rose-400">{wh.errorMsg}</dd>
                 </>
               )}
@@ -158,13 +160,13 @@ export function WebhookDetail() {
   );
 }
 
-function HeadersBlock({ headers }: { headers: Record<string, string> }) {
+function HeadersBlock({ headers, headersLabel }: { headers: Record<string, string>; headersLabel: string }) {
   const entries = Object.entries(headers);
   if (entries.length === 0) return null;
   return (
     <div>
       <h4 className="mb-1 text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-        En-têtes
+        {headersLabel}
       </h4>
       <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5 text-xs">
         {entries.map(([k, v]) => (

@@ -15,19 +15,10 @@
          touche pas) — getBasePath() retombe alors sur "" et le proxy
          Vite gère la redirection vers l'API. -->
     <script>window.__PAYSIM_BASE_PATH__ = "__PAYSIM_BASE_PATH__";</script>
-    <!-- Applique la classe `dark` sur <html> AVANT le premier render
-         React, pour éviter le flash de contenu clair sur navigateur en
-         mode sombre. Doit rester en tête, avant le script du bundle. -->
-    <script>
-      (function () {
-        try {
-          var stored = localStorage.getItem('paysim.theme');
-          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-          var dark = stored === 'dark' || ((stored === 'system' || !stored) && prefersDark);
-          if (dark) document.documentElement.classList.add('dark');
-        } catch (_) { /* localStorage indisponible en SSR/tests, no-op */ }
-      })();
-    </script>
+    <!-- Scripts synchrones exécutés avant le bundle module (type=module
+         = defer par défaut) pour éviter le flash visuel dark/lang. Code
+         dans web/public/paysim-preinit.js pour rester lisible. -->
+    <script src="./paysim-preinit.js"></script>
   </head>
   <body class="antialiased">
     <div id="root"></div>

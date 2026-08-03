@@ -3,13 +3,16 @@
 
 import { Radio, Zap } from 'lucide-react';
 import { Link, NavLink } from 'react-router';
+import { LangToggle } from '@/shared/ui/LangToggle';
 import { ThemeToggle } from '@/shared/ui/ThemeToggle';
+import { useT } from '@/shared/i18n/useT';
 
 interface HeaderProps {
-  connected?: boolean; // état SSE, branché en 3c ; en 3b on affiche « démo »
+  connected?: boolean;
 }
 
 export function Header({ connected = true }: HeaderProps) {
+  const t = useT();
   return (
     <header className="sticky top-0 z-30 border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-6">
@@ -21,15 +24,16 @@ export function Header({ connected = true }: HeaderProps) {
             <Zap size={18} className="text-brand-600 dark:text-brand-400" strokeWidth={2.5} />
             Paysim
           </Link>
-          <nav className="flex items-center gap-1 text-sm" aria-label="Navigation principale">
-            <NavItem to="/" end>Paiements</NavItem>
-            <NavItem to="/subscriptions">Abonnements</NavItem>
-            <NavItem to="/payment-methods">Moyens de paiement</NavItem>
+          <nav className="flex items-center gap-1 text-sm" aria-label={t('header.nav.aria')}>
+            <NavItem to="/" end>{t('header.nav.payments')}</NavItem>
+            <NavItem to="/subscriptions">{t('header.nav.subscriptions')}</NavItem>
+            <NavItem to="/payment-methods">{t('header.nav.paymentMethods')}</NavItem>
           </nav>
         </div>
         <div className="flex items-center gap-3">
           <ConnectionIndicator connected={connected} />
           <ThemeToggle />
+          <LangToggle />
         </div>
       </div>
     </header>
@@ -54,6 +58,7 @@ function NavItem({ to, end, children }: { to: string; end?: boolean; children: R
 }
 
 function ConnectionIndicator({ connected }: { connected: boolean }) {
+  const t = useT();
   return (
     <div
       className={
@@ -62,7 +67,7 @@ function ConnectionIndicator({ connected }: { connected: boolean }) {
           ? 'text-emerald-600 dark:text-emerald-400'
           : 'text-zinc-400 dark:text-zinc-600')
       }
-      title={connected ? 'Flux SSE ouvert' : 'Flux SSE fermé'}
+      title={connected ? t('header.connection.titleConnected') : t('header.connection.titleDisconnected')}
     >
       <Radio
         size={14}
@@ -70,7 +75,7 @@ function ConnectionIndicator({ connected }: { connected: boolean }) {
         strokeWidth={connected ? 2.5 : 2}
       />
       <span className="hidden sm:inline">
-        {connected ? 'Connecté' : 'Déconnecté'}
+        {connected ? t('header.connection.connected') : t('header.connection.disconnected')}
       </span>
     </div>
   );

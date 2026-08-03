@@ -6,9 +6,11 @@
  * SubscriptionList et PaymentMethodList (règle de trois validée).
  *
  * KNOWN_PROVIDERS liste les providers exposés côté UI ; ajouter
- * `stripe` ici quand la feature arrivera (phase 5). Le filtrage se
+ * `stripe` ici quand la feature arrivera. Le filtrage se
  * fait côté front — le backend renvoie déjà tous les enregistrements.
  */
+
+import { useT } from '@/shared/i18n/useT';
 
 export const KNOWN_PROVIDERS: readonly string[] = ['payzen'];
 
@@ -18,12 +20,13 @@ interface ProviderTabsProps {
 }
 
 export function ProviderTabs({ value, onChange }: ProviderTabsProps) {
+  const t = useT();
   return (
     <div
       className="mb-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800"
       role="tablist"
     >
-      <Tab label="Tous" active={value === ''} onClick={() => onChange('')} />
+      <Tab label={t('providerTabs.all')} active={value === ''} onClick={() => onChange('')} />
       {KNOWN_PROVIDERS.map((prov) => (
         <Tab
           key={prov}

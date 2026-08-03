@@ -13,7 +13,13 @@ import '@fontsource/inter/latin-700.css';
 import '@fontsource-variable/jetbrains-mono';
 
 import './index.css';
+import { initI18n } from './shared/i18n/init';
 import { router } from './app/router';
+
+// Détecte et applique la langue AVANT le premier render (met à jour
+// document.documentElement.lang et le store Zustand). Évite un flash
+// FR→EN si l'utilisateur avait choisi EN précédemment.
+initI18n();
 
 const root = document.getElementById('root');
 if (!root) {

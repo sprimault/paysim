@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
+import { useT } from '@/shared/i18n/useT';
 
 interface CopyButtonProps {
   value: string;
@@ -15,7 +16,9 @@ interface CopyButtonProps {
  * le plus répété en débogage (web.md) — reste minimal et neutre visuellement.
  */
 export function CopyButton({ value, className = '', label }: CopyButtonProps) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
+  const tip = copied ? t('common.action.copied') : t('common.action.copy');
 
   async function handleCopy() {
     try {
@@ -33,8 +36,8 @@ export function CopyButton({ value, className = '', label }: CopyButtonProps) {
     <button
       type="button"
       onClick={handleCopy}
-      aria-label={copied ? 'Copié' : 'Copier'}
-      title={copied ? 'Copié' : 'Copier'}
+      aria-label={tip}
+      title={tip}
       className={
         'inline-flex items-center gap-1 rounded p-1 text-zinc-500 ' +
         'hover:bg-zinc-100 hover:text-zinc-800 ' +

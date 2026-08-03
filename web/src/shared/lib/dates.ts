@@ -57,29 +57,36 @@ export function humanDuration(ms: number): string {
 
 /**
  * FormatRelative rend un délai humain entre `input` et `ref` (défaut :
- * maintenant) : "à l'instant", "il y a N minutes/heures/jours", ou
- * "dans N …" quand `input` est postérieur à `ref`.
+ * maintenant) localisé selon `locale` : « il y a 5 minutes » en FR,
+ * « 5 minutes ago » en EN. Utilise `Intl.RelativeTimeFormat` natif —
+ * pas de dépendance.
+ *
+ * `justNowLabel` couvre le cas < 60s : « à l'instant » / « just now ».
+ * `Intl.RelativeTimeFormat.format(0, 'second')` donnerait « dans 0
+ * seconde » / « in 0 seconds », ce qu'on veut éviter.
+ *
+ * Miroir simplifié de `format.FormatRelative` côté Go. À utiliser via
+ * le hook `useFormatRelative()` dans un composant React — celui-ci
+ * injecte la locale et le label courants sans avoir à les passer
+ * partout.
  */
-export function formatRelative(input: string | Date, ref: Date = new Date()): string {
+export function formatRelative(
+  input: string | Date,
+  locale: 'fr' | 'en',
+  justNowLabel: string,
+  ref: Date = new Date(),
+): string {
   const d = input instanceof Date ? input : new Date(input);
-  const diffMs = ref.getTime() - d.getTime();
-  const future = diffMs < 0;
+  const diffMs = d.getTime() - ref.getTime();
+  // Défensif : une date invalide (`new Date("t1")`) produit NaN et
+  // ferait crasher Intl.RelativeTimeFormat.format. On préfère un
+  // affichage neutre plutôt qu'une erreur remontée à React.
+  if (!Number.isFinite(diffMs)) return justNowLabel;
   const abs = Math.abs(diffMs);
+  if (abs < 60_000) return justNowLabel;
 
-  if (abs < 60_000) return 'à l\'instant';
-
-  let qty: number;
-  let unit: string;
-  if (abs < 3_600_000) {
-    qty = Math.floor(abs / 60_000);
-    unit = 'minute';
-  } else if (abs < 86_400_000) {
-    qty = Math.floor(abs / 3_600_000);
-    unit = 'heure';
-  } else {
-    qty = Math.floor(abs / 86_400_000);
-    unit = 'jour';
-  }
-  const plur = qty > 1 ? 's' : '';
-  return future ? `dans ${qty} ${unit}${plur}` : `il y a ${qty} ${unit}${plur}`;
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'always' });
+  if (abs < 3_600_000) return rtf.format(Math.trunc(diffMs / 60_000), 'minute');
+  if (abs < 86_400_000) return rtf.format(Math.trunc(diffMs / 3_600_000), 'hour');
+  return rtf.format(Math.trunc(diffMs / 86_400_000), 'day');
 }

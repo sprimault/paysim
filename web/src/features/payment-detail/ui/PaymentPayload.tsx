@@ -7,6 +7,7 @@ import { EmptyState } from '@/shared/ui/EmptyState';
 import { JsonViewer } from '@/shared/ui/JsonViewer';
 import { FileJson } from 'lucide-react';
 import { parsePayzenBody } from '@/shared/lib/payzen';
+import { useT } from '@/shared/i18n/useT';
 import { useWebhook } from '@/entities/webhook/model/useWebhooks';
 import type { WebhookInStore } from '@/entities/webhook/model/webhookStore';
 
@@ -20,6 +21,7 @@ interface PaymentPayloadProps {
  * headers) si seul le résumé est en cache.
  */
 export function PaymentPayload({ webhook }: PaymentPayloadProps) {
+  const t = useT();
   // Trigger le fetch du détail si body absent ; l'entrée mise à jour
   // arrive naturellement dans `webhook` par le store partagé.
   const fetched = useWebhook(webhook?.id ?? '');
@@ -30,8 +32,8 @@ export function PaymentPayload({ webhook }: PaymentPayloadProps) {
     return (
       <EmptyState
         icon={FileJson}
-        title="Pas de charge utile disponible"
-        hint="Aucun webhook n'a encore été livré pour ce paiement."
+        title={t('payment.detail.payload.emptyTitle')}
+        hint={t('payment.detail.payload.emptyHint')}
       />
     );
   }
@@ -45,12 +47,12 @@ export function PaymentPayload({ webhook }: PaymentPayloadProps) {
         {parsed.krAnswer ? (
           <JsonViewer value={parsed.krAnswer} maxHeight="max-h-[28rem]" />
         ) : (
-          <p className="text-sm text-zinc-500">Aucun champ kr-answer dans ce body.</p>
+          <p className="text-sm text-zinc-500">{t('payment.detail.payload.krAnswerMissing')}</p>
         )}
       </Card>
       <Card padded className="lg:col-span-2">
         <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-          Autres champs
+          {t('payment.detail.payload.otherFields')}
         </h3>
         <dl className="grid gap-1 text-xs">
           {Object.entries(parsed.rest).map(([k, v]) => (

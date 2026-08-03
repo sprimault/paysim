@@ -3,6 +3,7 @@
 
 import { AlertCircle, CheckCircle2, Info, X, XCircle } from 'lucide-react';
 import { useEffect } from 'react';
+import { useT } from '@/shared/i18n/useT';
 import { useToastStore, type Toast, type ToastTone } from './toastStore';
 
 const toneMeta: Record<ToastTone, { icon: typeof CheckCircle2; classes: string }> = {
@@ -30,11 +31,12 @@ const toneMeta: Record<ToastTone, { icon: typeof CheckCircle2; classes: string }
 
 export function ToastContainer() {
   const toasts = useToastStore((s) => s.toasts);
+  const tt = useT();
   return (
     <div
       className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-full max-w-sm flex-col gap-2"
       role="region"
-      aria-label="Notifications"
+      aria-label={tt('toast.regionLabel')}
     >
       {toasts.map((t) => (
         <ToastItem key={t.id} toast={t} />
@@ -45,6 +47,7 @@ export function ToastContainer() {
 
 function ToastItem({ toast: t }: { toast: Toast }) {
   const dismiss = useToastStore((s) => s.dismiss);
+  const tt = useT();
   const { icon: Icon, classes } = toneMeta[t.tone];
 
   useEffect(() => {
@@ -68,7 +71,7 @@ function ToastItem({ toast: t }: { toast: Toast }) {
       <button
         type="button"
         onClick={() => dismiss(t.id)}
-        aria-label="Fermer"
+        aria-label={tt('common.action.close')}
         className="shrink-0 rounded p-0.5 opacity-60 hover:opacity-100"
       >
         <X size={14} />
