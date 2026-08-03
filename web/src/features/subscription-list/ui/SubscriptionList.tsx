@@ -14,6 +14,7 @@ import { formatAmount } from '@/shared/lib/numbers';
 import { formatShort } from '@/shared/lib/dates';
 import { useFormatRelative } from '@/shared/hooks/useFormatRelative';
 import { truncate } from '@/shared/lib/strings';
+import { useT } from '@/shared/i18n/useT';
 import { useSubscriptionsList } from '@/entities/subscription/model/useSubscriptions';
 import type { SubscriptionOutput } from '@/shared/model';
 
@@ -23,6 +24,7 @@ import type { SubscriptionOutput } from '@/shared/model';
  * aujourd'hui, Stripe arrivera en phase 5).
  */
 export function SubscriptionList() {
+  const t = useT();
   const rel = useFormatRelative();
   const { subscriptions, loading, error, refresh } = useSubscriptionsList();
   const [providerFilter, setProviderFilter] = useState<string>('');
@@ -36,22 +38,22 @@ export function SubscriptionList() {
 
   const columns: Column<SubscriptionOutput>[] = [
     {
-      header: 'État',
+      header: t('subscription.list.column.state'),
       cell: (s) =>
         s.cancelled ? (
-          <Badge tone="unpaid">Annulé</Badge>
+          <Badge tone="unpaid">{t('subscription.state.cancelled')}</Badge>
         ) : (
-          <Badge tone="paid">Actif</Badge>
+          <Badge tone="paid">{t('subscription.state.active')}</Badge>
         ),
     },
     {
-      header: 'Provider',
+      header: t('subscription.list.column.provider'),
       cell: (s) => (
         <span className="text-xs text-zinc-500 dark:text-zinc-400">{s.provider}</span>
       ),
     },
     {
-      header: 'Montant',
+      header: t('subscription.list.column.amount'),
       align: 'right',
       cell: (s) => (
         <span className="font-mono text-sm tabular text-zinc-900 dark:text-zinc-100">
@@ -63,13 +65,13 @@ export function SubscriptionList() {
       ),
     },
     {
-      header: 'Commande',
+      header: t('subscription.list.column.order'),
       cell: (s) => (
         <span className="text-sm text-zinc-700 dark:text-zinc-300">{s.orderId || '—'}</span>
       ),
     },
     {
-      header: 'RRule',
+      header: t('subscription.list.column.rrule'),
       cell: (s) => (
         <code className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
           {truncate(s.rrule || '—', 30)}
@@ -77,7 +79,7 @@ export function SubscriptionList() {
       ),
     },
     {
-      header: 'ID',
+      header: t('subscription.list.column.id'),
       cell: (s) => (
         <div className="flex items-center gap-1">
           <code className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
@@ -88,7 +90,7 @@ export function SubscriptionList() {
       ),
     },
     {
-      header: 'Créé',
+      header: t('subscription.list.column.created'),
       cell: (s) => (
         <span
           className="text-xs text-zinc-500 dark:text-zinc-400"
@@ -99,14 +101,14 @@ export function SubscriptionList() {
       ),
     },
     {
-      header: 'Actions',
+      header: t('subscription.list.column.actions'),
       srOnly: true,
       align: 'right',
       cell: (s) => (
         <Link
           to={`/subscriptions/${s.id}`}
           className="inline-flex rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-          aria-label="Ouvrir l'abonnement"
+          aria-label={t('subscription.list.action.open')}
         >
           <ChevronRight size={16} />
         </Link>
@@ -114,18 +116,23 @@ export function SubscriptionList() {
     },
   ];
 
+  const countLabel =
+    loading && filtered.length === 0
+      ? t('common.action.loading')
+      : filtered.length === 0
+        ? t('subscription.list.countZero')
+        : filtered.length === 1
+          ? t('subscription.list.countOne')
+          : t('subscription.list.countMany', { count: filtered.length });
+
   return (
     <div className="mx-auto max-w-7xl px-6 py-6">
       <div className="mb-4 flex items-end justify-between">
         <div>
           <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-            Abonnements
+            {t('subscription.list.title')}
           </h1>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            {loading && filtered.length === 0
-              ? 'Chargement…'
-              : `${filtered.length} abonnement${filtered.length > 1 ? 's' : ''} en mémoire`}
-          </p>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">{countLabel}</p>
         </div>
         <RefreshButton onRefresh={refresh} />
       </div>
@@ -134,7 +141,7 @@ export function SubscriptionList() {
 
       {error && (
         <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
-          Impossible de charger les abonnements : {error}
+          {t('subscription.list.errorPrefix', { error })}
         </div>
       )}
 
@@ -146,8 +153,8 @@ export function SubscriptionList() {
         emptyState={
           <EmptyState
             icon={Repeat}
-            title="Aucun abonnement"
-            hint="Les abonnements créés via l'API apparaîtront ici."
+            title={t('subscription.list.empty.title')}
+            hint={t('subscription.list.empty.hint')}
           />
         }
       />

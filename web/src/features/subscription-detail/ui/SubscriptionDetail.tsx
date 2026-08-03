@@ -10,6 +10,7 @@ import { Card } from '@/shared/ui/Card';
 import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
 import { CopyButton } from '@/shared/ui/CopyButton';
 import { toast } from '@/shared/ui/toastStore';
+import { useT } from '@/shared/i18n/useT';
 import { formatAmount } from '@/shared/lib/numbers';
 import { formatShort } from '@/shared/lib/dates';
 import { useSubscription } from '@/entities/subscription/model/useSubscriptions';
@@ -24,6 +25,7 @@ import {
  * définitivement, désactive trigger-billing).
  */
 export function SubscriptionDetail() {
+  const t = useT();
   const { id } = useParams();
   const { subscription, loading, error, refresh } = useSubscription(id);
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -31,12 +33,12 @@ export function SubscriptionDetail() {
 
   if (!id) return null;
   if (loading && !subscription) {
-    return <div className="mx-auto max-w-4xl px-6 py-6 text-sm text-zinc-500">Chargement…</div>;
+    return <div className="mx-auto max-w-4xl px-6 py-6 text-sm text-zinc-500">{t('subscription.detail.loading')}</div>;
   }
   if (error && !subscription) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-6 text-sm text-rose-700 dark:text-rose-300">
-        Impossible de charger l'abonnement : {error}
+        {t('subscription.detail.errorPrefix', { error })}
       </div>
     );
   }
@@ -46,14 +48,17 @@ export function SubscriptionDetail() {
     setBusy(true);
     try {
       const res = await triggerBilling(id!);
-      toast.success('Échéance déclenchée', `Paiement ${res.state}`);
+      toast.success(
+        t('subscription.detail.toast.triggerSuccess'),
+        t('subscription.detail.toast.triggerSuccessHint', { state: res.state }),
+      );
       // Rafraîchit la sub (state éventuellement modifié) et redirige
       // vers le paiement créé — l'utilisateur voit tout de suite le
       // résultat au niveau transaction.
       await refresh();
       window.location.hash = `#/payments/${res.paymentUuid}`;
     } catch (e) {
-      toast.error('Trigger échoué', (e as Error).message);
+      toast.error(t('subscription.detail.toast.triggerError'), (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -63,10 +68,10 @@ export function SubscriptionDetail() {
     setBusy(true);
     try {
       await cancelSubscription(id!);
-      toast.success('Abonnement annulé');
+      toast.success(t('subscription.detail.toast.cancelSuccess'));
       await refresh();
     } catch (e) {
-      toast.error('Annulation échouée', (e as Error).message);
+      toast.error(t('subscription.detail.toast.cancelError'), (e as Error).message);
     } finally {
       setBusy(false);
       setCancelOpen(false);
@@ -79,13 +84,13 @@ export function SubscriptionDetail() {
         to="/subscriptions"
         className="mb-4 inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
       >
-        <ArrowLeft size={14} /> Retour à la liste
+        <ArrowLeft size={14} /> {t('common.nav.backToList')}
       </Link>
 
       <div className="mb-4 flex items-end justify-between">
         <div>
           <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-            Abonnement
+            {t('subscription.detail.title')}
           </h1>
           <div className="mt-1 flex items-center gap-2">
             <code className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
@@ -93,9 +98,9 @@ export function SubscriptionDetail() {
             </code>
             <CopyButton value={subscription.id} className="p-0.5" />
             {subscription.cancelled ? (
-              <Badge tone="unpaid">Annulé</Badge>
+              <Badge tone="unpaid">{t('subscription.state.cancelled')}</Badge>
             ) : (
-              <Badge tone="paid">Actif</Badge>
+              <Badge tone="paid">{t('subscription.state.active')}</Badge>
             )}
           </div>
         </div>
@@ -109,7 +114,7 @@ export function SubscriptionDetail() {
                 onClick={handleTrigger}
                 disabled={busy}
               >
-                Déclencher une échéance
+                {t('subscription.detail.action.trigger')}
               </Button>
               <Button
                 variant="danger"
@@ -118,7 +123,7 @@ export function SubscriptionDetail() {
                 onClick={() => setCancelOpen(true)}
                 disabled={busy}
               >
-                Annuler
+                {t('subscription.detail.action.cancel')}
               </Button>
             </>
           )}
@@ -127,9 +132,9 @@ export function SubscriptionDetail() {
 
       <Card>
         <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
-          <Field label="Provider" value={subscription.provider} />
+          <Field label={t('subscription.detail.field.provider')} value={subscription.provider} />
           <Field
-            label="Montant"
+            label={t('subscription.detail.field.amount')}
             value={
               <span className="font-mono tabular">
                 {formatAmount(subscription.amount)}
@@ -137,15 +142,15 @@ export function SubscriptionDetail() {
               </span>
             }
           />
-          <Field label="Order ID" value={subscription.orderId || '—'} />
-          <Field label="Effect date" value={subscription.effectDate || '—'} />
+          <Field label={t('subscription.detail.field.orderId')} value={subscription.orderId || '—'} />
+          <Field label={t('subscription.detail.field.effectDate')} value={subscription.effectDate || '—'} />
           <Field
-            label="RRule"
+            label={t('subscription.detail.field.rrule')}
             value={<code className="font-mono text-xs">{subscription.rrule || '—'}</code>}
             wide
           />
           <Field
-            label="Payment method token"
+            label={t('subscription.detail.field.paymentMethodToken')}
             value={
               <div className="flex items-center gap-1">
                 <Link
@@ -159,10 +164,10 @@ export function SubscriptionDetail() {
             }
             wide
           />
-          <Field label="Créé le" value={formatShort(subscription.createdAt)} wide />
+          <Field label={t('subscription.detail.field.createdAt')} value={formatShort(subscription.createdAt)} wide />
           {subscription.metadata && Object.keys(subscription.metadata).length > 0 && (
             <Field
-              label="Metadata"
+              label={t('subscription.detail.field.metadata')}
               value={
                 <ul className="text-xs">
                   {Object.entries(subscription.metadata).map(([k, v]) => (
@@ -183,14 +188,9 @@ export function SubscriptionDetail() {
       <ConfirmDialog
         open={cancelOpen}
         danger
-        title="Annuler cet abonnement ?"
-        description={
-          <>
-            Cette action est irréversible. Les futures échéances
-            (<code>trigger_billing</code>) seront refusées.
-          </>
-        }
-        confirmLabel="Annuler l'abonnement"
+        title={t('subscription.detail.dialog.cancelTitle')}
+        description={t('subscription.detail.dialog.cancelDescription')}
+        confirmLabel={t('subscription.detail.dialog.cancelConfirm')}
         loading={busy}
         onConfirm={handleCancel}
         onCancel={() => setCancelOpen(false)}
