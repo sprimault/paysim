@@ -3,6 +3,7 @@
 
 import { RefreshCw } from 'lucide-react';
 import { useBuildVersion } from '@/shared/hooks/useBuildVersion';
+import { useT } from '@/shared/i18n/useT';
 
 /**
  * Bannière discrète (bottom-right) qui apparaît quand un nouveau build
@@ -10,6 +11,7 @@ import { useBuildVersion } from '@/shared/hooks/useBuildVersion';
  * charger le nouveau bundle Vite — évite le hard reload manuel.
  */
 export function UpdateBanner() {
+  const t = useT();
   const { updateAvailable } = useBuildVersion();
   if (!updateAvailable) return null;
 
@@ -24,17 +26,17 @@ export function UpdateBanner() {
       />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-          Nouvelle version disponible
+          {t('updateBanner.title')}
         </p>
         <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
-          Rechargez la page pour charger le nouveau bundle.
+          {t('updateBanner.hint')}
         </p>
         <button
           type="button"
           onClick={() => window.location.reload()}
           className="mt-2 inline-flex items-center rounded-md bg-brand-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
         >
-          Recharger
+          {t('updateBanner.action')}
         </button>
       </div>
     </div>

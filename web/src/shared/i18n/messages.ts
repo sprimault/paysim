@@ -223,6 +223,11 @@ export const messages = {
     'paymentMethod.detail.dialog.revokeConfirm': 'Révoquer',
     'paymentMethod.detail.toast.revokeSuccess': 'Moyen de paiement révoqué',
     'paymentMethod.detail.toast.revokeError': 'Révocation échouée',
+    // Toast + UpdateBanner shared
+    'toast.regionLabel': 'Notifications',
+    'updateBanner.title': 'Nouvelle version disponible',
+    'updateBanner.hint': 'Rechargez la page pour charger le nouveau bundle.',
+    'updateBanner.action': 'Recharger',
   },
   en: {
     'header.nav.payments': 'Payments',
@@ -418,6 +423,10 @@ export const messages = {
     'paymentMethod.detail.dialog.revokeConfirm': 'Revoke',
     'paymentMethod.detail.toast.revokeSuccess': 'Payment method revoked',
     'paymentMethod.detail.toast.revokeError': 'Revocation failed',
+    'toast.regionLabel': 'Notifications',
+    'updateBanner.title': 'New version available',
+    'updateBanner.hint': 'Reload the page to load the new bundle.',
+    'updateBanner.action': 'Reload',
   },
 } as const;
 
