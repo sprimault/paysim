@@ -28,6 +28,20 @@
         } catch (_) { /* localStorage indisponible en SSR/tests, no-op */ }
       })();
     </script>
+    <!-- Pose lang sur <html> avant le render — évite le flash de
+         document en français si l'utilisateur avait choisi English. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('paysim-lang');
+          var lang = stored === 'en' ? 'en'
+                   : stored === 'fr' ? 'fr'
+                   : (navigator.language || '').toLowerCase().startsWith('en') ? 'en'
+                   : 'fr';
+          document.documentElement.lang = lang;
+        } catch (_) { /* no-op */ }
+      })();
+    </script>
   </head>
   <body class="antialiased">
     <div id="root"></div>

@@ -5,10 +5,12 @@ import { Monitor, Moon, Sun } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { useTheme } from '@/shared/hooks/useTheme';
 import type { Theme } from '@/shared/lib/theme';
+import { useT } from '@/shared/i18n/useT';
+import type { MessageKey } from '@/shared/i18n/messages';
 
 interface Option {
   value: Theme;
-  label: string;
+  labelKey: MessageKey;
   icon: ComponentType<{ size?: number; className?: string }>;
 }
 
@@ -17,9 +19,9 @@ interface Option {
 // explicite (« comme mon OS »), les deux modes utilisateurs directs
 // tiennent la gauche.
 const OPTIONS: readonly Option[] = [
-  { value: 'light', label: 'Clair', icon: Sun },
-  { value: 'dark', label: 'Sombre', icon: Moon },
-  { value: 'system', label: 'Système', icon: Monitor },
+  { value: 'light', labelKey: 'header.theme.light', icon: Sun },
+  { value: 'dark', labelKey: 'header.theme.dark', icon: Moon },
+  { value: 'system', labelKey: 'header.theme.system', icon: Monitor },
 ];
 
 /**
@@ -32,14 +34,15 @@ const OPTIONS: readonly Option[] = [
  */
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
+  const t = useT();
 
   return (
     <div
       role="radiogroup"
-      aria-label="Thème"
+      aria-label={t('header.theme.label')}
       className="inline-flex rounded-md border border-zinc-200 bg-white p-0.5 dark:border-zinc-800 dark:bg-zinc-900"
     >
-      {OPTIONS.map(({ value, label, icon: Icon }) => {
+      {OPTIONS.map(({ value, labelKey, icon: Icon }) => {
         const active = theme === value;
         return (
           <button
@@ -47,7 +50,7 @@ export function ThemeToggle() {
             type="button"
             role="radio"
             aria-checked={active}
-            title={label}
+            title={t(labelKey)}
             onClick={() => setTheme(value)}
             className={
               'inline-flex h-6 w-6 items-center justify-center rounded transition-colors ' +
