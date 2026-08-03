@@ -5,6 +5,7 @@ import { Card } from '@/shared/ui/Card';
 import { formatAmount } from '@/shared/lib/numbers';
 import { formatShort } from '@/shared/lib/dates';
 import { eventKindMeta } from '@/shared/lib/statusMeta';
+import { useT } from '@/shared/i18n/useT';
 import type { EventEntry } from '@/shared/model';
 
 interface PaymentTimelineProps {
@@ -17,6 +18,7 @@ interface PaymentTimelineProps {
  * pointillée qui relie les événements. Dense mais lisible.
  */
 export function PaymentTimeline({ events }: PaymentTimelineProps) {
+  const t = useT();
   return (
     <Card padded>
       <ol className="relative">
@@ -38,7 +40,7 @@ export function PaymentTimeline({ events }: PaymentTimelineProps) {
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-4">
                   <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                    {meta.label}
+                    {t(meta.labelKey)}
                   </span>
                   <time
                     className="font-mono text-xs text-zinc-500 dark:text-zinc-500"

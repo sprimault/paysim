@@ -8,17 +8,19 @@
  * à partir de ces valeurs — le JSX n'a rien à faire dans model/.
  */
 
+import type { MessageKey } from '@/shared/i18n/messages';
+
 export type TabId = 'overview' | 'timeline' | 'webhooks' | 'payload';
 
 // Ordre d'affichage des onglets — utilisé aussi pour vérifier
 // l'exhaustivité côté tests.
 export const TAB_IDS: readonly TabId[] = ['overview', 'timeline', 'webhooks', 'payload'];
 
-export const TAB_LABELS: Record<TabId, string> = {
-  overview: 'Aperçu',
-  timeline: 'Journal',
-  webhooks: 'Webhooks',
-  payload: 'Charge utile',
+export const TAB_LABEL_KEYS: Record<TabId, MessageKey> = {
+  overview: 'payment.detail.tabs.overview',
+  timeline: 'payment.detail.tabs.timeline',
+  webhooks: 'payment.detail.tabs.webhooks',
+  payload: 'payment.detail.tabs.payload',
 };
 
 // Onglets qui affichent un badge de compteur — le composant fournit la

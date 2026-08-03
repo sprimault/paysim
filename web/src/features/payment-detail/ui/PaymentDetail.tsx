@@ -14,17 +14,19 @@ import { toast } from '@/shared/ui/toastStore';
 import { formatAmount } from '@/shared/lib/numbers';
 import { formatShort } from '@/shared/lib/dates';
 import { paymentStateMeta } from '@/shared/lib/statusMeta';
+import { useT } from '@/shared/i18n/useT';
 import { deletePayment } from '@/entities/payment/api/paymentApi';
 import { usePayment } from '@/entities/payment/model/usePayments';
 import { usePaymentStore } from '@/entities/payment/model/paymentStore';
 import { useWebhooksList } from '@/entities/webhook/model/useWebhooks';
-import { TAB_IDS, TAB_LABELS, TAB_WITH_COUNTER, type TabId } from '@/features/payment-detail/model/tabs';
+import { TAB_IDS, TAB_LABEL_KEYS, TAB_WITH_COUNTER, type TabId } from '@/features/payment-detail/model/tabs';
 import { PaymentOverview } from './PaymentOverview';
 import { PaymentTimeline } from './PaymentTimeline';
 import { PaymentWebhooks } from './PaymentWebhooks';
 import { PaymentPayload } from './PaymentPayload';
 
 export function PaymentDetail() {
+  const t = useT();
   const { uuid = '' } = useParams();
   const navigate = useNavigate();
   const { payment, loading, error } = usePayment(uuid);
@@ -41,10 +43,10 @@ export function PaymentDetail() {
     try {
       await deletePayment(uuid);
       removeFromStore(uuid);
-      toast.success('Paiement supprimé');
+      toast.success(t('payment.list.toast.deleteSuccess'));
       navigate('/', { replace: true });
     } catch (e) {
-      toast.error('Suppression échouée', (e as Error).message);
+      toast.error(t('payment.list.toast.deleteError'), (e as Error).message);
       setDeleting(false);
       setDeleteOpen(false);
     }
@@ -64,13 +66,13 @@ export function PaymentDetail() {
     return (
       <div className="mx-auto max-w-4xl px-6 py-16 text-center">
         <p className="text-sm text-zinc-500">
-          {error ? `Erreur : ${error}` : `Paiement introuvable : ${uuid}`}
+          {error ? t('common.error.prefix', { error }) : t('payment.detail.notFound', { uuid })}
         </p>
         <Link
           to="/"
           className="mt-4 inline-flex items-center gap-1 text-sm text-brand-600 hover:underline"
         >
-          <ArrowLeft size={14} /> Retour aux paiements
+          <ArrowLeft size={14} /> {t('common.nav.backToPayments')}
         </Link>
       </div>
     );
@@ -85,7 +87,7 @@ export function PaymentDetail() {
   };
   const tabs = TAB_IDS.map((id) => ({
     id,
-    label: TAB_LABELS[id],
+    label: t(TAB_LABEL_KEYS[id]),
     badge:
       TAB_WITH_COUNTER.includes(id) && counts[id] !== undefined ? (
         <span className="text-xs text-zinc-400">{counts[id]}</span>
@@ -98,7 +100,7 @@ export function PaymentDetail() {
         to="/"
         className="mb-4 inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-brand-600 dark:text-zinc-400 dark:hover:text-brand-400"
       >
-        <ArrowLeft size={14} /> Retour aux paiements
+        <ArrowLeft size={14} /> {t('common.nav.backToPayments')}
       </Link>
 
       <div className="mb-6 flex flex-wrap items-baseline gap-x-4 gap-y-2">
@@ -108,7 +110,7 @@ export function PaymentDetail() {
         </div>
         <div className="ml-auto flex items-center gap-3">
           <Badge tone={meta.tone} icon={<StateIcon size={12} />}>
-            {meta.label}
+            {t(meta.labelKey)}
           </Badge>
           <Button
             variant="ghost"
@@ -116,7 +118,7 @@ export function PaymentDetail() {
             leftIcon={<Trash2 size={14} />}
             onClick={() => setDeleteOpen(true)}
           >
-            Supprimer
+            {t('common.action.delete')}
           </Button>
         </div>
       </div>
@@ -127,7 +129,10 @@ export function PaymentDetail() {
         </span>
         <span className="text-lg text-zinc-500 dark:text-zinc-500">{payment.currency}</span>
         <span className="ml-2 text-sm text-zinc-500 dark:text-zinc-400">
-          {payment.orderId} · créé le {formatShort(payment.createdAt)}
+          {t('payment.detail.subtitleCreated', {
+            orderId: payment.orderId,
+            date: formatShort(payment.createdAt),
+          })}
         </span>
       </div>
 
@@ -141,14 +146,11 @@ export function PaymentDetail() {
       <ConfirmDialog
         open={deleteOpen}
         danger
-        title="Supprimer ce paiement ?"
-        description={
-          <>
-            Le paiement <strong>{payment.orderId}</strong> et ses événements seront
-            supprimés. Cette action est irréversible.
-          </>
-        }
-        confirmLabel="Supprimer"
+        title={t('payment.list.dialog.deleteTitle')}
+        description={t('payment.list.dialog.deleteDescription', {
+          orderId: payment.orderId,
+        })}
+        confirmLabel={t('common.action.delete')}
         loading={deleting}
         onConfirm={handleDelete}
         onCancel={() => setDeleteOpen(false)}

@@ -3,6 +3,7 @@
 
 import { useEffect, type ReactNode } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
+import { useT } from '@/shared/i18n/useT';
 import { Button } from './Button';
 
 interface ConfirmDialogProps {
@@ -28,13 +29,16 @@ export function ConfirmDialog({
   open,
   title,
   description,
-  confirmLabel = 'Confirmer',
-  cancelLabel = 'Annuler',
+  confirmLabel,
+  cancelLabel,
   danger = false,
   onConfirm,
   onCancel,
   loading = false,
 }: ConfirmDialogProps) {
+  const t = useT();
+  const confirmText = confirmLabel ?? t('common.action.confirm');
+  const cancelText = cancelLabel ?? t('common.action.cancel');
   // Ferme sur Escape.
   useEffect(() => {
     if (!open) return;
@@ -79,7 +83,7 @@ export function ConfirmDialog({
             type="button"
             onClick={onCancel}
             disabled={loading}
-            aria-label="Fermer"
+            aria-label={t('common.action.close')}
             className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 disabled:opacity-50"
           >
             <X size={16} />
@@ -92,7 +96,7 @@ export function ConfirmDialog({
 
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onCancel} disabled={loading}>
-            {cancelLabel}
+            {cancelText}
           </Button>
           <Button
             variant={danger ? 'danger' : 'primary'}
@@ -100,7 +104,7 @@ export function ConfirmDialog({
             loading={loading}
             autoFocus
           >
-            {confirmLabel}
+            {confirmText}
           </Button>
         </div>
       </div>

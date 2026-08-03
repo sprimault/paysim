@@ -10,6 +10,7 @@ import { ProviderTabs } from '@/shared/ui/ProviderTabs';
 import { RefreshButton } from '@/shared/ui/RefreshButton';
 import { Skeleton } from '@/shared/ui/Skeleton';
 import { toast } from '@/shared/ui/toastStore';
+import { useT } from '@/shared/i18n/useT';
 import { deletePayment, purgePayments } from '@/entities/payment/api/paymentApi';
 import { usePaymentsList } from '@/entities/payment/model/usePayments';
 import { usePaymentStore } from '@/entities/payment/model/paymentStore';
@@ -23,6 +24,7 @@ import { PaymentRow } from './PaymentRow';
  * si un seul provider existe côté v1, l'UI signale l'extension.
  */
 export function PaymentList() {
+  const t = useT();
   const { payments, loading, error, refresh } = usePaymentsList();
   const removeFromStore = usePaymentStore((s) => s.remove);
   const [providerFilter, setProviderFilter] = useState<string>('');
@@ -43,9 +45,9 @@ export function PaymentList() {
       // Optimiste : on retire du store tout de suite. L'event SSE
       // payment_deleted fera la même chose, no-op idempotent.
       removeFromStore(toDelete.uuid);
-      toast.success('Paiement supprimé', toDelete.orderId);
+      toast.success(t('payment.list.toast.deleteSuccess'), toDelete.orderId);
     } catch (e) {
-      toast.error('Suppression échouée', (e as Error).message);
+      toast.error(t('payment.list.toast.deleteError'), (e as Error).message);
     } finally {
       setBusy(false);
       setToDelete(null);
@@ -56,30 +58,39 @@ export function PaymentList() {
     setBusy(true);
     try {
       const res = await purgePayments(providerFilter || undefined);
-      toast.success(`${res.deleted} paiement${res.deleted > 1 ? 's' : ''} supprimé${res.deleted > 1 ? 's' : ''}`);
+      toast.success(
+        res.deleted === 1
+          ? t('payment.list.toast.purgeSuccessOne')
+          : t('payment.list.toast.purgeSuccessMany', { count: res.deleted }),
+      );
       // L'event SSE payments_purged refetch la liste — pas de trim
       // local nécessaire.
       await refresh();
     } catch (e) {
-      toast.error('Purge échouée', (e as Error).message);
+      toast.error(t('payment.list.toast.purgeError'), (e as Error).message);
     } finally {
       setBusy(false);
       setPurgeOpen(false);
     }
   }
 
+  const countLabel =
+    loading && filtered.length === 0
+      ? t('common.action.loading')
+      : filtered.length === 0
+        ? t('payment.list.countZero')
+        : filtered.length === 1
+          ? t('payment.list.countOne')
+          : t('payment.list.countMany', { count: filtered.length });
+
   return (
     <div className="mx-auto max-w-7xl px-6 py-6">
       <div className="mb-4 flex items-end justify-between">
         <div>
           <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-            Paiements
+            {t('payment.list.title')}
           </h1>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            {loading && filtered.length === 0
-              ? 'Chargement…'
-              : `${filtered.length} paiement${filtered.length > 1 ? 's' : ''} en mémoire`}
-          </p>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">{countLabel}</p>
         </div>
         <div className="flex items-center gap-2">
           <RefreshButton onRefresh={refresh} />
@@ -90,7 +101,9 @@ export function PaymentList() {
               leftIcon={<Trash2 size={14} />}
               onClick={() => setPurgeOpen(true)}
             >
-              {providerFilter ? `Vider ${providerFilter}` : 'Vider tout'}
+              {providerFilter
+                ? t('payment.list.action.purgeProvider', { provider: providerFilter })
+                : t('payment.list.action.purgeAll')}
             </Button>
           )}
         </div>
@@ -100,7 +113,7 @@ export function PaymentList() {
 
       {error && (
         <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
-          Impossible de charger les paiements : {error}
+          {t('payment.list.errorPrefix', { error })}
         </div>
       )}
 
@@ -111,22 +124,22 @@ export function PaymentList() {
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={CreditCard}
-          title="Aucun paiement"
-          hint="Les paiements créés via l'API apparaîtront ici en temps réel."
+          title={t('payment.list.empty.title')}
+          hint={t('payment.list.empty.hint')}
         />
       ) : (
         <div className="overflow-hidden rounded-panel border border-zinc-200 dark:border-zinc-800">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-                <th className="px-4 py-2">État</th>
-                {providerFilter === '' && <th className="px-4 py-2">Provider</th>}
-                <th className="px-4 py-2 text-right tabular">Montant</th>
-                <th className="px-4 py-2">Commande</th>
-                <th className="px-4 py-2">UUID</th>
-                <th className="px-4 py-2">Créé</th>
-                <th className="px-4 py-2">Mis à jour</th>
-                <th className="px-4 py-2 sr-only">Actions</th>
+                <th className="px-4 py-2">{t('payment.list.column.state')}</th>
+                {providerFilter === '' && <th className="px-4 py-2">{t('payment.list.column.provider')}</th>}
+                <th className="px-4 py-2 text-right tabular">{t('payment.list.column.amount')}</th>
+                <th className="px-4 py-2">{t('payment.list.column.order')}</th>
+                <th className="px-4 py-2">{t('payment.list.column.uuid')}</th>
+                <th className="px-4 py-2">{t('payment.list.column.created')}</th>
+                <th className="px-4 py-2">{t('payment.list.column.updated')}</th>
+                <th className="px-4 py-2 sr-only">{t('payment.list.column.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -147,14 +160,11 @@ export function PaymentList() {
       <ConfirmDialog
         open={!!toDelete}
         danger
-        title="Supprimer ce paiement ?"
-        description={
-          <>
-            Le paiement <strong>{toDelete?.orderId}</strong> et ses événements seront
-            supprimés. Cette action est irréversible.
-          </>
-        }
-        confirmLabel="Supprimer"
+        title={t('payment.list.dialog.deleteTitle')}
+        description={t('payment.list.dialog.deleteDescription', {
+          orderId: toDelete?.orderId ?? '',
+        })}
+        confirmLabel={t('common.action.delete')}
         loading={busy}
         onConfirm={handleDelete}
         onCancel={() => setToDelete(null)}
@@ -162,18 +172,17 @@ export function PaymentList() {
       <ConfirmDialog
         open={purgeOpen}
         danger
-        title={providerFilter ? `Vider les paiements ${providerFilter} ?` : 'Vider tous les paiements ?'}
-        description={
-          providerFilter ? (
-            <>
-              Tous les paiements du provider <strong>{providerFilter}</strong> seront
-              supprimés, ainsi que leurs événements.
-            </>
-          ) : (
-            <>Tous les paiements de tous les providers seront supprimés.</>
-          )
+        title={
+          providerFilter
+            ? t('payment.list.dialog.purgeProviderTitle', { provider: providerFilter })
+            : t('payment.list.dialog.purgeAllTitle')
         }
-        confirmLabel="Vider"
+        description={
+          providerFilter
+            ? t('payment.list.dialog.purgeProviderDescription', { provider: providerFilter })
+            : t('payment.list.dialog.purgeAllDescription')
+        }
+        confirmLabel={t('common.action.purge')}
         loading={busy}
         onConfirm={handlePurge}
         onCancel={() => setPurgeOpen(false)}

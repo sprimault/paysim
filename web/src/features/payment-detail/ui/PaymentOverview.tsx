@@ -9,6 +9,7 @@ import { formatAmount } from '@/shared/lib/numbers';
 import { formatShort } from '@/shared/lib/dates';
 import { isTerminal } from '@/shared/model';
 import { toast } from '@/shared/ui/toastStore';
+import { useT } from '@/shared/i18n/useT';
 import { simulatePayment } from '@/entities/payment/api/paymentApi';
 import type { PaymentInStore } from '@/entities/payment/model/paymentStore';
 
@@ -19,6 +20,7 @@ import type { PaymentInStore } from '@/entities/payment/model/paymentStore';
  * propage par usePaysimEvents dans App.
  */
 export function PaymentOverview({ payment }: { payment: PaymentInStore }) {
+  const t = useT();
   const terminal = isTerminal(payment.state);
   const [pending, setPending] = useState<string | null>(null);
 
@@ -26,9 +28,15 @@ export function PaymentOverview({ payment }: { payment: PaymentInStore }) {
     setPending(outcome);
     try {
       await simulatePayment(payment.uuid, { outcome });
-      toast.success(`Simulation ${outcome} envoyée`, 'Le webhook part vers le marchand.');
+      toast.success(
+        t('payment.detail.overview.toast.simulateSuccess', { outcome }),
+        t('payment.detail.overview.toast.simulateSuccessHint'),
+      );
     } catch (e) {
-      toast.error(`Simulation ${outcome} échouée`, (e as Error).message);
+      toast.error(
+        t('payment.detail.overview.toast.simulateError', { outcome }),
+        (e as Error).message,
+      );
     } finally {
       setPending(null);
     }
@@ -38,25 +46,25 @@ export function PaymentOverview({ payment }: { payment: PaymentInStore }) {
     <div className="grid gap-4 lg:grid-cols-3">
       <Card padded className="lg:col-span-2">
         <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-          Informations
+          {t('payment.detail.overview.info')}
         </h3>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-          <Info label="État" value={payment.state} mono />
-          <Info label="Devise" value={payment.currency} />
-          <Info label="Montant" value={`${formatAmount(payment.amount)} ${payment.currency}`} mono />
-          <Info label="Commande" value={payment.orderId} />
-          <Info label="Créé le" value={formatShort(payment.createdAt)} />
-          <Info label="Mis à jour" value={formatShort(payment.updatedAt)} />
+          <Info label={t('payment.detail.overview.fieldState')} value={payment.state} mono />
+          <Info label={t('payment.detail.overview.fieldCurrency')} value={payment.currency} />
+          <Info label={t('payment.detail.overview.fieldAmount')} value={`${formatAmount(payment.amount)} ${payment.currency}`} mono />
+          <Info label={t('payment.detail.overview.fieldOrder')} value={payment.orderId} />
+          <Info label={t('payment.detail.overview.fieldCreatedAt')} value={formatShort(payment.createdAt)} />
+          <Info label={t('payment.detail.overview.fieldUpdatedAt')} value={formatShort(payment.updatedAt)} />
         </dl>
       </Card>
 
       <Card padded>
         <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-          Actions
+          {t('payment.detail.overview.actions')}
         </h3>
         {terminal ? (
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            État terminal — aucune action possible.
+            {t('payment.detail.overview.terminal')}
           </p>
         ) : (
           <div className="flex flex-col gap-2">
@@ -67,7 +75,7 @@ export function PaymentOverview({ payment }: { payment: PaymentInStore }) {
               disabled={pending !== null}
               onClick={() => void simulate('PAID')}
             >
-              Simuler PAID
+              {t('payment.detail.overview.simulatePaid')}
             </Button>
             <Button
               variant="ghost"
@@ -76,7 +84,7 @@ export function PaymentOverview({ payment }: { payment: PaymentInStore }) {
               disabled={pending !== null}
               onClick={() => void simulate('UNPAID')}
             >
-              Simuler UNPAID
+              {t('payment.detail.overview.simulateUnpaid')}
             </Button>
           </div>
         )}

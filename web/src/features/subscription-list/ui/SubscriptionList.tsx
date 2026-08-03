@@ -11,7 +11,8 @@ import { EmptyState } from '@/shared/ui/EmptyState';
 import { ProviderTabs } from '@/shared/ui/ProviderTabs';
 import { RefreshButton } from '@/shared/ui/RefreshButton';
 import { formatAmount } from '@/shared/lib/numbers';
-import { formatRelative, formatShort } from '@/shared/lib/dates';
+import { formatShort } from '@/shared/lib/dates';
+import { useFormatRelative } from '@/shared/hooks/useFormatRelative';
 import { truncate } from '@/shared/lib/strings';
 import { useSubscriptionsList } from '@/entities/subscription/model/useSubscriptions';
 import type { SubscriptionOutput } from '@/shared/model';
@@ -22,6 +23,7 @@ import type { SubscriptionOutput } from '@/shared/model';
  * aujourd'hui, Stripe arrivera en phase 5).
  */
 export function SubscriptionList() {
+  const rel = useFormatRelative();
   const { subscriptions, loading, error, refresh } = useSubscriptionsList();
   const [providerFilter, setProviderFilter] = useState<string>('');
   const filtered = useMemo(
@@ -92,7 +94,7 @@ export function SubscriptionList() {
           className="text-xs text-zinc-500 dark:text-zinc-400"
           title={formatShort(s.createdAt)}
         >
-          {formatRelative(s.createdAt)}
+          {rel(s.createdAt)}
         </span>
       ),
     },

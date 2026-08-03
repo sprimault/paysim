@@ -24,7 +24,7 @@ describe('paymentStateMeta', () => {
   it.each(states)('a une entrée complète pour %s', (s) => {
     const m = paymentStateMeta[s];
     expect(m).toBeDefined();
-    expect(m.label.length).toBeGreaterThan(0);
+    expect(m.labelKey.length).toBeGreaterThan(0);
     expect(m.tone).toBeDefined();
     expect(m.icon).toBeDefined();
   });
@@ -44,7 +44,7 @@ describe('eventKindMeta', () => {
   it.each(kinds)('a une entrée complète pour %s', (k) => {
     const m = eventKindMeta[k];
     expect(m).toBeDefined();
-    expect(m.label.length).toBeGreaterThan(0);
+    expect(m.labelKey.length).toBeGreaterThan(0);
     expect(m.icon).toBeDefined();
   });
 });
@@ -55,7 +55,7 @@ describe('webhookStatusMeta', () => {
   it.each(statuses)('a une entrée complète pour %s', (s) => {
     const m = webhookStatusMeta[s];
     expect(m).toBeDefined();
-    expect(m.label.length).toBeGreaterThan(0);
+    expect(m.labelKey.length).toBeGreaterThan(0);
     expect(m.tone).toBeDefined();
     expect(m.icon).toBeDefined();
   });

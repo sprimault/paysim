@@ -10,7 +10,8 @@ import { DataTable, type Column } from '@/shared/ui/DataTable';
 import { EmptyState } from '@/shared/ui/EmptyState';
 import { ProviderTabs } from '@/shared/ui/ProviderTabs';
 import { RefreshButton } from '@/shared/ui/RefreshButton';
-import { formatRelative, formatShort } from '@/shared/lib/dates';
+import { formatShort } from '@/shared/lib/dates';
+import { useFormatRelative } from '@/shared/hooks/useFormatRelative';
 import { truncate } from '@/shared/lib/strings';
 import { paymentMethodStatus } from '@/entities/payment-method/lib/status';
 import { usePaymentMethodsList } from '@/entities/payment-method/model/usePaymentMethods';
@@ -25,6 +26,7 @@ import type { PaymentMethodOutput } from '@/shared/model';
  * même sur un simulateur).
  */
 export function PaymentMethodList() {
+  const rel = useFormatRelative();
   const { methods, loading, error, refresh } = usePaymentMethodsList();
   const [providerFilter, setProviderFilter] = useState<string>('');
   const filtered = useMemo(
@@ -92,7 +94,7 @@ export function PaymentMethodList() {
           className="text-xs text-zinc-500 dark:text-zinc-400"
           title={formatShort(m.createdAt)}
         >
-          {formatRelative(m.createdAt)}
+          {rel(m.createdAt)}
         </span>
       ),
     },
