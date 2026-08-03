@@ -133,6 +133,37 @@ paiements, abonnements, moyens de paiement dans tous les états
 visuels (captured, refusé, actif, révoqué, expiré). Utile pour une
 première prise en main.
 
+## Essayer sans cloner
+
+Pour juste voir Paysim tourner 5 minutes sans toucher à git, lancer
+l'image directement (aucune donnée de seed, aucune persistance) :
+
+**Linux / macOS / Git Bash :**
+
+```bash
+docker run --rm -p 30880:8080 \
+  -e PAYSIM_PUBLIC_URL=http://localhost:30880 \
+  -e PAYSIM_CALLBACK_URL=http://localhost:30880 \
+  -e PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key \
+  ghcr.io/sprimault/paysim:latest
+# http://localhost:30880/
+```
+
+**Windows PowerShell :**
+
+```powershell
+docker run --rm -p 30880:8080 `
+  -e PAYSIM_PUBLIC_URL=http://localhost:30880 `
+  -e PAYSIM_CALLBACK_URL=http://localhost:30880 `
+  -e PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key `
+  ghcr.io/sprimault/paysim:latest
+# http://localhost:30880/
+```
+
+Pour la démo complète avec UI peuplée (abonnements, moyens de
+paiement), utiliser le démarrage rapide Docker Compose ci-dessus —
+il active SQLite et lance le script de seed.
+
 ## Installation complète
 
 [`docs/install.fr.md`](docs/install.fr.md) couvre Docker Compose,

@@ -129,6 +129,37 @@ The seed script populates the UI with a varied dataset — payments,
 subscriptions, payment methods in every visual state (captured,
 declined, active, revoked, expired). Useful for a first walkthrough.
 
+## Try it without cloning
+
+If you just want to see Paysim running for 5 minutes without touching
+git, run the image directly (no seed data, no persistence):
+
+**Linux / macOS / Git Bash:**
+
+```bash
+docker run --rm -p 30880:8080 \
+  -e PAYSIM_PUBLIC_URL=http://localhost:30880 \
+  -e PAYSIM_CALLBACK_URL=http://localhost:30880 \
+  -e PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key \
+  ghcr.io/sprimault/paysim:latest
+# http://localhost:30880/
+```
+
+**Windows PowerShell:**
+
+```powershell
+docker run --rm -p 30880:8080 `
+  -e PAYSIM_PUBLIC_URL=http://localhost:30880 `
+  -e PAYSIM_CALLBACK_URL=http://localhost:30880 `
+  -e PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key `
+  ghcr.io/sprimault/paysim:latest
+# http://localhost:30880/
+```
+
+For the full demo with populated UI (subscriptions, payment methods),
+use the Docker Compose quick start above — it enables SQLite and runs
+the seed script.
+
 ## Full install
 
 [`docs/install.md`](docs/install.md) covers Docker Compose, Kubernetes
