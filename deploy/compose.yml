@@ -52,7 +52,14 @@ services:
       PAYSIM_STORE: "sqlite"
 
       # Décommenter pour protéger l'API de contrôle (/paysim/simulate/*
-      # et /paysim/api/v1/*). Vide = API ouverte, mode local explicite.
+      # et /paysim/api/v1/*) contre des appels serveur-à-serveur non
+      # authentifiés. Vide = API ouverte, mode local explicite.
+      #
+      # ATTENTION : activer PAYSIM_API_TOKEN désactive l'UI web — la SPA
+      # n'a pas de flow de login et n'injecte pas de Bearer dans ses
+      # fetch. Pour protéger l'UI navigateur dans un environnement
+      # partagé, préférer une basic auth au niveau d'un reverse-proxy
+      # ou d'un ingress Kubernetes (cf. docs/install.md).
       # PAYSIM_API_TOKEN: "un-token-bearer-a-generer"
 
       # Décommenter pour activer le chaos (latence + taux d'erreur).

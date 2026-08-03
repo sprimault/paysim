@@ -32,7 +32,7 @@ pour monter un Secret K8s sans écrire la valeur en clair.
 | `PAYSIM_PUBLIC_URL` | URL vue par le navigateur (host d'ingress, ou `http://<ip-noeud>:30890` pour NodePort). |
 | `PAYSIM_CALLBACK_URL` | URL de callback par défaut pour les webhooks — utilisée comme fallback quand un paiement n'a pas de `returnUrl`. |
 | `PAYSIM_BASE_PATH` | Préfixe quand Paysim est servi sous un sous-chemin (ex. `/paysim`). Vide quand servi à la racine. |
-| `PAYSIM_API_TOKEN` (+ `_FILE`) | Bearer token qui protège l'API de contrôle. Vide = ouvert (mode local uniquement). |
+| `PAYSIM_API_TOKEN` (+ `_FILE`) | Jeton Bearer qui protège l'API de contrôle pour les **appels serveur-à-serveur** (CI, scripts, tests). **Désactive l'UI web** si défini — la SPA n'a pas de flow de login et n'injecte pas de Bearer dans ses fetch. Pour protéger l'UI dans un environnement partagé, utiliser une basic auth au niveau de l'ingress (voir [Option 3 — Ingress](#option-3--kubernetes-derrière-un-ingress-domaine--tls--auth)). Vide = ouvert. |
 | `PAYSIM_PAYZEN_HMAC_KEY` (+ `_FILE`) | Clé HMAC-SHA-256 pour signer les `kr-answer` PayZen. |
 | `PAYSIM_MAX_PAYMENTS` | Plafond de rétention pour le stockage mémoire. Défaut 10000. |
 | `PAYSIM_LOG_LEVEL` | Niveau de log (`debug`, `info`, `warn`, `error`). Défaut `info`. |

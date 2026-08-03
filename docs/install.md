@@ -31,7 +31,7 @@ mounts.
 | `PAYSIM_PUBLIC_URL` | URL the browser sees (ingress host, or `http://<node-ip>:30890` for NodePort). |
 | `PAYSIM_CALLBACK_URL` | Default merchant callback URL for webhooks — used as fallback when a payment has no `returnUrl`. |
 | `PAYSIM_BASE_PATH` | Prefix when Paysim is served under a sub-path (e.g. `/paysim`). Empty when served at root. |
-| `PAYSIM_API_TOKEN` (+ `_FILE`) | Bearer token that protects the control API. Empty = open (local mode only). |
+| `PAYSIM_API_TOKEN` (+ `_FILE`) | Bearer token that protects the control API for **server-to-server calls** (CI, scripts, tests). **Disables the web UI** if set — the SPA has no login flow and does not inject a Bearer token in its fetch calls. To protect the UI in a shared environment, use ingress-level basic auth (see [Option 3 — Ingress](#option-3--kubernetes-behind-an-ingress-domain--tls--auth)). Empty = open. |
 | `PAYSIM_PAYZEN_HMAC_KEY` (+ `_FILE`) | HMAC-SHA-256 key used to sign PayZen `kr-answer` payloads. |
 | `PAYSIM_MAX_PAYMENTS` | Retention cap for in-memory storage. Default 10000. |
 | `PAYSIM_LOG_LEVEL` | Log level (`debug`, `info`, `warn`, `error`). Default `info`. |
