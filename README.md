@@ -132,29 +132,14 @@ declined, active, revoked, expired). Useful for a first walkthrough.
 ## Try it without cloning
 
 If you just want to see Paysim running for 5 minutes without touching
-git, run the image directly (no seed data, no persistence):
-
-**Linux / macOS / Git Bash:**
+git, run the image directly (no seed data, no persistence). Same
+one-liner works on Linux/macOS/Git Bash and Windows PowerShell:
 
 ```bash
-docker run --rm -p 30880:8080 \
-  -e PAYSIM_PUBLIC_URL=http://localhost:30880 \
-  -e PAYSIM_CALLBACK_URL=http://localhost:30880 \
-  -e PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key \
-  ghcr.io/sprimault/paysim:latest
-# http://localhost:30880/
+docker run --rm -p 30880:8080 -e PAYSIM_PUBLIC_URL=http://localhost:30880 -e PAYSIM_CALLBACK_URL=http://localhost:30880 -e PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key ghcr.io/sprimault/paysim:latest
 ```
 
-**Windows PowerShell:**
-
-```powershell
-docker run --rm -p 30880:8080 `
-  -e PAYSIM_PUBLIC_URL=http://localhost:30880 `
-  -e PAYSIM_CALLBACK_URL=http://localhost:30880 `
-  -e PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key `
-  ghcr.io/sprimault/paysim:latest
-# http://localhost:30880/
-```
+Then browse to http://localhost:30880/.
 
 For the full demo with populated UI (subscriptions, payment methods),
 use the Docker Compose quick start above — it enables SQLite and runs

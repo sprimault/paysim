@@ -136,29 +136,14 @@ première prise en main.
 ## Essayer sans cloner
 
 Pour juste voir Paysim tourner 5 minutes sans toucher à git, lancer
-l'image directement (aucune donnée de seed, aucune persistance) :
-
-**Linux / macOS / Git Bash :**
+l'image directement (aucune donnée de seed, aucune persistance).
+Même one-liner sur Linux/macOS/Git Bash et Windows PowerShell :
 
 ```bash
-docker run --rm -p 30880:8080 \
-  -e PAYSIM_PUBLIC_URL=http://localhost:30880 \
-  -e PAYSIM_CALLBACK_URL=http://localhost:30880 \
-  -e PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key \
-  ghcr.io/sprimault/paysim:latest
-# http://localhost:30880/
+docker run --rm -p 30880:8080 -e PAYSIM_PUBLIC_URL=http://localhost:30880 -e PAYSIM_CALLBACK_URL=http://localhost:30880 -e PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key ghcr.io/sprimault/paysim:latest
 ```
 
-**Windows PowerShell :**
-
-```powershell
-docker run --rm -p 30880:8080 `
-  -e PAYSIM_PUBLIC_URL=http://localhost:30880 `
-  -e PAYSIM_CALLBACK_URL=http://localhost:30880 `
-  -e PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key `
-  ghcr.io/sprimault/paysim:latest
-# http://localhost:30880/
-```
+Puis ouvrir http://localhost:30880/.
 
 Pour la démo complète avec UI peuplée (abonnements, moyens de
 paiement), utiliser le démarrage rapide Docker Compose ci-dessus —
