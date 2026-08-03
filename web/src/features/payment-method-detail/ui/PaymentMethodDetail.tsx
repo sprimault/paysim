@@ -10,6 +10,7 @@ import { Card } from '@/shared/ui/Card';
 import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
 import { CopyButton } from '@/shared/ui/CopyButton';
 import { toast } from '@/shared/ui/toastStore';
+import { useT } from '@/shared/i18n/useT';
 import { formatShort } from '@/shared/lib/dates';
 import { usePaymentMethod } from '@/entities/payment-method/model/usePaymentMethods';
 import { revokePaymentMethod } from '@/entities/payment-method/api/paymentMethodApi';
@@ -22,6 +23,7 @@ import { paymentMethodStatus } from '@/entities/payment-method/lib/status';
  * charge_token suivant échouera bien avec `PAYSIM_REVOKED_CARD`.
  */
 export function PaymentMethodDetail() {
+  const t = useT();
   const { token } = useParams();
   const { method, loading, error, refresh } = usePaymentMethod(token);
   const [revokeOpen, setRevokeOpen] = useState(false);
@@ -29,12 +31,12 @@ export function PaymentMethodDetail() {
 
   if (!token) return null;
   if (loading && !method) {
-    return <div className="mx-auto max-w-4xl px-6 py-6 text-sm text-zinc-500">Chargement…</div>;
+    return <div className="mx-auto max-w-4xl px-6 py-6 text-sm text-zinc-500">{t('paymentMethod.detail.loading')}</div>;
   }
   if (error && !method) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-6 text-sm text-rose-700 dark:text-rose-300">
-        Impossible de charger le moyen de paiement : {error}
+        {t('paymentMethod.detail.errorPrefix', { error })}
       </div>
     );
   }
@@ -44,10 +46,10 @@ export function PaymentMethodDetail() {
     setBusy(true);
     try {
       await revokePaymentMethod(token!);
-      toast.success('Moyen de paiement révoqué');
+      toast.success(t('paymentMethod.detail.toast.revokeSuccess'));
       await refresh();
     } catch (e) {
-      toast.error('Révocation échouée', (e as Error).message);
+      toast.error(t('paymentMethod.detail.toast.revokeError'), (e as Error).message);
     } finally {
       setBusy(false);
       setRevokeOpen(false);
@@ -60,13 +62,13 @@ export function PaymentMethodDetail() {
         to="/payment-methods"
         className="mb-4 inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
       >
-        <ArrowLeft size={14} /> Retour à la liste
+        <ArrowLeft size={14} /> {t('common.nav.backToList')}
       </Link>
 
       <div className="mb-4 flex items-end justify-between">
         <div>
           <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-            Moyen de paiement
+            {t('paymentMethod.detail.title')}
           </h1>
           <div className="mt-1 flex items-center gap-2">
             <code className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
@@ -75,9 +77,9 @@ export function PaymentMethodDetail() {
             <CopyButton value={method.token} className="p-0.5" />
             {(() => {
               const s = paymentMethodStatus(method);
-              if (s === 'revoked') return <Badge tone="unpaid">Révoqué</Badge>;
-              if (s === 'expired') return <Badge tone="expired">Expiré</Badge>;
-              return <Badge tone="paid">Actif</Badge>;
+              if (s === 'revoked') return <Badge tone="unpaid">{t('paymentMethod.state.revoked')}</Badge>;
+              if (s === 'expired') return <Badge tone="expired">{t('paymentMethod.state.expired')}</Badge>;
+              return <Badge tone="paid">{t('paymentMethod.state.active')}</Badge>;
             })()}
           </div>
         </div>
@@ -89,17 +91,17 @@ export function PaymentMethodDetail() {
             onClick={() => setRevokeOpen(true)}
             disabled={busy}
           >
-            Révoquer
+            {t('paymentMethod.detail.action.revoke')}
           </Button>
         )}
       </div>
 
       <Card>
         <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
-          <Field label="Provider" value={method.provider} />
-          <Field label="Marque" value={method.brand || '—'} />
+          <Field label={t('paymentMethod.detail.field.provider')} value={method.provider} />
+          <Field label={t('paymentMethod.detail.field.brand')} value={method.brand || '—'} />
           <Field
-            label="PAN"
+            label={t('paymentMethod.detail.field.pan')}
             value={
               <code className="font-mono text-sm text-zinc-900 dark:text-zinc-100">
                 {method.panMasked}
@@ -107,30 +109,23 @@ export function PaymentMethodDetail() {
             }
           />
           <Field
-            label="Expiration"
+            label={t('paymentMethod.detail.field.expiry')}
             value={
               <span className="tabular">
                 {String(method.expiryMonth).padStart(2, '0')}/{method.expiryYear}
               </span>
             }
           />
-          <Field label="Créé le" value={formatShort(method.createdAt)} wide />
+          <Field label={t('paymentMethod.detail.field.createdAt')} value={formatShort(method.createdAt)} wide />
         </dl>
       </Card>
 
       <ConfirmDialog
         open={revokeOpen}
         danger
-        title="Révoquer ce moyen de paiement ?"
-        description={
-          <>
-            Cette action est irréversible côté simulateur. Les rejeux
-            (<code>charge_token</code>) et les échéances d'abonnement
-            utilisant ce token seront refusés avec le code
-            <code> PAYSIM_REVOKED_CARD</code>.
-          </>
-        }
-        confirmLabel="Révoquer"
+        title={t('paymentMethod.detail.dialog.revokeTitle')}
+        description={t('paymentMethod.detail.dialog.revokeDescription')}
+        confirmLabel={t('paymentMethod.detail.dialog.revokeConfirm')}
         loading={busy}
         onConfirm={handleRevoke}
         onCancel={() => setRevokeOpen(false)}
