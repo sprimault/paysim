@@ -287,6 +287,7 @@ func payzenSubToRecord(sub *Subscription) (*store.SubscriptionRecord, error) {
 		OrderID:            sub.OrderID,
 		Amount:             sub.Amount,
 		Currency:           sub.Currency,
+		Cancelled:          sub.Cancelled,
 		PaymentMethodToken: sub.PaymentMethodToken,
 		EffectDate:         sub.EffectDate,
 		Rrule:              sub.Rrule,
@@ -312,6 +313,7 @@ func recordToPayzenSub(rec *store.SubscriptionRecord) *Subscription {
 		EffectDate:         rec.EffectDate,
 		Rrule:              rec.Rrule,
 		Metadata:           metadata,
+		Cancelled:          rec.Cancelled,
 		CreatedAt:          rec.CreatedAt,
 	}
 }

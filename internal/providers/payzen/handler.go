@@ -1026,11 +1026,24 @@ func (h *Handler) simulate(
 	if err := h.queue.Enqueue(wh); err != nil {
 		return "", "", fmt.Errorf("enqueue: %w", err)
 	}
-	// Duplicate : deuxième enqueue du meme webhook — le marchand doit
-	// gerer l'idempotence via l'UUID de transaction.
+	// Duplicate : deuxième enqueue du meme contenu de webhook mais
+	// avec un nouveau deliveryID. Le marchand doit dedup sur l'UUID
+	// de transaction (dans kr-answer) et non sur le deliveryID —
+	// deux POST HTTP distincts arrivent avec le meme kr-hash et le
+	// meme kr-answer. Sans deliveryID different, le store dedup en
+	// base sur la primary key et une seule ligne survit.
 	if opts.Chaos.Duplicate {
-		if err := h.queue.Enqueue(wh); err != nil {
-			h.logger.Warn("chaos_duplicate_enqueue_failed", "err", err)
+		dupID, uerr := newUUID()
+		if uerr != nil {
+			h.logger.Warn("chaos_duplicate_uuid_failed", "err", uerr)
+		} else {
+			dup, _, berr := buildDeliveryWebhook(dupID, targetURL, answer, h.cfg.HMACKey, answerType,
+				opts.Chaos.BadSignature, delay)
+			if berr != nil {
+				h.logger.Warn("chaos_duplicate_build_failed", "err", berr)
+			} else if err := h.queue.Enqueue(dup); err != nil {
+				h.logger.Warn("chaos_duplicate_enqueue_failed", "err", err)
+			}
 		}
 	}
 	// Race before response : on retarde la reponse HTTP pour laisser

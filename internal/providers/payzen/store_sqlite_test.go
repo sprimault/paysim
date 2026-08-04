@@ -218,6 +218,25 @@ func runSubscriptionContract(t *testing.T, s Store) {
 	if got.Metadata["plan"] != "pro" {
 		t.Errorf("Metadata[plan] = %q, veut pro (round-trip)", got.Metadata["plan"])
 	}
+	// Régression : le champ Cancelled doit être persisté et relu.
+	// Un oubli d'aller-retour ici casse silencieusement CancelSubscription
+	// en mode SQLite — les tests API ne voient rien parce qu'ils tournent
+	// en mémoire, et les scénarios canoniques échouent seulement à
+	// l'exécution contre une instance persistée.
+	if got.Cancelled {
+		t.Fatalf("Cancelled = true à la création, veut false")
+	}
+	sub.Cancelled = true
+	if err := s.SaveSubscription(sub); err != nil {
+		t.Fatalf("SaveSubscription(cancelled=true): %v", err)
+	}
+	got, err = s.SubscriptionByID("sub-test")
+	if err != nil {
+		t.Fatalf("SubscriptionByID après cancel: %v", err)
+	}
+	if !got.Cancelled {
+		t.Errorf("Cancelled = false après SaveSubscription(cancelled=true), veut true")
+	}
 }
 
 func TestSQLiteStoreMethodContract(t *testing.T) {
