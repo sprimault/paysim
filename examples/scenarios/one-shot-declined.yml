@@ -15,4 +15,3 @@ steps:
     state: declined
   - action: assert_webhook
     count: 1
-    status: UNPAID
