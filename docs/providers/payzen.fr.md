@@ -95,7 +95,7 @@ Valeurs `formAction` autorisées :
 | `PAYMENT` (défaut)  | Paiement one-shot, sans enregistrement.                               |
 | `REGISTER_PAY`      | Paiement + enregistrement obligatoire du moyen de paiement.           |
 | `ASK_REGISTER_PAY`  | Paiement + enregistrement proposé à l'utilisateur.                    |
-| `REGISTER`          | Enregistrement seul (montant 0) — accepté par PayZen, traité comme PAYMENT chez Paysim aujourd'hui. |
+| `REGISTER`          | Enregistrement seul, sans débit. `amount: 0` accepté — crée un `paymentMethodToken` réutilisable pour des paiements one-click. |
 
 **Spécificités Paysim** :
 

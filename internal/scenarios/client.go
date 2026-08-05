@@ -49,14 +49,22 @@ func (c *Client) SetHTTPClient(hc *http.Client) { c.httpClient = hc }
 // contraire à ce qu'on veut : le runner consomme l'API par HTTP, pas
 // par appel Go direct).
 type createPaymentReq struct {
-	Provider           string `json:"provider,omitempty"`
-	Amount             int64  `json:"amount"`
-	Currency           string `json:"currency"`
-	OrderID            string `json:"orderId"`
-	FormAction         string `json:"formAction,omitempty"`
-	NotificationURL    string `json:"notificationUrl,omitempty"`
-	Card               *Card  `json:"card,omitempty"`
-	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
+	Provider           string            `json:"provider,omitempty"`
+	Amount             int64             `json:"amount"`
+	Currency           string            `json:"currency"`
+	OrderID            string            `json:"orderId"`
+	FormAction         string            `json:"formAction,omitempty"`
+	Customer           *customerReq      `json:"customer,omitempty"`
+	Metadata           map[string]string `json:"metadata,omitempty"`
+	NotificationURL    string            `json:"notificationUrl,omitempty"`
+	Card               *Card             `json:"card,omitempty"`
+	PaymentMethodToken string            `json:"paymentMethodToken,omitempty"`
+}
+
+// customerReq est le miroir minimal de payzen.Customer côté request
+// scenario — seul email pour l'instant (voir loader.Customer).
+type customerReq struct {
+	Email string `json:"email,omitempty"`
 }
 
 // CreatedPayment est la vue minimale d'un paiement fraîchement créé.
@@ -79,8 +87,12 @@ func (c *Client) CreatePayment(ctx context.Context, in *CreatePayment) (*Created
 		Currency:        in.Currency,
 		OrderID:         in.OrderID,
 		FormAction:      in.FormAction,
+		Metadata:        in.Metadata,
 		NotificationURL: in.NotificationURL,
 		Card:            in.Card,
+	}
+	if in.Customer != nil {
+		body.Customer = &customerReq{Email: in.Customer.Email}
 	}
 	var out CreatedPayment
 	if err := c.do(ctx, http.MethodPost, "/paysim/api/v1/payments", body, &out); err != nil {

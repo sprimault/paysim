@@ -836,7 +836,9 @@ func TestCreatePaymentGenericInputInvalide(t *testing.T) {
 		body string
 		want string
 	}{
-		{"amount nul", `{"amount":0,"currency":"EUR","orderId":"O"}`, "montant"},
+		// amount = 0 est valide depuis le fix REGISTER pur ; seul le
+		// négatif est rejeté.
+		{"amount negatif", `{"amount":-1,"currency":"EUR","orderId":"O"}`, "montant"},
 		{"currency vide", `{"amount":1000,"currency":"","orderId":"O"}`, "devise"},
 		{"json casse", `{not json`, "invalid"},
 	}

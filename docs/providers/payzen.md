@@ -94,7 +94,7 @@ below).
 | `PAYMENT` (default)| One-shot payment, no enrollment.                                      |
 | `REGISTER_PAY`     | Payment + mandatory enrollment of the payment method.                 |
 | `ASK_REGISTER_PAY` | Payment + enrollment proposed to the user.                            |
-| `REGISTER`         | Enrollment only (0 amount) — accepted by PayZen, treated as PAYMENT by Paysim today. |
+| `REGISTER`         | Enrollment only, no debit. `amount: 0` accepted — creates a `paymentMethodToken` reusable for one-click charges. |
 
 **Paysim specifics**:
 

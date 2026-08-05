@@ -89,13 +89,23 @@ type Step struct {
 //     (charge_token), utile aussi côté one-shot pour tester le flux
 //     de notification.
 type CreatePayment struct {
-	Provider        string `yaml:"provider"`
-	Amount          int64  `yaml:"amount"`
-	Currency        string `yaml:"currency"`
-	OrderID         string `yaml:"order_id"`
-	FormAction      string `yaml:"form_action,omitempty"`
-	NotificationURL string `yaml:"notification_url,omitempty"`
-	Card            *Card  `yaml:"card,omitempty"`
+	Provider        string            `yaml:"provider"`
+	Amount          int64             `yaml:"amount"`
+	Currency        string            `yaml:"currency"`
+	OrderID         string            `yaml:"order_id"`
+	FormAction      string            `yaml:"form_action,omitempty"`
+	Customer        *Customer         `yaml:"customer,omitempty"`
+	Metadata        map[string]string `yaml:"metadata,omitempty"`
+	NotificationURL string            `yaml:"notification_url,omitempty"`
+	Card            *Card             `yaml:"card,omitempty"`
+}
+
+// Customer decrit un client marchand associe au paiement. Seul l'email
+// est supporte en scenario YAML pour l'instant — Paysim propage le
+// bloc customer complet dans les webhooks (kr-answer.customer), utile
+// pour tester que le marchand recoit bien les infos qu'il a envoyees.
+type Customer struct {
+	Email string `yaml:"email,omitempty"`
 }
 
 // Card décrit un moyen de paiement fictif présenté à Paysim.

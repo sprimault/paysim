@@ -1,0 +1,42 @@
+name: register-only
+description: |
+  Enrolement pur d'une carte — form_action REGISTER, amount 0.
+  Le PSP ne debite rien : il cree juste un paymentMethodToken
+  reutilisable pour des paiements one-click ulterieurs. Le
+  vrai PayZen accepte ce mode ; Paysim l'accepte aussi depuis
+  le fix qui autorise amount = 0 dans le domain (v0.4.4).
+
+  Valide aussi la propagation de customer et metadata jusqu'au
+  webhook emis — l'endpoint /paysim/api/v1/payments generique
+  transmet ces champs au provider (fix v0.4.4).
+
+  Etape finale : un charge_token avec un vrai montant prouve
+  que le token enregistre est bien reutilisable.
+steps:
+  - action: create_payment
+    provider: payzen
+    amount: 0
+    currency: EUR
+    order_id: REGISTER-42
+    form_action: REGISTER
+    customer:
+      email: alice@example.com
+    metadata:
+      plan: pro
+      source: onboarding
+    card:
+      pan: "4111111111111111"
+      expiry_month: 12
+      expiry_year: 2028
+  - action: simulate
+    status: captured
+  - action: assert_state
+    state: captured
+  - action: assert_webhook
+    count: 1
+  - action: charge_token
+    amount: 4990
+    currency: EUR
+    order_id: FIRST-CHARGE-42
+  - action: assert_state
+    state: captured
