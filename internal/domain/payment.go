@@ -40,7 +40,12 @@ func New(id string, amount format.Amount, currency string) (*Payment, error) {
 	if id == "" {
 		return nil, ErrInvalidPayment
 	}
-	if amount <= 0 {
+	// amount == 0 est valide : couvre le cas d'un enrôlement pur
+	// (formAction PayZen "REGISTER" sans PAY), où on crée bien une
+	// « transaction » côté PSP mais sans débit — l'objectif est
+	// uniquement d'obtenir un paymentMethodToken pour les rejeux
+	// futurs. On rejette seulement le montant négatif, jamais nul.
+	if amount < 0 {
 		return nil, ErrInvalidAmount
 	}
 	if !IsCurrencyCode(currency) {

@@ -175,7 +175,9 @@ func TestCreatePaymentRejectsInvalidAmount(t *testing.T) {
 	t.Parallel()
 	server, _ := newTestServer(t)
 
-	body := CreatePaymentRequest{OrderID: "o", Amount: 0, Currency: "EUR"}
+	// Montant nul valide depuis le fix REGISTER pur — seul le négatif
+	// est rejeté.
+	body := CreatePaymentRequest{OrderID: "o", Amount: -100, Currency: "EUR"}
 	resp, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment", body, "u", "p")
 
 	if resp.Status != "ERROR" {
@@ -185,6 +187,21 @@ func TestCreatePaymentRejectsInvalidAmount(t *testing.T) {
 	_ = json.Unmarshal(resp.Answer, &e)
 	if e.ErrorCode != ErrCodeInvalidAmount {
 		t.Errorf("ErrorCode = %q, veut %q", e.ErrorCode, ErrCodeInvalidAmount)
+	}
+}
+
+// TestCreatePaymentAcceptsZeroAmount vérifie qu'un enrôlement pur
+// (formAction REGISTER, amount 0) n'est pas rejeté — c'est le
+// comportement d'un vrai PSP qui traite REGISTER sans débit.
+func TestCreatePaymentAcceptsZeroAmount(t *testing.T) {
+	t.Parallel()
+	server, _ := newTestServer(t)
+
+	body := CreatePaymentRequest{OrderID: "o", Amount: 0, Currency: "EUR", FormAction: "REGISTER"}
+	resp, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment", body, "u", "p")
+
+	if resp.Status != "SUCCESS" {
+		t.Fatalf("Status = %q, veut SUCCESS (Answer=%s)", resp.Status, resp.Answer)
 	}
 }
 

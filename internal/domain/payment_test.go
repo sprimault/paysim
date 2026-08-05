@@ -67,7 +67,9 @@ func TestNew(t *testing.T) {
 	}{
 		{"nominal", "pay-1", 1000, "EUR", nil},
 		{"id vide", "", 1000, "EUR", ErrInvalidPayment},
-		{"montant nul", "pay-1", 0, "EUR", ErrInvalidAmount},
+		// Montant nul valide : cas d'un enrôlement pur (formAction
+		// PayZen REGISTER) où on crée une transaction sans débit.
+		{"montant nul (REGISTER)", "pay-1", 0, "EUR", nil},
 		{"montant negatif", "pay-1", -100, "EUR", ErrInvalidAmount},
 		{"devise vide", "pay-1", 1000, "", ErrInvalidCurrency},
 		{"devise minuscule", "pay-1", 1000, "eur", ErrInvalidCurrency},

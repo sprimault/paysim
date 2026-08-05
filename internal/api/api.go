@@ -198,14 +198,16 @@ type WebhookDetail struct {
 //     stocké — capture directe, webhook émis (si NotificationURL et
 //     token de la boutique configurés côté serveur).
 type CreatePaymentInput struct {
-	Provider           string           `json:"provider,omitempty"`
-	Amount             format.Amount    `json:"amount"`
-	Currency           string           `json:"currency"`
-	OrderID            string           `json:"orderId"`
-	FormAction         string           `json:"formAction,omitempty"`
-	NotificationURL    string           `json:"notificationUrl,omitempty"`
-	Card               *payzen.Card     `json:"card,omitempty"`
-	PaymentMethodToken string           `json:"paymentMethodToken,omitempty"`
+	Provider           string            `json:"provider,omitempty"`
+	Amount             format.Amount     `json:"amount"`
+	Currency           string            `json:"currency"`
+	OrderID            string            `json:"orderId"`
+	FormAction         string            `json:"formAction,omitempty"`
+	Customer           payzen.Customer   `json:"customer,omitempty"`
+	Metadata           map[string]string `json:"metadata,omitempty"`
+	NotificationURL    string            `json:"notificationUrl,omitempty"`
+	Card               *payzen.Card      `json:"card,omitempty"`
+	PaymentMethodToken string            `json:"paymentMethodToken,omitempty"`
 }
 
 // CreatePaymentOutput retourne l'uuid attribué au paiement et son
@@ -299,6 +301,8 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 			Currency:           req.Currency,
 			OrderID:            req.OrderID,
 			FormAction:         req.FormAction,
+			Customer:           req.Customer,
+			Metadata:           req.Metadata,
 			NotificationURL:    req.NotificationURL,
 			Card:               req.Card,
 			PaymentMethodToken: req.PaymentMethodToken,

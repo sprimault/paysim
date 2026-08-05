@@ -172,7 +172,7 @@ steps:
     currency: EUR
     order_id: ORDER-001
 `,
-			wantSub: "amount doit etre strictement positif",
+			wantSub: "amount doit etre positif ou nul",
 		},
 		{
 			name: "wait duration nulle",
@@ -297,7 +297,7 @@ func TestLoad_agregeLesErreurs(t *testing.T) {
 	const yml = `
 steps:
   - action: create_payment
-    amount: 0
+    amount: -10
 `
 	_, err := Load(strings.NewReader(yml))
 	if err == nil {

@@ -105,8 +105,12 @@ func (c *CreatePayment) Validate() error {
 	if c.Provider == "" {
 		errs = append(errs, errors.New("provider vide"))
 	}
-	if c.Amount <= 0 {
-		errs = append(errs, errors.New("amount doit etre strictement positif"))
+	// amount = 0 est valide pour un enrolement pur (form_action
+	// REGISTER) — cohérent avec domain.New. Seul le négatif est
+	// rejeté. Pour charge_token et create_subscription on garde
+	// amount > 0 (débit réel ou abonnement récurrent).
+	if c.Amount < 0 {
+		errs = append(errs, errors.New("amount doit etre positif ou nul"))
 	}
 	if c.Currency == "" {
 		errs = append(errs, errors.New("currency vide"))

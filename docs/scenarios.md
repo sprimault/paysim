@@ -13,8 +13,8 @@ in CI, and against a Paysim deployed in a cluster — only
 > `VAR=value cmd` with `$env:VAR="value"; cmd`.
 
 Canonical examples live in [examples/scenarios/](../examples/scenarios/) —
-five short files covering one-shot, recurring-token and subscription
-patterns.
+seven short files covering one-shot, recurring-token, subscription and
+register-only patterns.
 
 ## How to run
 
@@ -67,7 +67,7 @@ Eleven actions covering the three payment patterns.
 
 | Action           | Purpose                                                                 |
 | ---------------- | ----------------------------------------------------------------------- |
-| `create_payment` | Create a payment. Optional `card`, `form_action`, `notification_url`.   |
+| `create_payment` | Create a payment. Optional `card`, `form_action`, `customer.email`, `metadata`, `notification_url`. `amount: 0` valid when `form_action: REGISTER` (register-only, no debit). |
 | `simulate`       | Advance the payment via the browser-return simulation endpoint.         |
 | `assert_state`   | Assert the current payment is in the given state.                       |
 | `assert_webhook` | Count webhooks delivered since the scenario started (optional `status`).|
@@ -143,6 +143,9 @@ See [examples/scenarios/](../examples/scenarios/):
 - `one-shot-declined.yml` — decline through magic amount (`1001`).
 - `recurring-token.yml` — merchant-orchestrated recurring charge via
   saved payment method.
+- `register-only.yml` — pure card enrollment (`form_action: REGISTER`,
+  `amount: 0`), plus `customer.email` and `metadata` propagation to
+  the webhook, then a `charge_token` proving the saved token is usable.
 - `subscription.yml` — PSP-driven subscription with two installments
   and cancellation.
 - `subscription-with-decline.yml` — subscription where the recurring

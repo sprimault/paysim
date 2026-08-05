@@ -7,9 +7,10 @@ description: |
 steps:
   - action: create_payment
     provider: payzen
-    amount: 100
+    amount: 0
     currency: EUR
     order_id: INIT
+    form_action: REGISTER
     card:
       pan: "4111111111111111"
       expiry_month: 12

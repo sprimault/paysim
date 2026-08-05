@@ -13,8 +13,9 @@ local, en CI, ou contre un Paysim déployé sur un cluster — seule
 > `VAR=value cmd` par `$env:VAR="value"; cmd`.
 
 Les exemples canoniques vivent dans
-[examples/scenarios/](../examples/scenarios/) — cinq fichiers courts
-qui couvrent one-shot, token pattern et subscription native.
+[examples/scenarios/](../examples/scenarios/) — sept fichiers courts
+qui couvrent one-shot, token pattern, subscription native et
+enrôlement pur.
 
 ## Comment lancer
 
@@ -67,7 +68,7 @@ Onze actions qui couvrent les trois patterns de paiement.
 
 | Action           | Rôle                                                                    |
 | ---------------- | ----------------------------------------------------------------------- |
-| `create_payment` | Crée un paiement. `card`, `form_action`, `notification_url` optionnels. |
+| `create_payment` | Crée un paiement. `card`, `form_action`, `customer.email`, `metadata`, `notification_url` optionnels. `amount: 0` valide quand `form_action: REGISTER` (enrôlement pur, aucun débit). |
 | `simulate`       | Fait avancer le paiement via l'endpoint de simulation navigateur.       |
 | `assert_state`   | Assert que le paiement courant est dans l'état demandé.                 |
 | `assert_webhook` | Compte les webhooks livrés depuis le début du scénario (`status` optionnel).|
@@ -144,6 +145,10 @@ Voir [examples/scenarios/](../examples/scenarios/) :
 - `one-shot-declined.yml` — refus via montant magique (`1001`).
 - `recurring-token.yml` — récurrence orchestrée marchand avec moyen
   de paiement enregistré.
+- `register-only.yml` — enrôlement pur de carte (`form_action: REGISTER`,
+  `amount: 0`), avec propagation de `customer.email` et `metadata`
+  jusqu'au webhook, puis un `charge_token` qui prouve que le token
+  enregistré est réutilisable.
 - `subscription.yml` — subscription PSP-driven avec deux échéances et
   annulation.
 - `subscription-with-decline.yml` — subscription dont l'échéance
