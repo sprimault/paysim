@@ -1316,6 +1316,59 @@ func TestListPaymentMethods_afterEnrollWithSQLite(t *testing.T) {
 	}
 }
 
+// TestPaymentMethods_listeEtDetailConcordent verrouille la divergence
+// qui avait cours : les attributs de carte n'existaient que sur le
+// detail, si bien qu'un meme moyen portait un porteur ou pas selon la
+// route interrogee. On compare les deux vues plutot que d'asserter des
+// valeurs en dur — ainsi le test protege aussi les champs a venir.
+func TestPaymentMethods_listeEtDetailConcordent(t *testing.T) {
+	t.Parallel()
+	server := setupWithSQLite(t)
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen",
+		Amount:   1000, Currency: "EUR", OrderID: "O",
+		Card: &payzen.Card{
+			PAN: "4111111111111111", ExpiryMonth: 8, ExpiryYear: 2029,
+			HolderName: "DUPONT JEAN-EMILLE", Country: "US",
+			ProductCategory: "DEBIT", IssuerName: "BANQUE DE TEST",
+		},
+	})
+	createResp, err := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = createResp.Body.Close()
+
+	listResp, err := http.Get(server.URL + "/paysim/api/v1/payment-methods")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = listResp.Body.Close() }()
+	var list []PaymentMethodOutput
+	_ = json.NewDecoder(listResp.Body).Decode(&list)
+	if len(list) != 1 {
+		t.Fatalf("liste = %d entrees, veut 1", len(list))
+	}
+
+	detailResp, err := http.Get(server.URL + "/paysim/api/v1/payment-methods/" + list[0].Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = detailResp.Body.Close() }()
+	var detail PaymentMethodOutput
+	_ = json.NewDecoder(detailResp.Body).Decode(&detail)
+
+	if list[0] != detail {
+		t.Errorf("liste et detail divergent : liste=%+v detail=%+v", list[0], detail)
+	}
+	// Garde-fou explicite : sans lui, deux vues vides concorderaient.
+	if detail.HolderName != "DUPONT JEAN-EMILLE" {
+		t.Errorf("HolderName = %q, veut DUPONT JEAN-EMILLE", detail.HolderName)
+	}
+}
+
 func TestListPaymentMethods_afterRevoke(t *testing.T) {
 	t.Parallel()
 	server := setupWithSQLite(t)
