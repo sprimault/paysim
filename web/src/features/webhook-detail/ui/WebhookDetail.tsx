@@ -15,6 +15,8 @@ import { useT } from '@/shared/i18n/useT';
 import { toast } from '@/shared/ui/toastStore';
 import { replayWebhook } from '@/entities/webhook/api/webhookApi';
 import { useWebhook } from '@/entities/webhook/model/useWebhooks';
+import { useKeyboardShortcuts } from '@/shared/hooks/useKeyboardShortcuts';
+import { KEY_REPLAY_WEBHOOK } from '@/shared/model/shortcuts';
 
 export function WebhookDetail() {
   const t = useT();
@@ -34,6 +36,14 @@ export function WebhookDetail() {
       setReplaying(false);
     }
   }
+
+  // Le rejeu est le geste le plus répété en débogage — d'où un raccourci,
+  // désarmé pendant qu'une livraison est déjà en vol pour ne pas empiler
+  // les doublons sur une frappe répétée.
+  useKeyboardShortcuts(
+    [{ keys: KEY_REPLAY_WEBHOOK, run: () => void handleReplay() }],
+    !!wh && !replaying,
+  );
 
   if (loading && !wh) {
     return (
