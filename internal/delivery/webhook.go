@@ -36,6 +36,18 @@ type Webhook struct {
 	// URL-encoded selon le protocole du provider).
 	Body []byte
 
+	// Outcome est le résultat métier que ce webhook annonce, dans le
+	// vocabulaire du provider ("PAID", "UNPAID"… pour PayZen). Déclaré
+	// par l'adaptateur au moment d'émettre, jamais déduit du Body :
+	// delivery ne sait pas lire un kr-answer, et n'a pas à l'apprendre
+	// pour chaque provider ajouté. Vide quand le webhook n'annonce pas
+	// de résultat de paiement.
+	//
+	// Sert à distinguer, côté assertions, « le webhook a bien été
+	// remis » (Status) de « le webhook annonçait un paiement accepté »
+	// (Outcome) — deux questions que le champ Status seul confondait.
+	Outcome string
+
 	// Attempts compte les tentatives. Incrémenté par le worker avant
 	// chaque envoi. En phase 1 le worker ne tente qu'une fois ; la
 	// logique de retry arrive avec le chaos en phase 2.

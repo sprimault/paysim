@@ -31,8 +31,15 @@ type WebhookRecord struct {
 	// Body est le corps HTTP envoyé, tel quel (bytes).
 	Body []byte
 
-	// Status : "delivered" | "failed" | "pending".
+	// Status : "delivered" | "failed" | "pending". Décrit l'acheminement
+	// HTTP, pas le contenu.
 	Status string
+
+	// Outcome est le résultat métier annoncé par le webhook, dans le
+	// vocabulaire du provider ("PAID", "UNPAID"…). Renseigné par
+	// l'adaptateur à l'émission. Vide pour un webhook qui n'annonce pas
+	// de résultat de paiement.
+	Outcome string
 
 	// StatusCode est le code HTTP reçu. Vaut 0 si l'erreur s'est
 	// produite avant la réception d'une réponse (timeout, DNS…).

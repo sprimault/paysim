@@ -308,7 +308,7 @@ func (r *Runner) doAssertWebhook(ctx context.Context, st *state, in *AssertWebho
 		if err != nil {
 			return err
 		}
-		got = countWebhooks(all, st.startedAt, in.Status)
+		got = countWebhooks(all, st.startedAt, in.Status, in.Outcome)
 		if got >= in.Count || time.Now().After(deadline) {
 			break
 		}
@@ -320,13 +320,25 @@ func (r *Runner) doAssertWebhook(ctx context.Context, st *state, in *AssertWebho
 	}
 
 	if got != in.Count {
-		if in.Status != "" {
-			return fmt.Errorf("%w: nombre de webhooks avec status=%q: obtenu %d, veut %d",
-				ErrAssertion, in.Status, got, in.Count)
-		}
-		return fmt.Errorf("%w: nombre de webhooks: obtenu %d, veut %d", ErrAssertion, got, in.Count)
+		return fmt.Errorf("%w: nombre de webhooks%s: obtenu %d, veut %d",
+			ErrAssertion, webhookFilterLabel(in.Status, in.Outcome), got, in.Count)
 	}
 	return nil
+}
+
+// webhookFilterLabel décrit les filtres actifs pour le message d'erreur.
+// Sans lui, deux assertions différentes produisent le même texte et on
+// ne sait pas laquelle a échoué.
+func webhookFilterLabel(status, outcome string) string {
+	switch {
+	case status != "" && outcome != "":
+		return fmt.Sprintf(" avec status=%q et outcome=%q", status, outcome)
+	case status != "":
+		return fmt.Sprintf(" avec status=%q", status)
+	case outcome != "":
+		return fmt.Sprintf(" avec outcome=%q", outcome)
+	}
+	return ""
 }
 
 // defaultAssertWebhookTimeout borne l'attente d'assert_webhook. Cinq
@@ -343,13 +355,16 @@ const assertWebhookPollInterval = 25 * time.Millisecond
 // countWebhooks compte les livraisons postérieures au cursor, filtrées
 // sur status quand il est renseigné. Extrait de doAssertWebhook pour
 // que la boucle d'attente reste lisible.
-func countWebhooks(all []WebhookEntry, since time.Time, status string) int {
+func countWebhooks(all []WebhookEntry, since time.Time, status, outcome string) int {
 	n := 0
 	for _, w := range all {
 		if w.CreatedAt.Before(since) {
 			continue
 		}
 		if status != "" && w.Status != status {
+			continue
+		}
+		if outcome != "" && w.Outcome != outcome {
 			continue
 		}
 		n++

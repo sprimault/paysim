@@ -12,6 +12,6 @@ steps:
     duration: 100ms
   - action: assert_webhook
     count: 1
-    status: PAID
+    outcome: PAID
   - action: assert_state
     state: captured

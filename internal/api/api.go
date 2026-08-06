@@ -166,9 +166,17 @@ type EventEntry struct {
 
 // WebhookEntry résume une tentative de livraison — pour la liste UI.
 type WebhookEntry struct {
-	ID          string    `json:"id"`
-	URL         string    `json:"url"`
-	Status      string    `json:"status"`
+	ID  string `json:"id"`
+	URL string `json:"url"`
+
+	// Status décrit l'acheminement HTTP ("delivered", "failed",
+	// "pending"), Outcome le résultat métier annoncé dans le corps
+	// ("PAID", "UNPAID"… en vocabulaire provider). Deux questions
+	// distinctes : un webhook peut être remis avec succès tout en
+	// annonçant un refus.
+	Status  string `json:"status"`
+	Outcome string `json:"outcome,omitempty"`
+
 	StatusCode  int       `json:"statusCode,omitempty"`
 	ErrorMsg    string    `json:"errorMsg,omitempty"`
 	Attempts    int       `json:"attempts"`
@@ -1063,6 +1071,7 @@ func toWebhookEntry(r delivery.WebhookRecord) WebhookEntry {
 		ID:          r.Webhook.ID,
 		URL:         r.Webhook.URL,
 		Status:      r.Status,
+		Outcome:     r.Webhook.Outcome,
 		StatusCode:  r.StatusCode,
 		ErrorMsg:    r.ErrorMsg,
 		Attempts:    r.Webhook.Attempts,

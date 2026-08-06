@@ -70,7 +70,7 @@ Eleven actions covering the three payment patterns.
 | `create_payment` | Create a payment. Optional `card`, `form_action`, `customer.email`, `metadata`, `notification_url`. `amount: 0` valid when `form_action: REGISTER` (register-only, no debit). |
 | `simulate`       | Advance the payment via the browser-return simulation endpoint.         |
 | `assert_state`   | Assert the current payment is in the given state.                       |
-| `assert_webhook` | Count webhooks delivered since the scenario started (optional `status`, optional `timeout`).|
+| `assert_webhook` | Count webhooks delivered since the scenario started (optional `status`, `outcome`, `timeout`).|
 
 ### Recurring token pattern
 
@@ -106,6 +106,33 @@ then reset):
 
 Persistent chaos: `inject` before every `simulate` you want it to
 affect. See `examples/scenarios/chaos-duplicate.yml`.
+
+### `status` vs `outcome`
+
+`assert_webhook` filters on two independent things, and confusing them
+means asserting something other than what you think:
+
+| Field | Answers | Values |
+|---|---|---|
+| `status` | *Did the webhook get through?* | `delivered`, `failed`, `pending` |
+| `outcome` | *What did it announce?* | `PAID`, `UNPAID`, `AUTHORISED`… (provider vocabulary) |
+
+A webhook delivered successfully can perfectly well announce a decline —
+HTTP 200 on a `UNPAID` payload. Asserting the business result is usually
+what you want:
+
+```yaml
+  - action: assert_webhook
+    count: 1
+    outcome: PAID          # a successful payment was announced
+```
+
+Both are cumulative: supply the two and each must match. Omit both to
+count every webhook.
+
+`outcome` is filled in by the adapter when it emits the webhook, in its
+own protocol vocabulary — never re-parsed from the body. A Stripe
+adapter will populate the same field with its own values.
 
 ### Why `assert_webhook` waits
 
