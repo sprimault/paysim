@@ -313,14 +313,31 @@ KrAnswer
 KrCardDetails
 ├── pan               string     toujours masqué (ex. "411111XXXXXX1111")
 ├── brand             string
+├── holderName        string     omis si non fourni à l'enrôlement
 ├── productCategory   string     "CREDIT" par défaut
 ├── expiryMonth       integer
 ├── expiryYear        integer
 ├── country           string     "FR" par défaut
-├── issuerName        string     "PAYSIM" — marqueur Paysim
+├── issuerName        string     "PAYSIM" par défaut
 ├── effectiveBrand    string
 └── _type             "V4/CardDetails"
 ```
+
+**Tous ces champs sont dérivés de la carte réellement enrôlée** quand il
+y en a une — l'objet `card` de `CreatePayment`, conservé comme moyen de
+paiement. Ce que Paysim annonce est donc ce que Paysim détient : PAN
+masqué, date d'expiration, porteur et attributs émetteur correspondent à
+l'enregistrement stocké.
+
+Les valeurs signalées *par défaut* ne s'appliquent que si l'enrôlement
+les a laissées vides. Elles ne se substituent **jamais** à une valeur
+fournie : enrôlez une carte avec `country: "US"` et
+`productCategory: "DEBIT"`, le webhook annonce exactement cela — c'est ce
+qui rend testables la carte étrangère et la carte de débit.
+
+Le paiement one-shot sans aucune carte soumise est le seul cas où le bloc
+entier est synthétique : il n'y a rien de réel à décrire, Paysim émet
+alors une carte de démonstration construite à partir de la seule marque.
 
 `threeDSResponse` :
 
