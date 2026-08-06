@@ -79,7 +79,15 @@ export interface EventEntry {
 export interface WebhookEntry {
   id: string;
   url: string;
+  /**
+   * Status décrit l'acheminement HTTP ("delivered", "failed",
+   * "pending"), Outcome le résultat métier annoncé dans le corps
+   * ("PAID", "UNPAID"… en vocabulaire provider). Deux questions
+   * distinctes : un webhook peut être remis avec succès tout en
+   * annonçant un refus.
+   */
   status: string;
+  outcome?: string;
   statusCode?: number /* int */;
   errorMsg?: string;
   attempts: number /* int */;
@@ -115,6 +123,8 @@ export interface CreatePaymentInput {
   currency: string;
   orderId: string;
   formAction?: string;
+  customer?: any /* payzen.Customer */;
+  metadata?: { [key: string]: string};
   notificationUrl?: string;
   card?: any /* payzen.Card */;
   paymentMethodToken?: string;
@@ -239,8 +249,30 @@ export interface PaymentMethodOutput {
   provider: string;
   panMasked: string;
   brand?: string;
+  holderName?: string;
   expiryMonth: number /* int */;
   expiryYear: number /* int */;
+  /**
+   * Caractérisation émetteur, telle qu'enrôlée. Absentes du JSON
+   * quand l'enrôlement ne les a pas fournies — l'API ne réaffirme
+   * pas les défauts appliqués au rendu du kr-answer.
+   */
+  country?: string;
+  productCategory?: string;
+  issuerName?: string;
   revoked: boolean;
   createdAt: string /* RFC 3339 */;
+  /**
+   * Usable dit si ce moyen peut encore produire un paiement accepté,
+   * UnusableReason pourquoi il ne le peut pas. Dérivés à la lecture,
+   * jamais stockés : les trois causes — révocation, expiration, PAN
+   * de refus — se déduisent de ce qui est déjà là, et un champ figé
+   * deviendrait faux au premier changement de mois.
+   * Sans eux, une carte que tout débit refusera est indistinguable
+   * d'une carte valide dans la collection. Le simulateur ment alors
+   * sur ses propres données, ce qui est plus coûteux qu'une absence
+   * d'information.
+   */
+  usable: boolean;
+  unusableReason?: string;
 }

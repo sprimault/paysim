@@ -538,16 +538,36 @@ func (h *Handler) callbackTarget(explicit, uuid, origin string) string {
 // le comportement bancaire — une carte expirée est refusée dès qu'un
 // paiement est tenté, pas seulement au moment du prélèvement récurrent.
 func evaluateMethodOutcome(pm *PaymentMethod, now time.Time) (outcome, reason string) {
-	if pm.Revoked {
-		return OutcomeUnpaid, "moyen de paiement revoque"
-	}
-	if pm.IsExpired(now) {
-		return OutcomeUnpaid, "moyen de paiement expire"
-	}
-	if chaos.IsDeclinedTestPAN(pm.PANFull) {
-		return OutcomeUnpaid, "carte de test refusee"
+	if usable, reason := MethodUsability(pm.PANFull, pm.ExpiryMonth, pm.ExpiryYear, pm.Revoked, now); !usable {
+		return OutcomeUnpaid, reason
 	}
 	return "", ""
+}
+
+// MethodUsability dit si un moyen de paiement peut encore produire un
+// paiement accepté, et sinon pourquoi. Travaille sur les champs bruts
+// plutôt que sur un type de ce paquet, pour que l'API de contrôle
+// puisse l'interroger depuis un record générique sans convertir.
+//
+// Source unique du verdict : la décision de paiement et la vue exposée
+// s'appuient dessus. Les dupliquer les ferait diverger, et une carte
+// annoncée exploitable qui refuse au premier débit est exactement le
+// genre de mensonge qu'un simulateur ne doit pas produire.
+//
+// Le verdict est calculé à la lecture, jamais persisté : les trois
+// causes se déduisent de ce qui est déjà stocké, et un champ figé
+// deviendrait faux au premier changement de mois.
+func MethodUsability(panFull string, expiryMonth, expiryYear int, revoked bool, now time.Time) (usable bool, reason string) {
+	if revoked {
+		return false, "moyen de paiement revoque"
+	}
+	if isExpired(expiryMonth, expiryYear, now) {
+		return false, "moyen de paiement expire"
+	}
+	if chaos.IsDeclinedTestPAN(panFull) {
+		return false, "carte de test refusee"
+	}
+	return true, ""
 }
 
 // decideReplayOutcome combine les 3 conditions du moyen de paiement

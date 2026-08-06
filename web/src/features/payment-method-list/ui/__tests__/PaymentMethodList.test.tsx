@@ -17,6 +17,7 @@ function makeMethod(overrides: Partial<PaymentMethodOutput> = {}): PaymentMethod
     expiryMonth: 12,
     expiryYear: 2028,
     revoked: false,
+    usable: true,
     createdAt: '2026-08-02T10:00:00Z',
     ...overrides,
   };

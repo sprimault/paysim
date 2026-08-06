@@ -105,7 +105,8 @@ curl -X POST http://paysim:8080/paysim/api/v1/payments \
   }'
 # → {"uuid":"...","paymentMethodToken":"..."}
 
-# Premier paiement : simulate normalement (capture réussie)
+# Premier paiement : refusé aussi — le PAN magique est vérifié au
+# simulate, pas seulement sur les rejeux récurrents
 curl -X POST http://paysim:8080/paysim/api/v1/payments/UUID/simulate \
   -d '{"outcome":"PAID"}'
 
@@ -175,6 +176,32 @@ les scénarios, l'UI, et les scripts d'intégration qui parlent
 « Paysim » directement.
 
 Détails dans [subscriptions.fr.md](subscriptions.fr.md#cross-provider).
+
+## Reconnaître un moyen de paiement inexploitable
+
+Une carte que tout débit refusera reste **enregistrée** : c'est ce qui
+permet de rejouer un scénario d'impayé dessus. Mais elle ne doit pas
+ressembler à une carte valide, aussi
+`GET /paysim/api/v1/payment-methods` porte-t-il un verdict sur chaque
+entrée :
+
+```json
+{ "token": "609114…", "panMasked": "400000XXXXXX0002", "revoked": false,
+  "usable": false, "unusableReason": "carte de test refusee" }
+```
+
+`usable` couvre les trois causes d'un coup — révocation, expiration, PAN
+de refus — et `unusableReason` nomme celle qui s'applique.
+
+Les deux champs sont **dérivés à la lecture, jamais stockés** : les trois
+causes se déduisent de ce qui est déjà là, et un indicateur figé
+deviendrait faux au premier changement de mois sur une carte qui arrive
+à expiration.
+
+À noter : un paiement refusé ne retourne pas de `paymentMethodToken`
+dans sa réponse de création, alors même que le moyen est enregistré.
+Annoncer un alias à côté d'un refus laisserait croire qu'il est
+débitable. C'est la collection qui le donne.
 
 ## Rappel de sécurité
 

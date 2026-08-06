@@ -42,11 +42,18 @@ type PaymentMethod struct {
 // « ce mois-ci » est encore valide jusqu'à la fin du mois — c'est
 // la convention bancaire française.
 func (m *PaymentMethod) IsExpired(now time.Time) bool {
+	return isExpired(m.ExpiryMonth, m.ExpiryYear, now)
+}
+
+// isExpired porte la règle sur les champs bruts, pour que MethodUsability
+// puisse l'appliquer à un record générique sans reconstruire un
+// PaymentMethod.
+func isExpired(expiryMonth, expiryYear int, now time.Time) bool {
 	year, month, _ := now.Date()
-	if m.ExpiryYear < year {
+	if expiryYear < year {
 		return true
 	}
-	if m.ExpiryYear == year && m.ExpiryMonth < int(month) {
+	if expiryYear == year && expiryMonth < int(month) {
 		return true
 	}
 	return false

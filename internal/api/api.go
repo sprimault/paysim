@@ -327,12 +327,21 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "erreur de creation", http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusCreated, CreatePaymentOutput{
+		// Un paiement refusé ne rend pas de token : la carte reste
+		// enregistrée — c'est ce qui permet de rejouer un impayé — mais
+		// l'annoncer dans la même réponse que le refus laisserait croire
+		// à un alias débitable. La collection, elle, expose le moyen
+		// avec son verdict d'exploitabilité.
+		out := CreatePaymentOutput{
 			UUID:               tx.UUID,
 			Provider:           "payzen",
 			State:              string(tx.Payment.State()),
 			PaymentMethodToken: tx.PaymentMethodToken,
-		})
+		}
+		if tx.Payment.State() == domain.StateDeclined {
+			out.PaymentMethodToken = ""
+		}
+		writeJSON(w, http.StatusCreated, out)
 	default:
 		http.Error(w, fmt.Sprintf("provider %q inconnu", provider), http.StatusBadRequest)
 	}
@@ -591,6 +600,19 @@ type PaymentMethodOutput struct {
 
 	Revoked   bool      `json:"revoked"`
 	CreatedAt time.Time `json:"createdAt"`
+
+	// Usable dit si ce moyen peut encore produire un paiement accepté,
+	// UnusableReason pourquoi il ne le peut pas. Dérivés à la lecture,
+	// jamais stockés : les trois causes — révocation, expiration, PAN
+	// de refus — se déduisent de ce qui est déjà là, et un champ figé
+	// deviendrait faux au premier changement de mois.
+	//
+	// Sans eux, une carte que tout débit refusera est indistinguable
+	// d'une carte valide dans la collection. Le simulateur ment alors
+	// sur ses propres données, ce qui est plus coûteux qu'une absence
+	// d'information.
+	Usable         bool   `json:"usable"`
+	UnusableReason string `json:"unusableReason,omitempty"`
 }
 
 // listPaymentMethods traite GET /paysim/api/v1/payment-methods.
@@ -625,7 +647,11 @@ func (h *Handler) listPaymentMethods(w http.ResponseWriter, _ *http.Request) {
 // un porteur ou pas selon la route interrogée. Un seul convertisseur
 // rend cette divergence impossible.
 func toPaymentMethodOutput(rec *store.PaymentMethodRecord) PaymentMethodOutput {
+	usable, reason := payzen.MethodUsability(
+		rec.PANFull, rec.ExpiryMonth, rec.ExpiryYear, rec.Revoked, time.Now().UTC())
 	return PaymentMethodOutput{
+		Usable:         usable,
+		UnusableReason: reason,
 		Token:           rec.Token,
 		Provider:        rec.Provider,
 		PANMasked:       rec.PANMasked,
