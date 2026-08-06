@@ -19,6 +19,7 @@ import (
 
 	"github.com/sprimault/paysim/internal/chaos"
 	"github.com/sprimault/paysim/internal/delivery"
+	"github.com/sprimault/paysim/internal/format"
 )
 
 // newTestServer construit un serveur Paysim avec queue interne, config
@@ -1332,5 +1333,92 @@ func TestTriggerBillingNotifie(t *testing.T) {
 	case <-hits:
 	case <-time.After(2 * time.Second):
 		t.Fatal("aucune notification sur une echeance d abonnement")
+	}
+}
+
+// TestAutoplayJoueLePaiementEtNotifie : sans autoplay un paiement reste
+// initiated tant que personne ne l'a joue. Avec, il est capture et
+// notifie des la creation — ce que le porteur aurait declenche.
+func TestAutoplayJoueLePaiementEtNotifie(t *testing.T) {
+	t.Parallel()
+	merchant, hits := newMerchantServer(t)
+	cfg := HandlerConfig{HMACKey: "k", DefaultCallbackURL: merchant.URL, Autoplay: true}
+	_, store, queue := newTestServerFull(t, cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+
+	tx, err := h.Create(CreateInput{Amount: 4990, Currency: "EUR", OrderID: "AUTO-1"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if got := string(tx.Payment.State()); got != "captured" {
+		t.Errorf("state = %q, veut captured", got)
+	}
+	select {
+	case <-hits:
+	case <-time.After(2 * time.Second):
+		t.Fatal("aucune notification alors que l autoplay est actif")
+	}
+}
+
+// TestAutoplayDesactiveParDefaut verrouille l'invariant : un paiement
+// neuf ne bouge pas tant que personne ne l'a joue.
+func TestAutoplayDesactiveParDefaut(t *testing.T) {
+	t.Parallel()
+	merchant, _ := newMerchantServer(t)
+	cfg := HandlerConfig{HMACKey: "k", DefaultCallbackURL: merchant.URL}
+	_, store, queue := newTestServerFull(t, cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+
+	tx, err := h.Create(CreateInput{Amount: 4990, Currency: "EUR", OrderID: "MANUEL-1"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if got := string(tx.Payment.State()); got != "initiated" {
+		t.Errorf("state = %q, veut initiated — l autoplay ne doit pas etre actif par defaut", got)
+	}
+}
+
+// TestAutoplayRespecteLesValeursMagiques est le test qui compte : le
+// mode automatise qui joue, pas ce qui sort. Si l'issue etait forcee a
+// PAID, les quatre leviers de testing-cards deviendraient inoperants
+// des l'activation du flag.
+func TestAutoplayRespecteLesValeursMagiques(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		nom       string
+		amount    format.Amount
+		card      *Card
+		wantState string
+	}{
+		{"montant magique refuse", 1001, nil, "declined"},
+		{"montant normal capture", 1000, nil, "captured"},
+		{"PAN de refus", 2000, &Card{
+			PAN: "4000000000000002", ExpiryMonth: 12, ExpiryYear: 2030,
+		}, "declined"},
+		{"carte expiree", 2000, &Card{
+			PAN: "4111111111111111", ExpiryMonth: 1, ExpiryYear: 2020,
+		}, "declined"},
+		{"carte valide", 2000, &Card{
+			PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030,
+		}, "captured"},
+	}
+	for _, c := range cases {
+		t.Run(c.nom, func(t *testing.T) {
+			t.Parallel()
+			merchant, _ := newMerchantServer(t)
+			cfg := HandlerConfig{HMACKey: "k", DefaultCallbackURL: merchant.URL, Autoplay: true}
+			_, store, queue := newTestServerFull(t, cfg)
+			h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+
+			tx, err := h.Create(CreateInput{
+				Amount: c.amount, Currency: "EUR", OrderID: "MAGIC", Card: c.card,
+			})
+			if err != nil {
+				t.Fatalf("create: %v", err)
+			}
+			if got := string(tx.Payment.State()); got != c.wantState {
+				t.Errorf("state = %q, veut %q", got, c.wantState)
+			}
+		})
 	}
 }

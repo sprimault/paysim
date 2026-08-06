@@ -38,8 +38,42 @@ pour monter un Secret K8s sans écrire la valeur en clair.
 | `PAYSIM_LOG_LEVEL` | Niveau de log (`debug`, `info`, `warn`, `error`). Défaut `info`. |
 | `PAYSIM_STORE` | Backend de stockage : `memory` (défaut, sans état) ou `sqlite`. |
 | `PAYSIM_SQLITE_PATH` | Chemin du fichier SQLite quand `PAYSIM_STORE=sqlite`. Défaut `/data/paysim.db`. Nécessite un volume writable. |
+| `PAYSIM_AUTOPLAY` | Joue chaque paiement dès sa création, sans attendre d'appel de simulation. Défaut `false`. Voir plus bas. |
 | `PAYSIM_CHAOS_LATENCY_MS` | Latence injectée sur chaque requête REST V4. `0` désactive. |
 | `PAYSIM_CHAOS_ERROR_RATE` | Pourcentage de requêtes REST V4 renvoyant une 500. `0-100`. |
+
+## `PAYSIM_AUTOPLAY` — tests de bout en bout sans porteur
+
+En production, rien ne se passe après un `CreatePayment` tant que le
+porteur ne s'est pas authentifié sur le formulaire et que le PSP n'a pas
+notifié l'issue. Paysim reproduit fidèlement ce comportement : un
+paiement neuf reste `initiated` tant que personne ne l'a joué, ce que
+fait un appel de simulation.
+
+Un test de bout en bout automatisé n'a personne pour tenir ce rôle. Le
+contournement tentant — appeler l'API de simulation depuis le code du
+marchand — est un mauvais échange : il fait entrer la mécanique du
+simulateur dans le code métier et valide un enchaînement qui n'existera
+jamais en production. Il ne prouve donc rien, et devient du code mort le
+jour de la bascule vers le vrai PSP.
+
+`PAYSIM_AUTOPLAY=true` joue l'acte côté serveur à la place. Aucun client
+ne pilote quoi que ce soit, le contrat REST reste intact, et un paiement
+est capturé — ou refusé — dès sa création, notification comprise.
+
+**L'issue reste dictée par les valeurs magiques.** Un montant magique,
+un PAN de refus ou une carte expirée décident exactement comme
+d'habitude : ce mode automatise *qui joue*, pas *ce qui sort*. Tous les
+leviers de [testing-cards.fr.md](testing-cards.fr.md) continuent de
+fonctionner à l'identique.
+
+**Ce à quoi il renonce** : `ABANDONED` et `EXPIRED` supposent un porteur
+qui n'aboutit jamais. Avec l'autoplay, aucun paiement ne reste en
+suspens — ces issues exigent donc un appel de simulation explicite, et
+par conséquent ce mode désactivé. C'est la raison pour laquelle il est
+opt-in, et n'a rien à faire ailleurs que dans un environnement de test.
+
+Le serveur logue un `WARN` au démarrage quand il est actif.
 
 ## Matrice des deux URL
 
