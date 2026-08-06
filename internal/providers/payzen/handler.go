@@ -57,6 +57,15 @@ type HandlerConfig struct {
 	// déterministe pour la vérification d'expiration des moyens de
 	// paiement enregistrés. Nil = SystemClock (production).
 	Clock Clock
+
+	// Autoplay joue l'acte de paiement dès la création, sans attendre
+	// d'appel de simulation. Alimenté depuis PAYSIM_AUTOPLAY. Faux par
+	// défaut : un paiement neuf reste `initiated` tant que personne ne
+	// l'a joué, ce qui est le comportement d'un vrai PSP.
+	//
+	// L'issue reste décidée par les valeurs magiques — ce mode
+	// automatise qui appuie sur le bouton, pas ce qui en sort.
+	Autoplay bool
 }
 
 // Handler regroupe l'etat necessaire pour servir les endpoints REST V4
@@ -231,12 +240,91 @@ func (h *Handler) Create(in CreateInput) (*Transaction, error) {
 	if err != nil {
 		return nil, err
 	}
+	var pm *PaymentMethod
 	if in.Card != nil {
-		if err := h.enrollCard(tx, in.Card); err != nil {
+		pm, err = h.enrollCard(tx, in.Card)
+		if err != nil {
 			return nil, err
 		}
 	}
+	if h.cfg.Autoplay {
+		h.autoplay(tx, pm)
+	}
 	return tx, nil
+}
+
+// autoplay joue l'acte de paiement à la place du porteur : transition
+// du domaine puis notification, exactement ce que produirait un appel
+// de simulation.
+//
+// L'issue vient des valeurs magiques, jamais d'un choix propre à ce
+// mode : un moyen enregistré passe par decideReplayOutcome (révocation,
+// expiration, PAN de refus, montant magique), un paiement sans carte
+// n'a que le montant à consulter. Ce mode automatise qui joue, pas ce
+// qui sort — sans quoi il neutraliserait les quatre leviers de
+// docs/testing-cards.md dès son activation.
+//
+// Aucune erreur n'est remontée à l'appelant : le paiement est créé, et
+// c'est le seul engagement pris par Create. Un échec ici laisse une
+// trace dans les logs et le paiement en `initiated`, état qu'un appel
+// de simulation explicite peut encore rattraper.
+func (h *Handler) autoplay(tx *Transaction, pm *PaymentMethod) {
+	outcome, reason := OutcomePaid, ""
+	if pm != nil {
+		outcome, reason = decideReplayOutcome(pm, tx.Amount, h.clock().Now())
+	} else if magic := chaos.MagicOutcome(tx.Amount); magic != "" {
+		outcome, reason = magic, "montant magique"
+	}
+
+	if err := applyOutcome(tx, outcome, reason); err != nil {
+		h.logger.Warn("autoplay_transition_failed",
+			"uuid", tx.UUID, "outcome", outcome, "err", err)
+		return
+	}
+	tx.UpdatedAt = h.clock().Now()
+	if err := h.store.Save(tx); err != nil {
+		h.logger.Warn("autoplay_save_failed", "uuid", tx.UUID, "err", err)
+		return
+	}
+
+	h.cfg.Publisher.Publish(bus.Event{
+		Type: "payment_state_changed",
+		At:   tx.UpdatedAt,
+		Data: map[string]any{
+			"uuid":    tx.UUID,
+			"orderId": tx.OrderID,
+			"state":   string(tx.Payment.State()),
+			"outcome": outcome,
+		},
+	})
+
+	if target := h.callbackTarget(tx.NotificationURL, tx.UUID, "autoplay"); target != "" && h.cfg.HMACKey != "" {
+		if err := h.emitAutoplayWebhook(tx, pm, outcome, reason, target); err != nil {
+			h.logger.Warn("autoplay_webhook_emit_failed", "uuid", tx.UUID, "err", err)
+		}
+	}
+}
+
+// emitAutoplayWebhook diffère d'emitReplayWebhook sur un seul point :
+// le moyen de paiement peut être absent, un paiement sans carte n'ayant
+// pas de marque à annoncer.
+func (h *Handler) emitAutoplayWebhook(tx *Transaction, pm *PaymentMethod, outcome, reason, targetURL string) error {
+	opts := BrowserReturnOpts{Outcome: outcome, ErrorMessage: reason}
+	if pm != nil {
+		opts.CardBrand = pm.Brand
+	}
+	answer := buildKrAnswer(tx, pm, opts, "", "TEST")
+
+	deliveryID, err := newUUID()
+	if err != nil {
+		return fmt.Errorf("delivery uuid: %w", err)
+	}
+	wh, _, err := buildDeliveryWebhook(deliveryID, targetURL,
+		answer, h.cfg.HMACKey, "V4/Payment", false, 0)
+	if err != nil {
+		return err
+	}
+	return h.queue.Enqueue(wh)
 }
 
 // createNominal est la création classique — Transaction en state
@@ -291,20 +379,23 @@ func (h *Handler) createNominal(in CreateInput) (*Transaction, error) {
 // enrollCard génère un paymentMethodToken opaque à partir d'une Card,
 // stocke le PaymentMethod correspondant et l'attache à la Transaction.
 // Appelé après createNominal quand formAction demande l'enregistrement.
-func (h *Handler) enrollCard(tx *Transaction, card *Card) error {
+// Retourne le moyen enrôlé : l'autoplay en a besoin pour décider de
+// l'issue (carte expirée, PAN de refus) et pour décrire la carte dans
+// le webhook.
+func (h *Handler) enrollCard(tx *Transaction, card *Card) (*PaymentMethod, error) {
 	token, err := newFormToken()
 	if err != nil {
-		return fmt.Errorf("generation payment method token: %w", err)
+		return nil, fmt.Errorf("generation payment method token: %w", err)
 	}
 	pm := NewPaymentMethod(token, *card, h.clock().Now())
 	if err := h.store.SaveMethod(pm); err != nil {
-		return fmt.Errorf("store SaveMethod: %w", err)
+		return nil, fmt.Errorf("store SaveMethod: %w", err)
 	}
 	tx.PaymentMethodToken = pm.Token
 	if err := h.store.Save(tx); err != nil {
-		return fmt.Errorf("store re-Save tx apres enrollment: %w", err)
+		return nil, fmt.Errorf("store re-Save tx apres enrollment: %w", err)
 	}
-	return nil
+	return pm, nil
 }
 
 // createFromToken exécute un rejeu one-click. Charge le moyen de

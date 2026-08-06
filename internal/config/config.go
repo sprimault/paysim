@@ -70,6 +70,27 @@ type Config struct {
 	// contrat de conteneur du CLAUDE.md).
 	HTTPAddr string
 
+	// Autoplay fait jouer automatiquement l'acte de paiement à la
+	// création, sans attendre un appel de simulation. Lu depuis
+	// PAYSIM_AUTOPLAY. Faux par défaut.
+	//
+	// En production, c'est le porteur qui s'authentifie sur le
+	// formulaire puis le PSP qui notifie ; rien ne se passe tant que
+	// personne n'a payé. Un test de bout en bout n'a personne pour
+	// jouer ce rôle, et le seul recours était d'appeler l'API de
+	// simulation depuis le code marchand — ce qui fait entrer la
+	// mécanique du simulateur dans le métier et valide un
+	// enchaînement qui n'existera jamais en vrai.
+	//
+	// Activé, l'issue reste dictée par les valeurs magiques : montant
+	// se terminant par 01, PAN de refus, carte expirée. Aucun levier de
+	// docs/testing-cards.md ne change de comportement.
+	//
+	// Renonce en revanche aux issues qui supposent un porteur qui
+	// n'aboutit pas — ABANDONED et EXPIRED exigent un appel de
+	// simulation explicite, donc ce mode désactivé.
+	Autoplay bool
+
 	// ChaosLatencyMs est le délai (en millisecondes) ajouté par le
 	// middleware chaos à chaque requête sur /api-payment/V4/*. Zéro =
 	// pas de latence injectée. Invariant 5 : le chaos n'est jamais
@@ -195,6 +216,14 @@ func loadFrom(
 			return nil, err
 		}
 		cfg.LogLevel = lvl
+	}
+
+	if raw, ok := lookup("PAYSIM_AUTOPLAY"); ok && raw != "" {
+		v, err := strconv.ParseBool(raw)
+		if err != nil {
+			return nil, fmt.Errorf("configuration: PAYSIM_AUTOPLAY invalide (%q), attendu un booleen", raw)
+		}
+		cfg.Autoplay = v
 	}
 
 	cfg.StoreBackend = StoreBackendMemory

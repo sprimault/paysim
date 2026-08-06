@@ -382,3 +382,44 @@ func TestLoadLogLevel(t *testing.T) {
 		}
 	})
 }
+
+func TestLoadAutoplay(t *testing.T) {
+	t.Parallel()
+
+	t.Run("desactive par defaut", func(t *testing.T) {
+		t.Parallel()
+		cfg, err := loadFrom(minEnv().lookup, mockFS{}.read)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Autoplay {
+			t.Error("Autoplay doit etre faux par defaut : jouer les paiements tout seul n'est pas le comportement d'un PSP")
+		}
+	})
+
+	t.Run("active", func(t *testing.T) {
+		t.Parallel()
+		env := minEnv()
+		env["PAYSIM_AUTOPLAY"] = "true"
+		cfg, err := loadFrom(env.lookup, mockFS{}.read)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !cfg.Autoplay {
+			t.Error("Autoplay = false, veut true")
+		}
+	})
+
+	t.Run("valeur invalide rejetee", func(t *testing.T) {
+		t.Parallel()
+		env := minEnv()
+		env["PAYSIM_AUTOPLAY"] = "oui"
+		_, err := loadFrom(env.lookup, mockFS{}.read)
+		if err == nil {
+			t.Fatal("une valeur non booleenne doit etre refusee au demarrage, pas ignoree en silence")
+		}
+		if !strings.Contains(err.Error(), "PAYSIM_AUTOPLAY") {
+			t.Errorf("l erreur doit nommer la variable en cause : %v", err)
+		}
+	})
+}

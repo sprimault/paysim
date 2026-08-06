@@ -37,8 +37,40 @@ mounts.
 | `PAYSIM_LOG_LEVEL` | Log level (`debug`, `info`, `warn`, `error`). Default `info`. |
 | `PAYSIM_STORE` | Storage backend: `memory` (default, stateless) or `sqlite`. |
 | `PAYSIM_SQLITE_PATH` | Path to the SQLite file when `PAYSIM_STORE=sqlite`. Default `/data/paysim.db`. Requires a writable volume. |
+| `PAYSIM_AUTOPLAY` | Play every payment as soon as it is created, without waiting for a simulation call. Default `false`. See below. |
 | `PAYSIM_CHAOS_LATENCY_MS` | Injected latency on every REST V4 request. `0` disables. |
 | `PAYSIM_CHAOS_ERROR_RATE` | Percentage of REST V4 requests returning a 500. `0-100`. |
+
+## `PAYSIM_AUTOPLAY` — end-to-end tests without a cardholder
+
+In production, nothing happens after `CreatePayment` until the
+cardholder authenticates on the form and the PSP notifies the outcome.
+Paysim reproduces that faithfully: a fresh payment stays `initiated`
+until something plays it, which is what a simulation call does.
+
+An automated end-to-end test has nobody to play that part. The tempting
+workaround — calling the simulation API from the merchant's own code —
+is a bad trade: it pulls simulator mechanics into business code and
+validates a sequence that will never exist in production, so it proves
+nothing and becomes dead code the day you switch to the real PSP.
+
+`PAYSIM_AUTOPLAY=true` plays the act server-side instead. No client
+drives anything, the REST contract stays untouched, and a payment is
+captured — or declined — the moment it is created, notification
+included.
+
+**The outcome still comes from the magic values.** A magic amount, a
+decline PAN or an expired card decide exactly as they do otherwise: this
+mode automates *who plays*, not *what comes out*. Every lever in
+[testing-cards.md](testing-cards.md) keeps working unchanged.
+
+**What it gives up**: `ABANDONED` and `EXPIRED` assume a cardholder who
+never finishes. With autoplay on, no payment is ever left hanging, so
+those outcomes require an explicit simulation call — and therefore this
+mode off. That is why it is opt-in, and why it has no business being
+enabled outside a test environment.
+
+The server logs a `WARN` at startup when it is active.
 
 ## The two-URL matrix
 

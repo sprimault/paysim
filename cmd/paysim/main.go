@@ -163,7 +163,12 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		Chaos:              chaosInj,
 		Publisher:          eventBus,
 		DefaultCallbackURL: cfg.CallbackURL.String(),
+		Autoplay:           cfg.Autoplay,
 	})
+	if cfg.Autoplay {
+		logger.Warn("autoplay_actif",
+			"detail", "chaque paiement cree est joue immediatement, sans appel de simulation")
+	}
 	apiHandler := api.NewHandler(api.Deps{
 		Store:             payzenStore,
 		PaymentRepo:       paymentRepo,
