@@ -1369,6 +1369,68 @@ func TestPaymentMethods_listeEtDetailConcordent(t *testing.T) {
 	}
 }
 
+// TestPaymentMethods_verdictExploitabilite : une carte que tout debit
+// refusera ne doit pas etre indistinguable d'une carte valide dans la
+// collection. Le verdict est derive a la lecture, donc il couvre les
+// trois causes sans qu'aucune ne soit persistee.
+func TestPaymentMethods_verdictExploitabilite(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		nom        string
+		card       payzen.Card
+		wantUsable bool
+		wantReason string
+	}{
+		{"carte valide", payzen.Card{
+			PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030,
+		}, true, ""},
+		{"PAN de refus", payzen.Card{
+			PAN: "4000000000000002", ExpiryMonth: 12, ExpiryYear: 2030,
+		}, false, "carte de test refusee"},
+		{"carte expiree", payzen.Card{
+			PAN: "4111111111111111", ExpiryMonth: 1, ExpiryYear: 2020,
+		}, false, "moyen de paiement expire"},
+	}
+	for _, c := range cases {
+		t.Run(c.nom, func(t *testing.T) {
+			t.Parallel()
+			server := setupWithSQLite(t)
+			body, _ := json.Marshal(CreatePaymentInput{
+				Provider: "payzen", Amount: 1000, Currency: "EUR",
+				OrderID: "O", Card: &c.card,
+			})
+			resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
+				"application/json", bytes.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+
+			listResp, err := http.Get(server.URL + "/paysim/api/v1/payment-methods")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = listResp.Body.Close() }()
+			var list []PaymentMethodOutput
+			_ = json.NewDecoder(listResp.Body).Decode(&list)
+			if len(list) != 1 {
+				t.Fatalf("liste = %d entrees, veut 1", len(list))
+			}
+			if list[0].Usable != c.wantUsable {
+				t.Errorf("Usable = %v, veut %v", list[0].Usable, c.wantUsable)
+			}
+			if list[0].UnusableReason != c.wantReason {
+				t.Errorf("UnusableReason = %q, veut %q", list[0].UnusableReason, c.wantReason)
+			}
+			// Le moyen reste enregistre quoi qu'il arrive : c'est ce qui
+			// permet de rejouer un impaye sur une carte de refus.
+			if list[0].Token == "" {
+				t.Error("le moyen doit rester enregistre meme inexploitable")
+			}
+		})
+	}
+}
+
 func TestListPaymentMethods_afterRevoke(t *testing.T) {
 	t.Parallel()
 	server := setupWithSQLite(t)
@@ -1495,5 +1557,44 @@ func TestGetPaymentMethod_inMemoryMode(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("status = %d, veut 404 (mode memoire sans repo)", resp.StatusCode)
+	}
+}
+
+// TestCreatePayment_refusNeRendPasDeToken : annoncer un alias dans la
+// meme reponse qu'un refus laisse croire a un moyen debitable. Le moyen
+// reste enregistre — la collection l'expose avec son verdict — mais la
+// reponse de creation n'en fait pas etat.
+func TestCreatePayment_refusNeRendPasDeToken(t *testing.T) {
+	t.Parallel()
+	server := setupWithSQLite(t)
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "REFUS",
+		Card: &payzen.Card{PAN: "4000000000000002", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+
+	// Sans autoplay le paiement reste initiated : le token est alors
+	// legitime, rien n'a encore ete refuse.
+	if out.State == "declined" && out.PaymentMethodToken != "" {
+		t.Errorf("un paiement refuse ne doit pas rendre de token, obtenu %q", out.PaymentMethodToken)
+	}
+	// Le moyen est bien enregistre malgre tout.
+	listResp, err := http.Get(server.URL + "/paysim/api/v1/payment-methods")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = listResp.Body.Close() }()
+	var list []PaymentMethodOutput
+	_ = json.NewDecoder(listResp.Body).Decode(&list)
+	if len(list) != 1 || list[0].Usable {
+		t.Errorf("le moyen doit exister et etre marque inexploitable : %+v", list)
 	}
 }

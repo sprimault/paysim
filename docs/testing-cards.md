@@ -100,7 +100,8 @@ curl -X POST http://paysim:8080/paysim/api/v1/payments \
   }'
 # → {"uuid":"...","paymentMethodToken":"..."}
 
-# First payment: simulate normally (captures successfully)
+# First payment: declines too — the magic PAN is checked at simulate,
+# not only on recurring charges
 curl -X POST http://paysim:8080/paysim/api/v1/payments/UUID/simulate \
   -d '{"outcome":"PAID"}'
 
@@ -168,6 +169,30 @@ The generic API is meant for scenarios, UI, and integration scripts
 that speak "Paysim" directly.
 
 Details in [subscriptions.md](subscriptions.md#cross-provider).
+
+## Telling an unusable payment method apart
+
+A card that every charge will decline stays **registered**: that is what
+lets you replay a dunning scenario on it. But it must not look like a
+valid card, so `GET /paysim/api/v1/payment-methods` reports a verdict on
+every entry:
+
+```json
+{ "token": "609114…", "panMasked": "400000XXXXXX0002", "revoked": false,
+  "usable": false, "unusableReason": "carte de test refusee" }
+```
+
+`usable` covers the three causes at once — revoked, expired, decline
+PAN — and `unusableReason` names the one that applies.
+
+Both fields are **derived at read time, never stored**: all three causes
+follow from data already held, and a frozen flag would turn wrong the
+first time the month rolls over on an expiring card.
+
+Note that a declined payment does not return a `paymentMethodToken` in
+its creation response, even though the method is registered. Announcing
+an alias alongside a decline would suggest it can be charged. Read the
+collection to get it.
 
 ## Security reminder
 
