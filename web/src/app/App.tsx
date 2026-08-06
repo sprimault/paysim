@@ -4,8 +4,10 @@
 import { Outlet } from 'react-router';
 import { Header } from '@/widgets/header/Header';
 import { ToastContainer } from '@/shared/ui/Toast';
+import { ShortcutsHelp } from '@/shared/ui/ShortcutsHelp';
 import { UpdateBanner } from '@/shared/ui/UpdateBanner';
 import { usePaysimEvents } from '@/shared/hooks/usePaysimEvents';
+import { useAppShortcuts } from '@/app/useAppShortcuts';
 
 /**
  * Layout root de l'application. Enveloppe toutes les routes via
@@ -19,12 +21,14 @@ import { usePaysimEvents } from '@/shared/hooks/usePaysimEvents';
  */
 export function App() {
   const { connected } = usePaysimEvents();
+  const { helpOpen, closeHelp } = useAppShortcuts();
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <Header connected={connected} />
       <Outlet />
       <ToastContainer />
       <UpdateBanner />
+      <ShortcutsHelp open={helpOpen} onClose={closeHelp} />
     </div>
   );
 }
