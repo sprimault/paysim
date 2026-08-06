@@ -67,6 +67,26 @@ emitted on the default fallback).
 | POST   | `/{id}/trigger-billing`           | Fire the next installment now           |
 | POST   | `/{id}/cancel`                    | Cancel (idempotent, 204 on unknown id)  |
 
+## Billing notification
+
+Every `trigger-billing` emits a webhook, whether it succeeds or fails.
+That is the only way a merchant learns an installment has been charged:
+an installment is fired by a scheduler, never by someone waiting on the
+HTTP response.
+
+A subscription carries no notification URL of its own, so the target is
+**`PAYSIM_CALLBACK_URL`**. Without that variable no notification is
+emitted, and dunning becomes untestable end to end. A `WARN` log
+(`fallback_callback_url`) records the target that was used, so an
+unexpected delivery stays explainable.
+
+The webhook carries the business result in its `outcome`: `PAID` on a
+successful installment, `UNPAID` on a decline. A failed delivery does not
+undo the installment itself, which did happen.
+
+One-click replay (`charge_token`) follows the same rule: `notificationUrl`
+when the request supplies one, `PAYSIM_CALLBACK_URL` otherwise.
+
 ## Decline conditions on `trigger-billing`
 
 Same rules as `charge_token` — the same `decideReplayOutcome` helper

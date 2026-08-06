@@ -371,12 +371,13 @@ func (h *Handler) createFromToken(in CreateInput) (*Transaction, error) {
 		},
 	})
 
-	// Webhook : émis si NotificationURL fournie ET HMACKey configuré.
-	// L'absence de l'un ou de l'autre est légitime (test local sans
-	// notification, ou callback URL laissée à la charge du simulate) ;
-	// on ne veut pas faire échouer un rejeu pour ça.
-	if in.NotificationURL != "" && h.cfg.HMACKey != "" {
-		if err := h.emitReplayWebhook(tx, pm, outcome, reason); err != nil {
+	// Webhook : URL de la requête, ou repli sur PAYSIM_CALLBACK_URL. Un
+	// rejeu récurrent est déclenché sans intervention humaine — exiger
+	// une notificationUrl explicite revenait à n'émettre jamais rien
+	// pour l'appelant qui compte sur la configuration globale.
+	// L'échec de livraison ne fait pas échouer le rejeu lui-même.
+	if target := h.callbackTarget(in.NotificationURL, tx.UUID, "replay"); target != "" && h.cfg.HMACKey != "" {
+		if err := h.emitReplayWebhook(tx, pm, outcome, reason, target); err != nil {
 			h.logger.Warn("replay_webhook_emit_failed",
 				"uuid", tx.UUID, "err", err)
 		}
@@ -389,7 +390,7 @@ func (h *Handler) createFromToken(in CreateInput) (*Transaction, error) {
 // un rejeu one-click. Duplique volontairement une partie de la logique
 // de simulate — les deux flows partageront un helper commun quand un
 // troisième cas apparaîtra (règle de trois).
-func (h *Handler) emitReplayWebhook(tx *Transaction, pm *PaymentMethod, outcome, reason string) error {
+func (h *Handler) emitReplayWebhook(tx *Transaction, pm *PaymentMethod, outcome, reason, targetURL string) error {
 	opts := BrowserReturnOpts{
 		Outcome:      outcome,
 		CardBrand:    pm.Brand,
@@ -401,12 +402,37 @@ func (h *Handler) emitReplayWebhook(tx *Transaction, pm *PaymentMethod, outcome,
 	if err != nil {
 		return fmt.Errorf("delivery uuid: %w", err)
 	}
-	wh, _, err := buildDeliveryWebhook(deliveryID, tx.NotificationURL,
+	wh, _, err := buildDeliveryWebhook(deliveryID, targetURL,
 		answer, h.cfg.HMACKey, "V4/Payment", false, 0)
 	if err != nil {
 		return err
 	}
 	return h.queue.Enqueue(wh)
+}
+
+// callbackTarget résout l'URL de notification pour un webhook émis hors
+// du chemin simulate — rejeu one-click et échéance d'abonnement.
+//
+// Ces deux chemins sont déclenchés par une machine, pas par un humain :
+// un cron qui rejoue une carte n'a personne pour lui fournir une URL au
+// coup par coup. C'est précisément là que la notification compte, car
+// elle est le seul moyen pour le marchand d'apprendre que l'échéance est
+// passée. Se replier sur PAYSIM_CALLBACK_URL n'est donc pas « émettre à
+// l'aveugle » : c'est l'URL que l'opérateur a configurée pour ça, l'exact
+// équivalent du back-office d'un vrai PSP.
+//
+// Le warn trace où part le webhook, pour qu'une livraison inattendue
+// reste explicable.
+func (h *Handler) callbackTarget(explicit, uuid, origin string) string {
+	if explicit != "" {
+		return explicit
+	}
+	if h.cfg.DefaultCallbackURL != "" {
+		h.logger.Warn("fallback_callback_url",
+			"origin", origin, "uuid", uuid, "url", h.cfg.DefaultCallbackURL)
+		return h.cfg.DefaultCallbackURL
+	}
+	return ""
 }
 
 // evaluateMethodOutcome inspecte les trois conditions bloquantes d'un
@@ -675,11 +701,23 @@ func (h *Handler) TriggerBilling(subID string) (*Transaction, error) {
 			"amount":         sub.Amount,
 		},
 	})
-	// Webhook : émis si le PSP réel enverrait un IPN et qu'on a l'URL.
-	// Pour l'instant on n'a pas de NotificationURL au niveau
-	// Subscription — on ne peut donc émettre que si un jour on l'ajoute
-	// à Subscription. Éviter d'émettre à l'aveugle vers un endpoint
-	// inconnu.
+	// Webhook d'échéance. Une Subscription ne porte pas de
+	// NotificationURL propre, on se replie donc sur la configuration
+	// globale — et c'est le bon comportement : un renouvellement est
+	// déclenché par un ordonnanceur, jamais par quelqu'un qui pourrait
+	// fournir une URL. Sans cette notification, un marchand n'a aucun
+	// moyen d'apprendre qu'une échéance est passée ou a échoué, ce qui
+	// rend intestable toute reprise d'impayé.
+	//
+	// Comme pour le rejeu, un échec de livraison ne remet pas en cause
+	// l'échéance elle-même : elle a eu lieu.
+	if target := h.callbackTarget("", tx.UUID, "subscription_billing"); target != "" && h.cfg.HMACKey != "" {
+		if err := h.emitReplayWebhook(tx, pm, outcome, reason, target); err != nil {
+			h.logger.Warn("billing_webhook_emit_failed",
+				"subscriptionId", subID, "uuid", tx.UUID, "err", err)
+		}
+	}
+
 	return tx, nil
 }
 
