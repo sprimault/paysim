@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -115,6 +116,96 @@ func TestHandlerServesAssets(t *testing.T) {
 	}
 }
 
+// Les assets doivent être référencés en absolu dans le HTML servi.
+// Vite les écrit en relatif (base: './'), et un chemin relatif se
+// résout contre l'URL courante : depuis une route à deux segments, le
+// navigateur demandait /payments/assets/index-XXX.js et recevait 404,
+// donc aucun script, donc une page blanche. Le test précédent ne le
+// voyait pas parce qu'il normalisait lui-même ./assets/ en /assets/ —
+// il réparait ce que le navigateur ne répare pas.
+func TestHandlerAssetsAreAbsolute(t *testing.T) {
+	t.Parallel()
+	for _, route := range []string{"/", "/subscriptions", "/payments/abc-123"} {
+		t.Run(route, func(t *testing.T) {
+			t.Parallel()
+			h, err := Handler("")
+			if err != nil {
+				t.Fatal(err)
+			}
+			srv := httptest.NewServer(h)
+			defer srv.Close()
+
+			resp, err := http.Get(srv.URL + route)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+
+			if strings.Contains(string(body), `"./`) {
+				t.Errorf("référence relative résiduelle dans le HTML servi sur %s", route)
+			}
+
+			// L'asset est suivi tel qu'il apparaît, résolu comme le ferait
+			// le navigateur depuis la route demandée.
+			asset := extractFirstAssetRaw(string(body))
+			if asset == "" {
+				t.Fatal("aucun asset référencé dans index.html")
+			}
+			ref, err := url.Parse(srv.URL + route)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cible, err := ref.Parse(asset)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			resp2, err := http.Get(cible.String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = resp2.Body.Close() }()
+			if resp2.StatusCode != http.StatusOK {
+				t.Errorf("%s depuis %s : status = %d, veut 200", asset, route, resp2.StatusCode)
+			}
+		})
+	}
+}
+
+// Sous un sous-chemin d'ingress, les assets absolus doivent porter le
+// préfixe : sans lui, on remplacerait une page blanche par une autre.
+func TestHandlerAssetsAbsoluteUnderBasePath(t *testing.T) {
+	t.Parallel()
+	h, err := Handler("/paysim")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/paysim/payments/abc-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(resp.Body)
+
+	asset := extractFirstAssetRaw(string(body))
+	if !strings.HasPrefix(asset, "/paysim/") {
+		t.Errorf("asset = %q, veut un chemin prefixe de /paysim/", asset)
+	}
+
+	resp2, err := http.Get(srv.URL + asset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp2.Body.Close() }()
+	if resp2.StatusCode != http.StatusOK {
+		t.Errorf("%s : status = %d, veut 200", asset, resp2.StatusCode)
+	}
+}
+
 func TestHandlerNoStoreCacheHeaderOnIndex(t *testing.T) {
 	t.Parallel()
 	h, _ := Handler("")
@@ -146,6 +237,33 @@ func extractFirstAsset(html string) string {
 			continue
 		}
 		return "/assets/" + html[start:start+end]
+	}
+	return ""
+}
+
+// extractFirstAssetRaw retourne le premier chemin d'asset tel qu'il est
+// écrit dans le HTML, sans normalisation. C'est la différence avec
+// extractFirstAsset, et c'est ce qui permet de vérifier ce que le
+// navigateur va réellement demander.
+func extractFirstAssetRaw(html string) string {
+	for _, needle := range []string{`src="`, `href="`} {
+		reste := html
+		for {
+			i := strings.Index(reste, needle)
+			if i < 0 {
+				break
+			}
+			start := i + len(needle)
+			end := strings.Index(reste[start:], `"`)
+			if end < 0 {
+				break
+			}
+			valeur := reste[start : start+end]
+			if strings.Contains(valeur, "assets/") {
+				return valeur
+			}
+			reste = reste[start+end:]
+		}
 	}
 	return ""
 }
