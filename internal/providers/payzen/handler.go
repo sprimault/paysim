@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/sprimault/paysim/internal/bus"
@@ -944,7 +945,12 @@ func (h *Handler) simulate(
 		return "", "", errors.New("formToken manquant")
 	}
 	if _, ok := outcomeSpecs[opts.Outcome]; !ok {
-		return "", "", fmt.Errorf("outcome %q inconnu", opts.Outcome)
+		// Lister les valeurs acceptées : sans ça, un intégrateur qui
+		// envoie CAPTURED ou AUTHORIZED (avec un Z) n'a aucun moyen de
+		// deviner ce qu'on attend, et le diagnostic passe par la lecture
+		// du code du simulateur.
+		return "", "", fmt.Errorf("outcome %q inconnu, attendu l'un de : %s",
+			opts.Outcome, strings.Join(knownOutcomes(), ", "))
 	}
 	tx, err := h.store.ByToken(formToken)
 	if err != nil {
