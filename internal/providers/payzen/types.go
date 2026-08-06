@@ -408,6 +408,7 @@ type KrTransactionDetails struct {
 type KrCardDetails struct {
 	PAN             string `json:"pan"`
 	Brand           string `json:"brand"`
+	HolderName      string `json:"holderName,omitempty"`
 	ProductCategory string `json:"productCategory,omitempty"`
 	ExpiryMonth     int    `json:"expiryMonth"`
 	ExpiryYear      int    `json:"expiryYear"`

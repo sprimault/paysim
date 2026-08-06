@@ -116,11 +116,21 @@ type Customer struct {
 //
 // AVERTISSEMENT : les PAN sont stockés en clair côté serveur — ne
 // jamais utiliser une CB réelle. Voir docs/testing-cards.md.
+// HolderName, Country, ProductCategory et IssuerName sont facultatifs
+// et alimentent le bloc cardDetails du kr-answer. Ce sont eux qui
+// rendent scriptables la carte étrangère, la carte de débit et le
+// routage par émetteur — sans eux, le webhook annonçait toujours une
+// carte de crédit française.
 type Card struct {
 	PAN         string `json:"pan"                yaml:"pan"`
 	ExpiryMonth int    `json:"expiryMonth"        yaml:"expiry_month"`
 	ExpiryYear  int    `json:"expiryYear"         yaml:"expiry_year"`
 	Brand       string `json:"brand,omitempty"    yaml:"brand,omitempty"`
+
+	HolderName      string `json:"holderName,omitempty"      yaml:"holder_name,omitempty"`
+	Country         string `json:"country,omitempty"         yaml:"country,omitempty"`
+	ProductCategory string `json:"productCategory,omitempty" yaml:"product_category,omitempty"`
+	IssuerName      string `json:"issuerName,omitempty"      yaml:"issuer_name,omitempty"`
 }
 
 // ChargeToken déclenche un rejeu one-click d'un paiement à partir d'un

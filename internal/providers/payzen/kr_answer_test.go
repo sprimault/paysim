@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sprimault/paysim/internal/domain"
 	"github.com/sprimault/paysim/internal/format"
@@ -86,7 +87,7 @@ func TestBuildKrAnswerPAID(t *testing.T) {
 	_ = applyOutcome(tx, OutcomePaid, "")
 
 	opts := BrowserReturnOpts{Outcome: OutcomePaid}
-	answer := buildKrAnswer(tx, opts, "http://paysim", "TEST")
+	answer := buildKrAnswer(tx, nil, opts,"http://paysim", "TEST")
 
 	if answer.OrderStatus != "PAID" {
 		t.Errorf("OrderStatus = %q", answer.OrderStatus)
@@ -131,7 +132,7 @@ func TestBuildKrAnswerAuthorised(t *testing.T) {
 	_ = applyOutcome(tx, OutcomeAuthorised, "")
 
 	opts := BrowserReturnOpts{Outcome: OutcomeAuthorised}
-	answer := buildKrAnswer(tx, opts, "", "TEST")
+	answer := buildKrAnswer(tx, nil, opts,"", "TEST")
 
 	if answer.OrderCycle != "OPEN" {
 		t.Errorf("OrderCycle AUTHORISED = %q, veut OPEN", answer.OrderCycle)
@@ -154,7 +155,7 @@ func TestBuildKrAnswerUnpaidCarriesError(t *testing.T) {
 		ErrorCode:    "PSP_010",
 		ErrorMessage: "carte refusée",
 	}
-	answer := buildKrAnswer(tx, opts, "", "TEST")
+	answer := buildKrAnswer(tx, nil, opts,"", "TEST")
 
 	tr := answer.Transactions[0]
 	if tr.Status != "UNPAID" || tr.DetailedStatus != "REFUSED" {
@@ -174,7 +175,7 @@ func TestBuildKrAnswerWithWallet(t *testing.T) {
 		Outcome: OutcomePaid,
 		Wallet:  "APPLE_PAY",
 	}
-	answer := buildKrAnswer(tx, opts, "", "TEST")
+	answer := buildKrAnswer(tx, nil, opts,"", "TEST")
 	if answer.Transactions[0].TransactionDetails.Wallet != "APPLE_PAY" {
 		t.Errorf("Wallet = %q", answer.Transactions[0].TransactionDetails.Wallet)
 	}
@@ -186,7 +187,7 @@ func TestBuildKrAnswerNonCardsMethodOmitsCardDetails(t *testing.T) {
 	_ = applyOutcome(tx, OutcomePaid, "")
 
 	opts := BrowserReturnOpts{Outcome: OutcomePaid, PaymentMethodType: "IP_WIRE"}
-	answer := buildKrAnswer(tx, opts, "", "TEST")
+	answer := buildKrAnswer(tx, nil, opts,"", "TEST")
 
 	if answer.Transactions[0].TransactionDetails.CardDetails != nil {
 		t.Error("CardDetails devrait etre nil pour IP_WIRE")
@@ -199,7 +200,7 @@ func TestBuildDeliveryWebhookSignsCorrectly(t *testing.T) {
 	_ = applyOutcome(tx, OutcomePaid, "")
 
 	opts := BrowserReturnOpts{Outcome: OutcomePaid}
-	answer := buildKrAnswer(tx, opts, "", "TEST")
+	answer := buildKrAnswer(tx, nil, opts,"", "TEST")
 
 	const key = "clef-de-test-hmac"
 	wh, hash, err := buildDeliveryWebhook("delivery-1", "http://marchand", answer, key, "V4/Payment", false, 0)
@@ -257,5 +258,81 @@ func TestBuildDeliveryWebhookSignsCorrectly(t *testing.T) {
 	// Sanity check : le body encode contient "orderStatus" quelque part.
 	if !strings.Contains(string(wh.Body), "orderStatus") {
 		t.Error("body ne contient pas orderStatus")
+	}
+}
+
+func TestBuildKrAnswerCardDetailsFromPaymentMethod(t *testing.T) {
+	t.Parallel()
+	tx := makeTx(t, 1500)
+	_ = applyOutcome(tx, OutcomePaid, "")
+
+	pm := NewPaymentMethod("tok-pm", Card{
+		PAN:         "4000001234562646",
+		ExpiryMonth: 8,
+		ExpiryYear:  2029,
+		Brand:       "VISA",
+		HolderName:  "DUPONT JEAN",
+	}, time.Now().UTC())
+
+	answer := buildKrAnswer(tx, pm, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
+
+	cd := answer.Transactions[0].TransactionDetails.CardDetails
+	if cd == nil {
+		t.Fatal("CardDetails nil")
+	}
+	// Le point du correctif : ce qu'on annonce est ce qu'on stocke.
+	if cd.PAN != pm.PANMasked {
+		t.Errorf("PAN = %q, veut %q (celui du moyen enregistre)", cd.PAN, pm.PANMasked)
+	}
+	if cd.ExpiryMonth != 8 || cd.ExpiryYear != 2029 {
+		t.Errorf("expiration = %d/%d, veut 8/2029", cd.ExpiryMonth, cd.ExpiryYear)
+	}
+	if cd.HolderName != "DUPONT JEAN" {
+		t.Errorf("HolderName = %q, veut DUPONT JEAN", cd.HolderName)
+	}
+	if cd.Brand != "VISA" || cd.EffectiveBrand != "VISA" {
+		t.Errorf("Brand/EffectiveBrand = %q/%q", cd.Brand, cd.EffectiveBrand)
+	}
+}
+
+func TestBuildKrAnswerCardDetailsFallbackWithoutMethod(t *testing.T) {
+	t.Parallel()
+	tx := makeTx(t, 1500)
+	_ = applyOutcome(tx, OutcomePaid, "")
+
+	// Sans moyen enregistre, la carte de demonstration reste legitime :
+	// aucune carte n'a ete saisie, il n'y a rien de reel a decrire.
+	answer := buildKrAnswer(tx, nil, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
+
+	cd := answer.Transactions[0].TransactionDetails.CardDetails
+	if cd == nil {
+		t.Fatal("CardDetails nil")
+	}
+	if cd.PAN != newMaskedPAN("VISA") {
+		t.Errorf("PAN = %q, veut la fixture %q", cd.PAN, newMaskedPAN("VISA"))
+	}
+	if cd.HolderName != "" {
+		t.Errorf("HolderName = %q, veut vide sans carte enregistree", cd.HolderName)
+	}
+}
+
+func TestBuildKrAnswerBrandFromPaymentMethodOverridesDefault(t *testing.T) {
+	t.Parallel()
+	tx := makeTx(t, 1500)
+	_ = applyOutcome(tx, OutcomePaid, "")
+
+	// Brand absent des opts : c'est celui du moyen qui doit primer,
+	// pas le defaut VISA.
+	pm := NewPaymentMethod("tok-pm", Card{
+		PAN:         "5105105105105100",
+		ExpiryMonth: 1,
+		ExpiryYear:  2030,
+		Brand:       "MASTERCARD",
+	}, time.Now().UTC())
+
+	answer := buildKrAnswer(tx, pm, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
+
+	if got := answer.Transactions[0].TransactionDetails.CardDetails.Brand; got != "MASTERCARD" {
+		t.Errorf("Brand = %q, veut MASTERCARD", got)
 	}
 }

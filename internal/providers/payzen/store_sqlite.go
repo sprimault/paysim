@@ -332,6 +332,10 @@ func payzenMethodToRecord(m *PaymentMethod) *store.PaymentMethodRecord {
 		PANFull:          m.PANFull,
 		PANMasked:        m.PANMasked,
 		Brand:            m.Brand,
+		HolderName:       m.HolderName,
+		Country:          m.Country,
+		ProductCategory:  m.ProductCategory,
+		IssuerName:       m.IssuerName,
 		ExpiryMonth:      m.ExpiryMonth,
 		ExpiryYear:       m.ExpiryYear,
 		Revoked:          m.Revoked,
@@ -344,14 +348,18 @@ func payzenMethodToRecord(m *PaymentMethod) *store.PaymentMethodRecord {
 // recordToPayzenMethod désérialise.
 func recordToPayzenMethod(rec *store.PaymentMethodRecord) *PaymentMethod {
 	return &PaymentMethod{
-		Token:       rec.Token,
-		PANFull:     rec.PANFull,
-		PANMasked:   rec.PANMasked,
-		Brand:       rec.Brand,
-		ExpiryMonth: rec.ExpiryMonth,
-		ExpiryYear:  rec.ExpiryYear,
-		CreatedAt:   rec.CreatedAt,
-		Revoked:     rec.Revoked,
+		Token:           rec.Token,
+		PANFull:         rec.PANFull,
+		PANMasked:       rec.PANMasked,
+		Brand:           rec.Brand,
+		HolderName:      rec.HolderName,
+		Country:         rec.Country,
+		ProductCategory: rec.ProductCategory,
+		IssuerName:      rec.IssuerName,
+		ExpiryMonth:     rec.ExpiryMonth,
+		ExpiryYear:      rec.ExpiryYear,
+		CreatedAt:       rec.CreatedAt,
+		Revoked:         rec.Revoked,
 	}
 }
 

@@ -80,13 +80,19 @@ func applyOutcome(tx *Transaction, outcome, reason string) error {
 }
 
 // buildKrAnswer construit le KrAnswer à envoyer au marchand. Fonction
-// pure : reçoit un Transaction (avec Payment déjà transité) et les
-// options de la requête de simulation, retourne la structure JSON à
-// signer. Ne modifie rien, n'écrit pas.
+// pure : reçoit un Transaction (avec Payment déjà transité), le moyen
+// de paiement enregistré s'il en existe un, et les options de la
+// requête de simulation. Retourne la structure JSON à signer. Ne
+// modifie rien, n'écrit pas.
+//
+// pm porte la carte réellement enrôlée : quand il est non-nil, le bloc
+// cardDetails en est dérivé plutôt que fabriqué. Le laisser nil est le
+// cas légitime du paiement one-shot où aucune carte n'a été saisie —
+// on retombe alors sur une carte de démonstration.
 //
 // Défauts appliqués : paymentMethodType=CARDS, cardBrand=VISA,
 // threeDSStatus=SUCCESS, authenticationType déduit du status.
-func buildKrAnswer(tx *Transaction, opts BrowserReturnOpts, serverURL string, mode string) *KrAnswer {
+func buildKrAnswer(tx *Transaction, pm *PaymentMethod, opts BrowserReturnOpts, serverURL string, mode string) *KrAnswer {
 	spec := outcomeSpecs[opts.Outcome]
 	now := time.Now().UTC().Format(time.RFC3339)
 
@@ -108,14 +114,52 @@ func buildKrAnswer(tx *Transaction, opts BrowserReturnOpts, serverURL string, mo
 	// pas encore ici (extension non-breaking pour plus tard).
 	var cardDetails *KrCardDetails
 	if paymentMethodType == "CARDS" || paymentMethodType == "CB" {
+		// Sans carte enrôlée, on annonce une carte de démonstration :
+		// il n'y a rien de réel à décrire. Dès qu'il y en a une, tout
+		// vient d'elle — annoncer un PAN ou une expiration qui diverge
+		// de ce qu'on stocke ferait mentir le simulateur sur ses
+		// propres données, et casserait tout test marchand portant sur
+		// les quatre derniers chiffres ou sur la date de péremption.
+		pan := newMaskedPAN(cardBrand)
+		expiryMonth := 12
+		expiryYear := time.Now().UTC().Year() + 2
+		holderName := ""
+
+		// Ces trois-là restent des défauts, mais des défauts qu'une
+		// carte peut désormais contredire : sans ça, ni carte
+		// étrangère, ni carte de débit, ni routage par émetteur
+		// n'étaient simulables.
+		country := "FR"
+		productCategory := "CREDIT"
+		issuerName := "PAYSIM"
+
+		if pm != nil {
+			pan = pm.PANMasked
+			expiryMonth = pm.ExpiryMonth
+			expiryYear = pm.ExpiryYear
+			holderName = pm.HolderName
+			if pm.Brand != "" {
+				cardBrand = pm.Brand
+			}
+			if pm.Country != "" {
+				country = pm.Country
+			}
+			if pm.ProductCategory != "" {
+				productCategory = pm.ProductCategory
+			}
+			if pm.IssuerName != "" {
+				issuerName = pm.IssuerName
+			}
+		}
 		cardDetails = &KrCardDetails{
-			PAN:             newMaskedPAN(cardBrand),
+			PAN:             pan,
 			Brand:           cardBrand,
-			ProductCategory: "CREDIT",
-			ExpiryMonth:     12,
-			ExpiryYear:      time.Now().UTC().Year() + 2,
-			Country:         "FR",
-			IssuerName:      "PAYSIM",
+			HolderName:      holderName,
+			ProductCategory: productCategory,
+			ExpiryMonth:     expiryMonth,
+			ExpiryYear:      expiryYear,
+			Country:         country,
+			IssuerName:      issuerName,
 			EffectiveBrand:  cardBrand,
 			Type:            "V4/CardDetails",
 		}
