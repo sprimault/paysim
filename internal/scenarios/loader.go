@@ -106,6 +106,11 @@ type CreatePayment struct {
 // pour tester que le marchand recoit bien les infos qu'il a envoyees.
 type Customer struct {
 	Email string `yaml:"email,omitempty"`
+
+	// Reference est l'identifiant du client côté marchand, à la racine
+	// du bloc customer comme email. Permet de rapprocher un paiement
+	// d'un compte sans passer par la metadata.
+	Reference string `yaml:"reference,omitempty"`
 }
 
 // Card décrit un moyen de paiement fictif présenté à Paysim.

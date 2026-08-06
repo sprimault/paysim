@@ -61,10 +61,12 @@ type createPaymentReq struct {
 	PaymentMethodToken string            `json:"paymentMethodToken,omitempty"`
 }
 
-// customerReq est le miroir minimal de payzen.Customer côté request
-// scenario — seul email pour l'instant (voir loader.Customer).
+// customerReq est le miroir de payzen.Customer côté request scenario.
+// Les deux champs sont à la racine du bloc customer, comme dans le
+// contrat PayZen (voir loader.Customer).
 type customerReq struct {
-	Email string `json:"email,omitempty"`
+	Email     string `json:"email,omitempty"`
+	Reference string `json:"reference,omitempty"`
 }
 
 // CreatedPayment est la vue minimale d'un paiement fraîchement créé.
@@ -92,7 +94,10 @@ func (c *Client) CreatePayment(ctx context.Context, in *CreatePayment) (*Created
 		Card:            in.Card,
 	}
 	if in.Customer != nil {
-		body.Customer = &customerReq{Email: in.Customer.Email}
+		body.Customer = &customerReq{
+			Email:     in.Customer.Email,
+			Reference: in.Customer.Reference,
+		}
 	}
 	var out CreatedPayment
 	if err := c.do(ctx, http.MethodPost, "/paysim/api/v1/payments", body, &out); err != nil {

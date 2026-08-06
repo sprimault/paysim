@@ -68,7 +68,7 @@ Onze actions qui couvrent les trois patterns de paiement.
 
 | Action           | Rôle                                                                    |
 | ---------------- | ----------------------------------------------------------------------- |
-| `create_payment` | Crée un paiement. `card`, `form_action`, `customer.email`, `metadata`, `notification_url` optionnels. `amount: 0` valide quand `form_action: REGISTER` (enrôlement pur, aucun débit). |
+| `create_payment` | Crée un paiement. `card`, `form_action`, `customer.email`, `customer.reference`, `metadata`, `notification_url` optionnels. `amount: 0` valide quand `form_action: REGISTER` (enrôlement pur, aucun débit). |
 | `simulate`       | Fait avancer le paiement via l'endpoint de simulation navigateur.       |
 | `assert_state`   | Assert que le paiement courant est dans l'état demandé.                 |
 | `assert_webhook` | Compte les webhooks livrés depuis le début du scénario (`status`, `outcome`, `timeout` optionnels).|

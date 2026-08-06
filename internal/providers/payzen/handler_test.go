@@ -1422,3 +1422,49 @@ func TestAutoplayRespecteLesValeursMagiques(t *testing.T) {
 		})
 	}
 }
+
+// TestCustomerReferenceRemonteDansKrAnswer : reference identifie le
+// client cote marchand et permet de rapprocher un paiement d'un compte
+// sans passer par la metadata. Absente de la struct, elle etait ecartee
+// au decodage JSON sans erreur — le marchand l'envoyait et ne la
+// retrouvait jamais.
+func TestCustomerReferenceRemonteDansKrAnswer(t *testing.T) {
+	t.Parallel()
+	merchant, hits := newMerchantServer(t)
+	server, _, _ := newTestServerFull(t, HandlerConfig{
+		HMACKey: "k", DefaultCallbackURL: merchant.URL,
+	})
+
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+		CreatePaymentRequest{
+			OrderID: "o", Amount: 100, Currency: "EUR",
+			Customer: Customer{
+				Reference: "demo-org",
+				Email:     "compta@demo-org.fr",
+			},
+		}, "u", "p")
+	var ca CreatePaymentAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	if _, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
+		BrowserReturnRequest{FormToken: ca.FormToken, Outcome: OutcomePaid}, ""); status != http.StatusOK {
+		t.Fatalf("simulate status = %d", status)
+	}
+
+	select {
+	case got := <-hits:
+		var answer KrAnswer
+		if err := json.Unmarshal([]byte(got.Values.Get("kr-answer")), &answer); err != nil {
+			t.Fatalf("kr-answer illisible : %v", err)
+		}
+		if answer.Customer.Reference != "demo-org" {
+			t.Errorf("customer.reference = %q, veut demo-org", answer.Customer.Reference)
+		}
+		// L'email doit rester intact : reference s'ajoute, ne remplace pas.
+		if answer.Customer.Email != "compta@demo-org.fr" {
+			t.Errorf("customer.email = %q", answer.Customer.Email)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("aucune livraison au marchand")
+	}
+}

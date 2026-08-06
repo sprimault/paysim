@@ -81,7 +81,7 @@ réutilise via `paymentMethodToken` pour un paiement one-click
 | `amount`             | integer (centimes)  |  oui   | Dans la plus petite unité (centimes pour EUR).                   |
 | `currency`           | string (ISO 4217)   |  oui   | Trois lettres majuscules (`EUR`, `USD`, …).                      |
 | `formAction`         | string              |  non   | Voir valeurs autorisées ci-dessous.                              |
-| `customer`           | `Customer`          |  non   | Infos acheteur — email + billingDetails.                         |
+| `customer`           | `Customer`          |  non   | Infos acheteur — `email`, `reference`, `billingDetails`. `reference` est l'identifiant client côté marchand, restitué dans le `kr-answer`. |
 | `metadata`           | `map[string]string` |  non   | Metadata marchand libre, propagée dans le webhook.               |
 | `returnUrl`          | string              |  non   | Extension Paysim : cible de retour navigateur.                   |
 | `notificationUrl`    | string              |  non   | Extension Paysim : cible du webhook IPN.                         |
