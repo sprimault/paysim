@@ -3,6 +3,7 @@
 
 import { createBrowserRouter, Navigate } from 'react-router';
 import { App } from '@/app/App';
+import { RouteError } from '@/app/RouteError';
 import { PaymentDetail } from '@/features/payment-detail/ui/PaymentDetail';
 import { PaymentList } from '@/features/payment-list/ui/PaymentList';
 import { PaymentMethodDetail } from '@/features/payment-method-detail/ui/PaymentMethodDetail';
@@ -33,6 +34,10 @@ export const router = createBrowserRouter(
     {
       path: '/',
       element: <App />,
+      // Sans errorElement, une exception de rendu démonte tout l'arbre
+      // et laisse une page blanche. Placé sur la route racine, il couvre
+      // l'ensemble des vues enfants.
+      errorElement: <RouteError />,
       children: [
         { index: true, element: <PaymentList /> },
         { path: 'payments/:uuid', element: <PaymentDetail /> },
