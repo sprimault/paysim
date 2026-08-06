@@ -41,6 +41,10 @@ func (r *PaymentMethodsRepository) migrate(ctx context.Context) error {
 			pan_full TEXT NOT NULL,
 			pan_masked TEXT NOT NULL,
 			brand TEXT NOT NULL DEFAULT '',
+			holder_name TEXT NOT NULL DEFAULT '',
+			country TEXT NOT NULL DEFAULT '',
+			product_category TEXT NOT NULL DEFAULT '',
+			issuer_name TEXT NOT NULL DEFAULT '',
 			expiry_month INTEGER NOT NULL,
 			expiry_year INTEGER NOT NULL,
 			revoked INTEGER NOT NULL DEFAULT 0,
@@ -54,6 +58,18 @@ func (r *PaymentMethodsRepository) migrate(ctx context.Context) error {
 	for _, stmt := range stmts {
 		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("stmt %q: %w", firstLine(stmt), err)
+		}
+	}
+	// Bases créées avant l'ajout des attributs de carte : même approche
+	// que subscriptions.cancelled, on tente l'ALTER et on ignore le
+	// "duplicate column" qui signale que l'état est déjà atteint.
+	for _, col := range []string{"holder_name", "country", "product_category", "issuer_name"} {
+		stmt := fmt.Sprintf(
+			`ALTER TABLE payment_methods ADD COLUMN %s TEXT NOT NULL DEFAULT ''`, col)
+		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
+			if !isDuplicateColumnErr(err) {
+				return fmt.Errorf("add %s column: %w", col, err)
+			}
 		}
 	}
 	return nil
@@ -71,22 +87,28 @@ func (r *PaymentMethodsRepository) Save(rec *store.PaymentMethodRecord) error {
 	defer cancel()
 	const upsert = `
 		INSERT INTO payment_methods (
-			token, provider, pan_full, pan_masked, brand,
+			token, provider, pan_full, pan_masked, brand, holder_name,
+			country, product_category, issuer_name,
 			expiry_month, expiry_year, revoked,
 			metadata_json, provider_data_json, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(token) DO UPDATE SET
 			provider = excluded.provider,
 			pan_full = excluded.pan_full,
 			pan_masked = excluded.pan_masked,
 			brand = excluded.brand,
+			holder_name = excluded.holder_name,
+			country = excluded.country,
+			product_category = excluded.product_category,
+			issuer_name = excluded.issuer_name,
 			expiry_month = excluded.expiry_month,
 			expiry_year = excluded.expiry_year,
 			revoked = excluded.revoked,
 			metadata_json = excluded.metadata_json,
 			provider_data_json = excluded.provider_data_json`
 	_, err := r.db.ExecContext(ctx, upsert,
-		rec.Token, rec.Provider, rec.PANFull, rec.PANMasked, rec.Brand,
+		rec.Token, rec.Provider, rec.PANFull, rec.PANMasked, rec.Brand, rec.HolderName,
+		rec.Country, rec.ProductCategory, rec.IssuerName,
 		rec.ExpiryMonth, rec.ExpiryYear, boolToInt(rec.Revoked),
 		rec.MetadataJSON, rec.ProviderDataJSON,
 		rec.CreatedAt.UTC().Format(time.RFC3339Nano),
@@ -101,7 +123,8 @@ func (r *PaymentMethodsRepository) Save(rec *store.PaymentMethodRecord) error {
 func (r *PaymentMethodsRepository) ByToken(token string) (*store.PaymentMethodRecord, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	const q = `SELECT token, provider, pan_full, pan_masked, brand,
+	const q = `SELECT token, provider, pan_full, pan_masked, brand, holder_name,
+		country, product_category, issuer_name,
 		expiry_month, expiry_year, revoked,
 		metadata_json, provider_data_json, created_at
 		FROM payment_methods WHERE token = ?`
@@ -118,7 +141,8 @@ func (r *PaymentMethodsRepository) ByToken(token string) (*store.PaymentMethodRe
 func (r *PaymentMethodsRepository) ByProvider(provider string) ([]*store.PaymentMethodRecord, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	const q = `SELECT token, provider, pan_full, pan_masked, brand,
+	const q = `SELECT token, provider, pan_full, pan_masked, brand, holder_name,
+		country, product_category, issuer_name,
 		expiry_month, expiry_year, revoked,
 		metadata_json, provider_data_json, created_at
 		FROM payment_methods WHERE provider = ? ORDER BY created_at DESC`
@@ -169,7 +193,8 @@ func scanPaymentMethod(scan func(dest ...any) error) (*store.PaymentMethodRecord
 		createdAt string
 	)
 	if err := scan(
-		&rec.Token, &rec.Provider, &rec.PANFull, &rec.PANMasked, &rec.Brand,
+		&rec.Token, &rec.Provider, &rec.PANFull, &rec.PANMasked, &rec.Brand, &rec.HolderName,
+		&rec.Country, &rec.ProductCategory, &rec.IssuerName,
 		&rec.ExpiryMonth, &rec.ExpiryYear, &revoked,
 		&rec.MetadataJSON, &rec.ProviderDataJSON, &createdAt,
 	); err != nil {

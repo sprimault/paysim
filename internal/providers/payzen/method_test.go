@@ -164,3 +164,55 @@ func TestSystemClock_Now(t *testing.T) {
 		t.Errorf("Now().Location() = %v, veut UTC", got.Location())
 	}
 }
+
+// TestNewPaymentMethod_attributsCarte verifie que les attributs
+// descriptifs de la carte survivent a l'enrolement. Sans eux, le
+// kr-answer ne pouvait qu'annoncer ses valeurs par defaut.
+func TestNewPaymentMethod_attributsCarte(t *testing.T) {
+	t.Parallel()
+	pm := NewPaymentMethod("tok", Card{
+		PAN:             "4000001234562646",
+		ExpiryMonth:     8,
+		ExpiryYear:      2029,
+		Brand:           "VISA",
+		HolderName:      "DUPONT JEAN",
+		Country:         "US",
+		ProductCategory: "DEBIT",
+		IssuerName:      "BANQUE DE TEST",
+	}, time.Now().UTC())
+
+	if pm.HolderName != "DUPONT JEAN" {
+		t.Errorf("HolderName = %q", pm.HolderName)
+	}
+	if pm.Country != "US" {
+		t.Errorf("Country = %q, veut US (carte etrangere simulable)", pm.Country)
+	}
+	if pm.ProductCategory != "DEBIT" {
+		t.Errorf("ProductCategory = %q, veut DEBIT", pm.ProductCategory)
+	}
+	if pm.IssuerName != "BANQUE DE TEST" {
+		t.Errorf("IssuerName = %q", pm.IssuerName)
+	}
+}
+
+// TestPaymentMethodRecordRoundTrip verifie que les converters
+// payzen <-> record ne perdent aucun attribut de carte.
+func TestPaymentMethodRecordRoundTrip(t *testing.T) {
+	t.Parallel()
+	orig := NewPaymentMethod("tok", Card{
+		PAN:             "4000001234562646",
+		ExpiryMonth:     8,
+		ExpiryYear:      2029,
+		Brand:           "VISA",
+		HolderName:      "DUPONT JEAN",
+		Country:         "US",
+		ProductCategory: "DEBIT",
+		IssuerName:      "BANQUE DE TEST",
+	}, time.Now().UTC().Truncate(time.Second))
+
+	back := recordToPayzenMethod(payzenMethodToRecord(orig))
+
+	if *back != *orig {
+		t.Errorf("round-trip altere le moyen :\n  avant = %+v\n  apres = %+v", *orig, *back)
+	}
+}

@@ -144,3 +144,73 @@ func TestPaymentMethods_count(t *testing.T) {
 		t.Errorf("Count = %d, veut 2", n)
 	}
 }
+
+// TestPaymentMethods_migrateExistingTable exerce le chemin ALTER TABLE :
+// une base créée avant l'ajout des attributs de carte doit se migrer au
+// démarrage sans perdre ses lignes. Les tests qui partent d'une base
+// neuve passent tous par CREATE TABLE et ne couvrent jamais ce cas —
+// or c'est celui de toute instance déjà déployée.
+func TestPaymentMethods_migrateExistingTable(t *testing.T) {
+	t.Parallel()
+	db, err := Open(filepath.Join(t.TempDir(), "legacy.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	// Schéma tel qu'il existait avant holder_name / country /
+	// product_category / issuer_name.
+	const legacySchema = `CREATE TABLE payment_methods (
+		token TEXT PRIMARY KEY,
+		provider TEXT NOT NULL,
+		pan_full TEXT NOT NULL,
+		pan_masked TEXT NOT NULL,
+		brand TEXT NOT NULL DEFAULT '',
+		expiry_month INTEGER NOT NULL,
+		expiry_year INTEGER NOT NULL,
+		revoked INTEGER NOT NULL DEFAULT 0,
+		metadata_json TEXT NOT NULL DEFAULT '{}',
+		provider_data_json TEXT NOT NULL DEFAULT '{}',
+		created_at TEXT NOT NULL
+	)`
+	if _, err := db.ExecContext(t.Context(), legacySchema); err != nil {
+		t.Fatalf("creation schema ancien: %v", err)
+	}
+	const insert = `INSERT INTO payment_methods (
+		token, provider, pan_full, pan_masked, brand,
+		expiry_month, expiry_year, revoked,
+		metadata_json, provider_data_json, created_at
+	) VALUES ('pmt-legacy', 'payzen', '4111111111111111', '411111XXXXXX1111',
+		'VISA', 12, 2027, 0, '{}', '{}', '2026-08-02T10:00:00Z')`
+	if _, err := db.ExecContext(t.Context(), insert); err != nil {
+		t.Fatalf("insertion ligne ancienne: %v", err)
+	}
+
+	repo, err := NewPaymentMethodsRepository(db)
+	if err != nil {
+		t.Fatalf("migration sur base existante: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	got, err := repo.ByToken("pmt-legacy")
+	if err != nil {
+		t.Fatalf("ByToken apres migration: %v", err)
+	}
+	if got == nil {
+		t.Fatal("la ligne preexistante a disparu apres migration")
+	}
+	if got.PANMasked != "411111XXXXXX1111" || got.Brand != "VISA" {
+		t.Errorf("donnees alterees : PANMasked=%q Brand=%q", got.PANMasked, got.Brand)
+	}
+	// Les nouvelles colonnes existent et valent la chaîne vide.
+	if got.HolderName != "" || got.Country != "" || got.ProductCategory != "" || got.IssuerName != "" {
+		t.Errorf("nouvelles colonnes non vides sur une ligne ancienne : %q %q %q %q",
+			got.HolderName, got.Country, got.ProductCategory, got.IssuerName)
+	}
+
+	// La migration doit rester idempotente : un second passage ne
+	// casse pas (c'est ce qui arrive à chaque redémarrage).
+	if _, err := NewPaymentMethodsRepository(db); err != nil {
+		t.Fatalf("seconde migration non idempotente: %v", err)
+	}
+}
