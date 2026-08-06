@@ -57,7 +57,6 @@ describe('formatRelative', () => {
     [86_400_000, 'en', 'day'],
   ])('offset %dms locale %s contient l\'unité %s', (offsetMs, locale, unit) => {
     const d = new Date(ref.getTime() - offsetMs);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const out = formatRelative(d, locale as 'fr' | 'en', 'now', ref);
     expect(out.toLowerCase()).toContain(unit);
   });
