@@ -111,7 +111,14 @@ type TransactionGetAnswer struct {
 // champ obligatoire cote domain, on stocke pour le rendre dans les
 // retours. Les noms conservent la casse PayZen.
 type Customer struct {
-	Email          string         `json:"email,omitempty"`
+	Email string `json:"email,omitempty"`
+
+	// Reference est l'identifiant du client côté marchand. C'est elle
+	// qui permet de rapprocher un paiement d'un compte sans dépendre de
+	// la metadata — un intégrateur qui s'y fie doit la retrouver dans
+	// le kr-answer, sans quoi elle disparaît sans erreur au décodage.
+	Reference string `json:"reference,omitempty"`
+
 	BillingDetails BillingDetails `json:"billingDetails,omitempty"`
 }
 

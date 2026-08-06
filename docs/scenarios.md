@@ -67,7 +67,7 @@ Eleven actions covering the three payment patterns.
 
 | Action           | Purpose                                                                 |
 | ---------------- | ----------------------------------------------------------------------- |
-| `create_payment` | Create a payment. Optional `card`, `form_action`, `customer.email`, `metadata`, `notification_url`. `amount: 0` valid when `form_action: REGISTER` (register-only, no debit). |
+| `create_payment` | Create a payment. Optional `card`, `form_action`, `customer.email`, `customer.reference`, `metadata`, `notification_url`. `amount: 0` valid when `form_action: REGISTER` (register-only, no debit). |
 | `simulate`       | Advance the payment via the browser-return simulation endpoint.         |
 | `assert_state`   | Assert the current payment is in the given state.                       |
 | `assert_webhook` | Count webhooks delivered since the scenario started (optional `status`, `outcome`, `timeout`).|

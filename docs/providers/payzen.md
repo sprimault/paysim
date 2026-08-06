@@ -80,7 +80,7 @@ below).
 | `amount`           | integer (cents)     |    yes   | In smallest currency unit (cents for EUR).                  |
 | `currency`         | string (ISO 4217)   |    yes   | Three uppercase letters (`EUR`, `USD`, …).                  |
 | `formAction`       | string              |    no    | See allowed values below.                                   |
-| `customer`         | `Customer`          |    no    | Buyer info — email + billing details.                       |
+| `customer`         | `Customer`          |    no    | Buyer info — `email`, `reference`, `billingDetails`. `reference` is the merchant-side customer id, echoed back in the `kr-answer`. |
 | `metadata`         | `map[string]string` |    no    | Free-form merchant metadata, echoed in webhook.             |
 | `returnUrl`        | string              |    no    | Paysim extension: browser-return target.                    |
 | `notificationUrl`  | string              |    no    | Paysim extension: IPN webhook target.                       |
