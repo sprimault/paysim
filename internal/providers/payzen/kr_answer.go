@@ -259,6 +259,9 @@ type BrowserReturnOpts struct {
 //
 // delay est propage au Webhook.Delay, respecte par le scheduler avant
 // l'envoi effectif — permet le out-of-order par composition.
+// L'outcome porté par le Webhook vient de answer.OrderStatus : c'est
+// l'adaptateur qui traduit son protocole en résultat métier, delivery
+// ne lit jamais le corps.
 func buildDeliveryWebhook(id, targetURL string, answer *KrAnswer, hmacKey, answerType string, badSignature bool, delay time.Duration) (delivery.Webhook, string, error) {
 	raw, err := json.Marshal(answer)
 	if err != nil {
@@ -284,8 +287,9 @@ func buildDeliveryWebhook(id, targetURL string, answer *KrAnswer, hmacKey, answe
 		Headers: map[string]string{
 			"Content-Type": "application/x-www-form-urlencoded",
 		},
-		Body:  []byte(form.Encode()),
-		Delay: delay,
+		Body:    []byte(form.Encode()),
+		Outcome: answer.OrderStatus,
+		Delay:   delay,
 	}
 	return wh, hash, nil
 }

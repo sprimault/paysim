@@ -181,7 +181,8 @@ func (fs *fakeServer) create(w http.ResponseWriter, r *http.Request) {
 		}
 		fs.payments[uuid] = state
 		fs.webhooks = append(fs.webhooks, WebhookEntry{
-			ID: "wh-" + timestamp(), Status: outcomeFor(state), CreatedAt: time.Now().UTC(),
+			ID: "wh-" + timestamp(), Status: "delivered",
+			Outcome: outcomeFor(state), CreatedAt: time.Now().UTC(),
 		})
 		writeJSONResp(w, http.StatusCreated, CreatedPayment{
 			UUID: uuid, Provider: "payzen", State: state,
@@ -273,7 +274,8 @@ func (fs *fakeServer) simulate(w http.ResponseWriter, r *http.Request) {
 	fs.payments[uuid] = next
 	fs.webhooks = append(fs.webhooks, WebhookEntry{
 		ID:        "wh-" + timestamp(),
-		Status:    req.Outcome,
+		Status:    "delivered",
+		Outcome:   req.Outcome,
 		CreatedAt: time.Now().UTC(),
 	})
 	// Chaos duplicate : le vrai serveur enqueue le webhook deux fois.
@@ -282,7 +284,8 @@ func (fs *fakeServer) simulate(w http.ResponseWriter, r *http.Request) {
 	if req.Chaos.Duplicate {
 		fs.webhooks = append(fs.webhooks, WebhookEntry{
 			ID:        "wh-dup-" + timestamp(),
-			Status:    req.Outcome,
+			Status:    "delivered",
+			Outcome:   req.Outcome,
 			CreatedAt: time.Now().UTC(),
 		})
 	}
@@ -430,13 +433,21 @@ func TestRunner_assertWebhookCount(t *testing.T) {
 		name    string
 		want    int
 		status  string
+		outcome string
 		timeout Duration
 		wantErr string // sous-chaîne attendue, vide = pas d'erreur
 	}{
-		{"count exact sans filtre", 1, "", 0, ""},
-		{"count exact avec status", 1, "PAID", 0, ""},
-		{"count trop haut", 2, "", bref, "obtenu 1, veut 2"},
-		{"status mauvais", 1, "UNPAID", bref, "avec status=\"UNPAID\": obtenu 0, veut 1"},
+		{"count exact sans filtre", 1, "", "", 0, ""},
+		// Status porte sur l'acheminement, outcome sur le résultat
+		// métier : les deux doivent filtrer indépendamment.
+		{"filtre status livraison", 1, "delivered", "", 0, ""},
+		{"filtre outcome metier", 1, "", "PAID", 0, ""},
+		{"les deux filtres cumules", 1, "delivered", "PAID", 0, ""},
+		{"count trop haut", 2, "", "", bref, "obtenu 1, veut 2"},
+		{"status mauvais", 1, "failed", "", bref, "avec status=\"failed\": obtenu 0, veut 1"},
+		{"outcome mauvais", 1, "", "UNPAID", bref, "avec outcome=\"UNPAID\": obtenu 0, veut 1"},
+		{"outcome juste mais status faux", 1, "failed", "PAID", bref,
+			"avec status=\"failed\" et outcome=\"PAID\": obtenu 0, veut 1"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -454,7 +465,7 @@ func TestRunner_assertWebhookCount(t *testing.T) {
 					}},
 					{Action: ActionSimulate, Simulate: &Simulate{Status: "captured"}},
 					{Action: ActionAssertWebhook, AssertWebhook: &AssertWebhook{
-						Count: c.want, Status: c.status, Timeout: c.timeout,
+						Count: c.want, Status: c.status, Outcome: c.outcome, Timeout: c.timeout,
 					}},
 				},
 			}

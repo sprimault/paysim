@@ -12,3 +12,4 @@ steps:
     state: captured
   - action: assert_webhook
     count: 1
+    outcome: PAID

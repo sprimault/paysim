@@ -77,7 +77,9 @@ func TestLoad_allActionsFromFile(t *testing.T) {
 	}
 	if aw := s.Steps[3].AssertWebhook; aw == nil {
 		t.Fatalf("AssertWebhook nil")
-	} else if aw.Count != 1 || aw.Status != "PAID" {
+	} else if aw.Count != 1 || aw.Outcome != "PAID" {
+		// PAID est un résultat métier : il se lit dans Outcome, pas
+		// dans Status qui décrit l'acheminement HTTP.
 		t.Errorf("AssertWebhook = %+v", aw)
 	}
 }

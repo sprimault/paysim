@@ -71,7 +71,7 @@ Onze actions qui couvrent les trois patterns de paiement.
 | `create_payment` | Crée un paiement. `card`, `form_action`, `customer.email`, `metadata`, `notification_url` optionnels. `amount: 0` valide quand `form_action: REGISTER` (enrôlement pur, aucun débit). |
 | `simulate`       | Fait avancer le paiement via l'endpoint de simulation navigateur.       |
 | `assert_state`   | Assert que le paiement courant est dans l'état demandé.                 |
-| `assert_webhook` | Compte les webhooks livrés depuis le début du scénario (`status` et `timeout` optionnels).|
+| `assert_webhook` | Compte les webhooks livrés depuis le début du scénario (`status`, `outcome`, `timeout` optionnels).|
 
 ### Récurrence par token
 
@@ -107,6 +107,33 @@ puis remis à zéro) :
 
 Chaos persistant : réinjecter avant chaque `simulate` concerné. Voir
 `examples/scenarios/chaos-duplicate.yml`.
+
+### `status` et `outcome`
+
+`assert_webhook` filtre sur deux choses indépendantes, et les confondre
+revient à asserter autre chose que ce qu'on croit :
+
+| Champ | Répond à | Valeurs |
+|---|---|---|
+| `status` | *Le webhook est-il arrivé ?* | `delivered`, `failed`, `pending` |
+| `outcome` | *Qu'annonçait-il ?* | `PAID`, `UNPAID`, `AUTHORISED`… (vocabulaire provider) |
+
+Un webhook remis avec succès peut parfaitement annoncer un refus — un
+HTTP 200 sur un payload `UNPAID`. C'est en général le résultat métier
+qu'on veut asserter :
+
+```yaml
+  - action: assert_webhook
+    count: 1
+    outcome: PAID          # un paiement accepté a bien été annoncé
+```
+
+Les deux se cumulent : fournir l'un et l'autre exige que les deux
+correspondent. Les omettre compte tous les webhooks.
+
+`outcome` est renseigné par l'adaptateur au moment d'émettre le webhook,
+dans son propre vocabulaire de protocole — jamais relu depuis le corps.
+Un adaptateur Stripe alimentera le même champ avec ses valeurs.
 
 ### Pourquoi `assert_webhook` attend
 

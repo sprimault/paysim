@@ -219,9 +219,17 @@ type Wait struct {
 // que le handler a répondu. Timeout borne cette attente (5 s par
 // défaut) — à relever quand un `inject` a retardé la livraison
 // au-delà.
+// Deux filtres, deux questions distinctes. Status porte sur
+// l'acheminement HTTP (`delivered`, `failed`, `pending`) : le webhook
+// est-il arrivé ? Outcome porte sur le résultat métier annoncé dans le
+// corps (`PAID`, `UNPAID`… en vocabulaire provider) : qu'annonçait-il ?
+// Un webhook remis avec succès peut parfaitement annoncer un refus —
+// les confondre, c'est asserter autre chose que ce qu'on croit.
+// Cumulables : les deux doivent être satisfaits.
 type AssertWebhook struct {
 	Count   int      `yaml:"count"`
 	Status  string   `yaml:"status,omitempty"`
+	Outcome string   `yaml:"outcome,omitempty"`
 	Timeout Duration `yaml:"timeout,omitempty"`
 }
 

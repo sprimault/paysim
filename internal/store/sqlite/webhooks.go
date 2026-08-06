@@ -36,6 +36,7 @@ func (r *WebhooksRepository) migrate(ctx context.Context) error {
 			headers_json TEXT NOT NULL DEFAULT '{}',
 			body BLOB NOT NULL DEFAULT '',
 			status TEXT NOT NULL,
+			outcome TEXT NOT NULL DEFAULT '',
 			status_code INTEGER NOT NULL DEFAULT 0,
 			error_msg TEXT NOT NULL DEFAULT '',
 			attempts INTEGER NOT NULL DEFAULT 0,
@@ -48,6 +49,16 @@ func (r *WebhooksRepository) migrate(ctx context.Context) error {
 	for _, stmt := range stmts {
 		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("stmt %q: %w", firstLine(stmt), err)
+		}
+	}
+	// Bases antérieures à l'ajout de l'outcome : on tente l'ALTER et on
+	// ignore le "duplicate column", qui signale que l'état voulu est
+	// déjà atteint. Les livraisons déjà historisées gardent un outcome
+	// vide — on ne peut pas le reconstituer sans relire chaque body.
+	if _, err := r.db.ExecContext(ctx,
+		`ALTER TABLE webhooks ADD COLUMN outcome TEXT NOT NULL DEFAULT ''`); err != nil {
+		if !isDuplicateColumnErr(err) {
+			return fmt.Errorf("add outcome column: %w", err)
 		}
 	}
 	return nil
@@ -63,14 +74,15 @@ func (r *WebhooksRepository) Save(rec *store.WebhookRecord) error {
 	}
 	const upsert = `
 		INSERT INTO webhooks (
-			id, url, headers_json, body, status, status_code, error_msg,
+			id, url, headers_json, body, status, outcome, status_code, error_msg,
 			attempts, created_at, completed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			url = excluded.url,
 			headers_json = excluded.headers_json,
 			body = excluded.body,
 			status = excluded.status,
+			outcome = excluded.outcome,
 			status_code = excluded.status_code,
 			error_msg = excluded.error_msg,
 			attempts = excluded.attempts,
@@ -78,7 +90,7 @@ func (r *WebhooksRepository) Save(rec *store.WebhookRecord) error {
 	`
 	_, err := r.db.Exec(upsert,
 		rec.ID, rec.URL, nonEmpty(rec.HeadersJSON), rec.Body,
-		rec.Status, rec.StatusCode, rec.ErrorMsg, rec.Attempts,
+		rec.Status, rec.Outcome, rec.StatusCode, rec.ErrorMsg, rec.Attempts,
 		rec.CreatedAt.UTC().Format(time.RFC3339Nano),
 		rec.CompletedAt.UTC().Format(time.RFC3339Nano),
 	)
@@ -91,7 +103,7 @@ func (r *WebhooksRepository) Recent(limit int) ([]*store.WebhookRecord, error) {
 		return nil, nil
 	}
 	rows, err := r.db.Query(`
-		SELECT id, url, headers_json, body, status, status_code, error_msg,
+		SELECT id, url, headers_json, body, status, outcome, status_code, error_msg,
 			attempts, created_at, completed_at
 		FROM webhooks
 		ORDER BY completed_at DESC
@@ -119,7 +131,7 @@ func (r *WebhooksRepository) ByID(id string) (*store.WebhookRecord, error) {
 		return nil, nil
 	}
 	row := r.db.QueryRow(`
-		SELECT id, url, headers_json, body, status, status_code, error_msg,
+		SELECT id, url, headers_json, body, status, outcome, status_code, error_msg,
 			attempts, created_at, completed_at
 		FROM webhooks WHERE id = ?
 	`, id)
@@ -146,7 +158,7 @@ func scanWebhook(sc paymentScanner) (*store.WebhookRecord, error) {
 	var createdAtStr, completedAtStr string
 	err := sc.Scan(
 		&rec.ID, &rec.URL, &rec.HeadersJSON, &rec.Body,
-		&rec.Status, &rec.StatusCode, &rec.ErrorMsg, &rec.Attempts,
+		&rec.Status, &rec.Outcome, &rec.StatusCode, &rec.ErrorMsg, &rec.Attempts,
 		&createdAtStr, &completedAtStr,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -34,6 +34,7 @@ func sampleWebhook(id string, completedAt time.Time) *store.WebhookRecord {
 		HeadersJSON: `{"Content-Type":"application/x-www-form-urlencoded"}`,
 		Body:        []byte("kr-hash=abc&kr-answer=%7B%22orderStatus%22%3A%22PAID%22%7D"),
 		Status:      "delivered",
+		Outcome:     "PAID",
 		StatusCode:  200,
 		ErrorMsg:    "",
 		Attempts:    1,
@@ -151,5 +152,83 @@ func TestDeleteAllWebhooks(t *testing.T) {
 	got, _ := repo.Recent(10)
 	if len(got) != 0 {
 		t.Errorf("apres purge : len = %d", len(got))
+	}
+}
+
+// TestWebhooks_outcomeRoundTrip verifie que le resultat metier annonce
+// par le webhook survit a l'aller-retour SQLite. Sans lui, la colonne
+// pourrait etre ecrite sans jamais etre relue — les assertions de
+// scenario compteraient alors zero webhook.
+func TestWebhooks_outcomeRoundTrip(t *testing.T) {
+	t.Parallel()
+	repo := buildWebhookRepo(t)
+	now := time.Now().UTC()
+
+	rec := sampleWebhook("wh-outcome", now)
+	rec.Outcome = "UNPAID"
+	if err := repo.Save(rec); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := repo.ByID("wh-outcome")
+	if err != nil || got == nil {
+		t.Fatalf("ByID: %v / %v", got, err)
+	}
+	if got.Outcome != "UNPAID" {
+		t.Errorf("Outcome = %q, veut UNPAID", got.Outcome)
+	}
+	// Status et Outcome doivent rester independants : un webhook remis
+	// avec succes peut annoncer un refus.
+	if got.Status != "delivered" {
+		t.Errorf("Status = %q, veut delivered", got.Status)
+	}
+}
+
+// TestWebhooks_migrateExistingTable exerce le chemin ALTER TABLE sur une
+// base creee avant l'ajout de la colonne outcome.
+func TestWebhooks_migrateExistingTable(t *testing.T) {
+	t.Parallel()
+	db, err := Open(filepath.Join(t.TempDir(), "legacy-wh.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	const legacy = `CREATE TABLE webhooks (
+		id TEXT PRIMARY KEY,
+		url TEXT NOT NULL,
+		headers_json TEXT NOT NULL DEFAULT '{}',
+		body BLOB NOT NULL DEFAULT '',
+		status TEXT NOT NULL,
+		status_code INTEGER NOT NULL DEFAULT 0,
+		error_msg TEXT NOT NULL DEFAULT '',
+		attempts INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL,
+		completed_at TEXT NOT NULL
+	)`
+	if _, err := db.ExecContext(t.Context(), legacy); err != nil {
+		t.Fatalf("schema ancien: %v", err)
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO webhooks
+		(id, url, headers_json, body, status, status_code, error_msg, attempts, created_at, completed_at)
+		VALUES ('wh-old', 'https://m/cb', '{}', '', 'delivered', 200, '', 1,
+		        '2026-08-02T10:00:00Z', '2026-08-02T10:00:01Z')`); err != nil {
+		t.Fatalf("ligne ancienne: %v", err)
+	}
+
+	repo, err := NewWebhooksRepository(db)
+	if err != nil {
+		t.Fatalf("migration sur base existante: %v", err)
+	}
+	got, err := repo.ByID("wh-old")
+	if err != nil || got == nil {
+		t.Fatalf("la ligne preexistante a disparu: %v / %v", got, err)
+	}
+	if got.Status != "delivered" {
+		t.Errorf("Status altere: %q", got.Status)
+	}
+	// Une livraison historisee avant la migration n'a pas d'outcome : on
+	// ne peut pas le reconstituer sans relire son corps.
+	if got.Outcome != "" {
+		t.Errorf("Outcome = %q, veut vide sur une ligne ancienne", got.Outcome)
 	}
 }
