@@ -1266,3 +1266,71 @@ func TestBearerOpenWhenTokenUnset(t *testing.T) {
 		t.Errorf("status = %d, veut 200", status)
 	}
 }
+
+// TestReplayFallbackDefaultCallbackURL couvre le rejeu one-click sans
+// notificationUrl. Un paiement recurrent est declenche par un
+// ordonnanceur : personne n'est la pour fournir une URL, et exiger
+// qu'elle soit explicite revenait a n'emettre aucune notification.
+func TestReplayFallbackDefaultCallbackURL(t *testing.T) {
+	t.Parallel()
+	merchant, hits := newMerchantServer(t)
+	cfg := HandlerConfig{HMACKey: "k", DefaultCallbackURL: merchant.URL}
+	_, store, queue := newTestServerFull(t, cfg)
+
+	pm := NewPaymentMethod("tok-replay", Card{
+		PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030, Brand: "VISA",
+	}, time.Now().UTC())
+	if err := store.SaveMethod(pm); err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	// Aucune NotificationURL : tout repose sur le repli.
+	if _, err := h.Create(CreateInput{
+		Amount: 4990, Currency: "EUR", OrderID: "CHARGE-1",
+		PaymentMethodToken: "tok-replay",
+	}); err != nil {
+		t.Fatalf("rejeu: %v", err)
+	}
+
+	select {
+	case <-hits:
+	case <-time.After(2 * time.Second):
+		t.Fatal("aucune notification sur un rejeu sans notificationUrl — le repli n'a pas joue")
+	}
+}
+
+// TestTriggerBillingNotifie couvre l'echeance d'abonnement, qui
+// n'emettait aucun webhook. C'est le seul chemin ou le marchand ne peut
+// rien apprendre autrement : sans notification, une reprise d'impaye est
+// intestable de bout en bout.
+func TestTriggerBillingNotifie(t *testing.T) {
+	t.Parallel()
+	merchant, hits := newMerchantServer(t)
+	cfg := HandlerConfig{HMACKey: "k", DefaultCallbackURL: merchant.URL}
+	_, store, queue := newTestServerFull(t, cfg)
+
+	pm := NewPaymentMethod("tok-sub", Card{
+		PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030, Brand: "VISA",
+	}, time.Now().UTC())
+	if err := store.SaveMethod(pm); err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	sub, err := h.CreateSubscription(CreateSubscriptionInput{
+		PaymentMethodToken: "tok-sub", Amount: 1990, Currency: "EUR", OrderID: "SUB-1",
+	})
+	if err != nil {
+		t.Fatalf("create subscription: %v", err)
+	}
+	if _, err := h.TriggerBilling(sub.ID); err != nil {
+		t.Fatalf("trigger billing: %v", err)
+	}
+
+	select {
+	case <-hits:
+	case <-time.After(2 * time.Second):
+		t.Fatal("aucune notification sur une echeance d abonnement")
+	}
+}

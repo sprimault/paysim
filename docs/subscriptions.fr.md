@@ -68,6 +68,26 @@ le champ `provider` dans le body JSON (défaut `payzen` ; log Debug
 | POST    | `/{id}/trigger-billing`           | Déclenche l'échéance suivante            |
 | POST    | `/{id}/cancel`                    | Annule (idempotent, 204 sur id inconnu)  |
 
+## Notification de l'échéance
+
+Chaque `trigger-billing` émet un webhook, qu'elle réussisse ou échoue.
+C'est le seul moyen pour le marchand d'apprendre qu'une échéance est
+passée : une échéance est déclenchée par un ordonnanceur, jamais par
+quelqu'un qui attendrait la réponse HTTP.
+
+Un abonnement ne porte pas d'URL de notification propre — la cible est
+donc **`PAYSIM_CALLBACK_URL`**. Sans cette variable, aucune notification
+n'est émise et une reprise d'impayé devient intestable de bout en bout.
+Un log de niveau `WARN` (`fallback_callback_url`) trace la cible
+retenue, pour qu'une livraison inattendue reste explicable.
+
+Le webhook porte le résultat métier dans son `outcome` : `PAID` sur une
+échéance honorée, `UNPAID` sur un refus. Un échec de livraison ne remet
+pas en cause l'échéance elle-même, qui a bien eu lieu.
+
+Le rejeu one-click (`charge_token`) suit la même règle : `notificationUrl`
+si elle est fournie dans la requête, `PAYSIM_CALLBACK_URL` sinon.
+
 ## Conditions de refus au `trigger-billing`
 
 Mêmes règles que `charge_token` — le même helper `decideReplayOutcome`
