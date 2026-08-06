@@ -24,10 +24,17 @@ type PaymentMethod struct {
 	PANFull     string // en clair, jamais de vraies CB
 	PANMasked   string // "4111XXXXXXXX1111" (format PayZen)
 	Brand       string // VISA, MASTERCARD, AMEX, CB, …
+	HolderName  string // "DUPONT JEAN", vide si non fourni
 	ExpiryMonth int    // 1-12
 	ExpiryYear  int    // 4 chiffres
 	CreatedAt   time.Time
 	Revoked     bool
+
+	// Caractérisation par l'émetteur. Vides quand l'enrôlement ne les
+	// a pas fournis ; le rendu applique alors ses défauts.
+	Country         string
+	ProductCategory string
+	IssuerName      string
 }
 
 // IsExpired retourne true si le mois/année d'expiration sont
@@ -55,6 +62,20 @@ type Card struct {
 	ExpiryMonth int    `json:"expiryMonth"`
 	ExpiryYear  int    `json:"expiryYear"`
 	Brand       string `json:"brand,omitempty"` // optionnel, déduit du BIN si absent
+
+	// HolderName est le nom du porteur ("DUPONT JEAN"). Optionnel :
+	// un wallet n'en transmet pas. Conservé tel quel, sans
+	// normalisation de casse — le marchand le relit à l'identique.
+	HolderName string `json:"holderName,omitempty"`
+
+	// Country, ProductCategory et IssuerName décrivent la carte telle
+	// que l'émetteur la caractérise. Optionnels, mais ce sont eux qui
+	// rendent testables la carte étrangère, la carte de débit et le
+	// routage par banque — figés, ils interdisaient ces scénarios.
+	// Défauts appliqués au rendu : FR, CREDIT, PAYSIM.
+	Country         string `json:"country,omitempty"`         // ISO 3166-1 alpha-2
+	ProductCategory string `json:"productCategory,omitempty"` // CREDIT, DEBIT, PREPAID
+	IssuerName      string `json:"issuerName,omitempty"`
 }
 
 // NewPaymentMethod construit un PaymentMethod à partir d'une Card et
@@ -71,9 +92,14 @@ func NewPaymentMethod(token string, card Card, now time.Time) *PaymentMethod {
 		PANFull:     card.PAN,
 		PANMasked:   maskPAN(card.PAN),
 		Brand:       brand,
+		HolderName:  card.HolderName,
 		ExpiryMonth: card.ExpiryMonth,
 		ExpiryYear:  card.ExpiryYear,
 		CreatedAt:   now,
+
+		Country:         card.Country,
+		ProductCategory: card.ProductCategory,
+		IssuerName:      card.IssuerName,
 	}
 }
 

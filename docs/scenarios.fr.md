@@ -131,6 +131,33 @@ Relever `timeout` quand un `inject` a retardé la livraison au-delà :
 À noter : `count: 0` retourne immédiatement — il assert que rien n'a
 *encore* été livré, pas que rien ne le sera jamais.
 
+## L'objet `card`
+
+Fournir `card` sur un `create_payment` enrôle un moyen de paiement et
+retourne un `paymentMethodToken` réutilisable. Seuls les trois premiers
+champs sont obligatoires :
+
+```yaml
+card:
+  pan: "4111111111111111"
+  expiry_month: 12
+  expiry_year: 2028
+  brand: VISA                  # optionnel, déduit du BIN si absent
+  holder_name: DUPONT JEAN     # optionnel
+  country: US                  # optionnel, ISO 3166-1 alpha-2, défaut "FR"
+  product_category: DEBIT      # optionnel, CREDIT | DEBIT | PREPAID
+  issuer_name: BANQUE DE TEST  # optionnel
+```
+
+Ces valeurs sont conservées avec le moyen de paiement et restituées
+telles quelles dans le bloc `cardDetails` de chaque webhook que le token
+produira ensuite. C'est ce qui rend testables la carte étrangère, la
+carte de débit et le routage par émetteur — les quatre derniers champs
+étaient auparavant figés à `FR` / `CREDIT` / `PAYSIM`.
+
+**N'utilisez jamais un numéro de carte réel** : les PAN sont stockés en
+clair. Voir [testing-cards.fr.md](testing-cards.fr.md).
+
 ## État implicite — un paiement / un token / une subscription à la fois
 
 Le runner mémorise trois références au fil du scénario, permettant à la

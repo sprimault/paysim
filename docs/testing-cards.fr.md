@@ -96,7 +96,11 @@ curl -X POST http://paysim:8080/paysim/api/v1/payments \
     "card": {
       "pan": "4000000000000002",
       "expiryMonth": 12,
-      "expiryYear": 2028
+      "expiryYear": 2028,
+      "holderName": "DUPONT JEAN",
+      "country": "US",
+      "productCategory": "DEBIT",
+      "issuerName": "BANQUE DE TEST"
     }
   }'
 # → {"uuid":"...","paymentMethodToken":"..."}

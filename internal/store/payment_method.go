@@ -29,9 +29,22 @@ type PaymentMethodRecord struct {
 	// Brand : VISA, MASTERCARD, CB, AMEX, ...
 	Brand string
 
+	// HolderName : nom du porteur tel que saisi au formulaire
+	// ("DUPONT JEAN"). Optionnel — un wallet (Apple Pay, Google Pay)
+	// n'en transmet pas, et PayZen ne l'impose pas à l'enrôlement.
+	HolderName string
+
 	// ExpiryMonth 1-12, ExpiryYear 4 chiffres.
 	ExpiryMonth int
 	ExpiryYear  int
+
+	// Country (ISO 3166-1 alpha-2), ProductCategory (CREDIT, DEBIT,
+	// PREPAID) et IssuerName caractérisent la carte côté émetteur.
+	// Cross-provider : Stripe les expose sous country / funding /
+	// issuer. Vides quand l'enrôlement ne les a pas fournis.
+	Country         string
+	ProductCategory string
+	IssuerName      string
 
 	// Revoked : marqué true par un appel Revoke, empêche tout rejeu
 	// avec ce token. Idempotent — un revoke sur token déjà révoqué

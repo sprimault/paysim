@@ -28,6 +28,13 @@ steps:
       pan: "4111111111111111"
       expiry_month: 12
       expiry_year: 2028
+      # Attributs du porteur et de l'emetteur : ils remontent tels
+      # quels dans cardDetails du kr-answer. Avant, ce bloc annoncait
+      # une carte de credit francaise quoi qu'on enregistre.
+      holder_name: DUPONT JEAN
+      country: US
+      product_category: DEBIT
+      issuer_name: BANQUE DE TEST
   - action: simulate
     status: captured
   - action: assert_state

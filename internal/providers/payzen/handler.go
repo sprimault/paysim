@@ -395,7 +395,7 @@ func (h *Handler) emitReplayWebhook(tx *Transaction, pm *PaymentMethod, outcome,
 		CardBrand:    pm.Brand,
 		ErrorMessage: reason,
 	}
-	answer := buildKrAnswer(tx, opts, "", "TEST")
+	answer := buildKrAnswer(tx, pm, opts, "", "TEST")
 
 	deliveryID, err := newUUID()
 	if err != nil {
@@ -1008,10 +1008,23 @@ func (h *Handler) simulate(
 		},
 	})
 
+	// Le moyen enrôlé alimente le bloc cardDetails. Une lecture qui
+	// échoue ne doit pas faire échouer la livraison : on repart sur la
+	// carte de démonstration, en le signalant dans les logs.
+	var pm *PaymentMethod
+	if tx.PaymentMethodToken != "" {
+		pm, err = h.store.MethodByToken(tx.PaymentMethodToken)
+		if err != nil {
+			h.logger.Warn("payment_method_lookup_failed",
+				"uuid", tx.UUID, "token", tx.PaymentMethodToken, "err", err)
+			pm = nil
+		}
+	}
+
 	// serverURL vide en phase 1 (arrivera avec cmd/paysim qui saura
 	// son propre PublicURL). Mode "TEST" en dur — un simulateur n'a
 	// pas de "PRODUCTION".
-	answer := buildKrAnswer(tx, opts, "", "TEST")
+	answer := buildKrAnswer(tx, pm, opts, "", "TEST")
 
 	deliveryID, err = newUUID()
 	if err != nil {

@@ -566,14 +566,23 @@ func subscriptionToOutput(sub *payzen.Subscription, provider string) Subscriptio
 // clair, mais l'API l'expose sous forme masquée uniquement (comme un
 // vrai PSP dans son back-office).
 type PaymentMethodOutput struct {
-	Token       string    `json:"token"`
-	Provider    string    `json:"provider"`
-	PANMasked   string    `json:"panMasked"`
-	Brand       string    `json:"brand,omitempty"`
-	ExpiryMonth int       `json:"expiryMonth"`
-	ExpiryYear  int       `json:"expiryYear"`
-	Revoked     bool      `json:"revoked"`
-	CreatedAt   time.Time `json:"createdAt"`
+	Token       string `json:"token"`
+	Provider    string `json:"provider"`
+	PANMasked   string `json:"panMasked"`
+	Brand       string `json:"brand,omitempty"`
+	HolderName  string `json:"holderName,omitempty"`
+	ExpiryMonth int    `json:"expiryMonth"`
+	ExpiryYear  int    `json:"expiryYear"`
+
+	// Caractérisation émetteur, telle qu'enrôlée. Absentes du JSON
+	// quand l'enrôlement ne les a pas fournies — l'API ne réaffirme
+	// pas les défauts appliqués au rendu du kr-answer.
+	Country         string `json:"country,omitempty"`
+	ProductCategory string `json:"productCategory,omitempty"`
+	IssuerName      string `json:"issuerName,omitempty"`
+
+	Revoked   bool      `json:"revoked"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // listPaymentMethods traite GET /paysim/api/v1/payment-methods.
@@ -632,12 +641,16 @@ func (h *Handler) getPaymentMethod(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, PaymentMethodOutput{
-		Token:       rec.Token,
-		Provider:    rec.Provider,
-		PANMasked:   rec.PANMasked,
-		Brand:       rec.Brand,
-		ExpiryMonth: rec.ExpiryMonth,
-		ExpiryYear:  rec.ExpiryYear,
+		Token:           rec.Token,
+		Provider:        rec.Provider,
+		PANMasked:       rec.PANMasked,
+		Brand:           rec.Brand,
+		HolderName:      rec.HolderName,
+		Country:         rec.Country,
+		ProductCategory: rec.ProductCategory,
+		IssuerName:      rec.IssuerName,
+		ExpiryMonth:     rec.ExpiryMonth,
+		ExpiryYear:      rec.ExpiryYear,
 		Revoked:     rec.Revoked,
 		CreatedAt:   rec.CreatedAt,
 	})

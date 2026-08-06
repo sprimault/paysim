@@ -130,6 +130,32 @@ Raise `timeout` when an `inject` has delayed delivery beyond that:
 Note that `count: 0` returns immediately — it asserts that nothing has
 been delivered *yet*, not that nothing ever will be.
 
+## The `card` object
+
+Supplying `card` on a `create_payment` enrols a payment method and
+returns a reusable `paymentMethodToken`. Only the first three fields are
+required:
+
+```yaml
+card:
+  pan: "4111111111111111"
+  expiry_month: 12
+  expiry_year: 2028
+  brand: VISA                  # optional, derived from the BIN if absent
+  holder_name: DUPONT JEAN     # optional
+  country: US                  # optional, ISO 3166-1 alpha-2, "FR" fallback
+  product_category: DEBIT      # optional, CREDIT | DEBIT | PREPAID
+  issuer_name: BANQUE DE TEST  # optional
+```
+
+These values are stored with the payment method and reported as-is in the
+`cardDetails` block of every webhook the token later produces. That is
+what makes a foreign card, a debit card, or issuer-based routing testable
+— the last four fields used to be frozen at `FR` / `CREDIT` / `PAYSIM`.
+
+**Never use a real card number**: PANs are stored in clear text. See
+[testing-cards.md](testing-cards.md).
+
 ## Implicit state — one payment / one token / one subscription at a time
 
 The runner memoises three things as the scenario runs, so most steps

@@ -312,14 +312,30 @@ KrAnswer
 KrCardDetails
 ├── pan               string     always masked (e.g. "411111XXXXXX1111")
 ├── brand             string
-├── productCategory   string     "CREDIT" default
+├── holderName        string     omitted when not supplied at enrolment
+├── productCategory   string     "CREDIT" fallback
 ├── expiryMonth       integer
 ├── expiryYear        integer
-├── country           string     "FR" default
-├── issuerName        string     "PAYSIM" — Paysim marker
+├── country           string     "FR" fallback
+├── issuerName        string     "PAYSIM" fallback
 ├── effectiveBrand    string
 └── _type             "V4/CardDetails"
 ```
+
+**Every field above is derived from the card actually enrolled**, when
+there is one — the `card` object of `CreatePayment`, stored as a payment
+method. What Paysim announces is therefore what Paysim holds: masked PAN,
+expiry date, holder and issuer attributes all match the stored record.
+
+The values marked *fallback* apply only when the enrolment left them
+empty. They are **not** applied on top of a supplied value: enrol a card
+with `country: "US"` and `productCategory: "DEBIT"` and the webhook
+reports exactly that — which is what makes a foreign card or a debit card
+testable.
+
+A one-shot payment with no card ever submitted is the one case where the
+whole block is synthetic: there is nothing real to describe, so Paysim
+issues a demonstration card built from the brand alone.
 
 `threeDSResponse`:
 
