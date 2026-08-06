@@ -12,7 +12,10 @@
 
 import { useT } from '@/shared/i18n/useT';
 
-export const KNOWN_PROVIDERS: readonly string[] = ['payzen'];
+// Volontairement non exportée : ce fichier n'exporte qu'un composant,
+// condition du Fast Refresh de Vite. Aucun autre module ne la consomme
+// aujourd'hui ; si le besoin apparaît, elle ira dans shared/model.
+const KNOWN_PROVIDERS: readonly string[] = ['payzen'];
 
 interface ProviderTabsProps {
   value: string;

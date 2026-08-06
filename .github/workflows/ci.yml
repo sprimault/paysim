@@ -1,0 +1,206 @@
+# Intégration continue : ce qui était vérifié à la main avant chaque
+# fusion tourne désormais sur chaque PR.
+#
+# Le front est construit avant toute compilation Go : internal/webui
+# embarque dist/ via //go:embed et refuse de compiler si le répertoire
+# est absent. Il est gitignoré, donc un clone frais ne l'a jamais — les
+# cibles `make test` et `make lint` en dépendent déjà, on les réutilise
+# telles quelles plutôt que de dupliquer la logique ici.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  # L'audit des dépendances doit tourner même quand personne ne
+  # contribue : une faille publiée en amont n'attend pas la prochaine PR.
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+# Lecture seule : aucun job n'a besoin d'écrire sur le dépôt.
+permissions:
+  contents: read
+
+# Une PR poussée plusieurs fois d'affilée n'a pas besoin de voir ses
+# anciens runs finir.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  go:
+    name: Go — lint et tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Installer les dépendances du front
+        run: npm ci
+        working-directory: web
+
+      # Version épinglée : un lint qui change de règles tout seul entre
+      # deux exécutions transforme une PR verte en PR rouge sans que
+      # rien n'ait bougé côté code.
+      - name: Installer golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+
+      - name: Lint
+        run: make lint
+
+      # -race exige cgo, activé explicitement : les images de runner
+      # l'ont, mais CGO_ENABLED peut valoir 0 selon le contexte.
+      - name: Tests
+        run: make test
+        env:
+          CGO_ENABLED: '1'
+
+  web:
+    name: Front — lint et tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Installer les dépendances
+        run: npm ci
+        working-directory: web
+
+      - name: Lint
+        run: npm run lint
+        working-directory: web
+
+      - name: Tests
+        run: npm run test:run
+        working-directory: web
+
+  # Job distinct des tests : une CVE publiée en amont n'a rien à voir
+  # avec la PR en cours, et son échec ne doit pas se lire comme « ta
+  # contribution est cassée ». Le check porte son propre nom, et le
+  # déclencheur planifié le fait tourner même sans contribution.
+  audit:
+    name: Audit des dépendances du front
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Installer les dépendances
+        run: npm ci
+        working-directory: web
+
+      # Seuil `high` : les niveaux inférieurs produisent trop de bruit
+      # pour un outil de développement qui ne traite aucune donnée
+      # réelle. Même seuil que la cible `make web-test`.
+      - name: Audit
+        run: npm run audit:high
+        working-directory: web
+
+  scenarios:
+    name: Scénarios canoniques (SQLite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Installer les dépendances du front
+        run: npm ci
+        working-directory: web
+
+      - name: Construire le binaire
+        run: make build
+
+      # Récepteur jetable : sans cible qui répond, chaque livraison
+      # échoue et l'historique ne reflète plus un parcours réaliste.
+      - name: Démarrer un récepteur de webhooks
+        run: |
+          cat > /tmp/sink.py <<'PY'
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          class H(BaseHTTPRequestHandler):
+              def do_POST(self):
+                  self.rfile.read(int(self.headers.get('Content-Length', 0)))
+                  self.send_response(200)
+                  self.end_headers()
+              def log_message(self, *a):
+                  pass
+          HTTPServer(('127.0.0.1', 9099), H).serve_forever()
+          PY
+          python3 /tmp/sink.py &
+
+      # SQLite plutôt que le mode mémoire : c'est le défaut de
+      # deploy/compose.yml, et le mode où les défauts d'asynchronisme
+      # se manifestent réellement — la course corrigée en v0.4.6 était
+      # invisible en mémoire, donc invisible pour go test.
+      - name: Démarrer Paysim
+        run: |
+          ./paysim &
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
+              echo "Paysim répond après ${i} tentative(s)"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Paysim n'a pas démarré dans le délai imparti"
+          exit 1
+        env:
+          PAYSIM_PUBLIC_URL: http://127.0.0.1:8080
+          PAYSIM_CALLBACK_URL: http://127.0.0.1:9099
+          PAYSIM_PAYZEN_HMAC_KEY: dev-hmac-key
+          PAYSIM_STORE: sqlite
+          PAYSIM_SQLITE_PATH: /tmp/paysim-ci.db
+          PAYSIM_LOG_LEVEL: warn
+
+      - name: Exécuter les scénarios
+        run: |
+          failed=0
+          for f in examples/scenarios/*.yml; do
+            if ./paysim run "$f"; then
+              echo "OK    $(basename "$f")"
+            else
+              echo "ECHEC $(basename "$f")"
+              failed=$((failed + 1))
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "$failed scenario(s) en echec"
+            exit 1
+          fi
+          echo "Tous les scenarios passent"
+        env:
+          PAYSIM_URL: http://127.0.0.1:8080
