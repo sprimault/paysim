@@ -114,13 +114,14 @@ type Customer struct {
 // à la même struct d'être sérialisée côté client HTTP (camelCase
 // PayZen) et parsée côté loader YAML (snake_case scénario).
 //
-// AVERTISSEMENT : les PAN sont stockés en clair côté serveur — ne
-// jamais utiliser une CB réelle. Voir docs/testing-cards.md.
 // HolderName, Country, ProductCategory et IssuerName sont facultatifs
 // et alimentent le bloc cardDetails du kr-answer. Ce sont eux qui
 // rendent scriptables la carte étrangère, la carte de débit et le
 // routage par émetteur — sans eux, le webhook annonçait toujours une
 // carte de crédit française.
+//
+// AVERTISSEMENT : les PAN sont stockés en clair côté serveur — ne
+// jamais utiliser une CB réelle. Voir docs/testing-cards.md.
 type Card struct {
 	PAN         string `json:"pan"                yaml:"pan"`
 	ExpiryMonth int    `json:"expiryMonth"        yaml:"expiry_month"`
@@ -213,9 +214,15 @@ type Wait struct {
 // depuis le début du scénario, avec optionnellement un filtre sur le statut
 // (vocabulaire natif du fournisseur, par exemple `PAID` pour PayZen). Un
 // Status vide compte tous les webhooks du paiement courant.
+// L'assertion attend que le compte soit atteint plutôt que de lire une
+// seule fois : la livraison est asynchrone, le worker historise après
+// que le handler a répondu. Timeout borne cette attente (5 s par
+// défaut) — à relever quand un `inject` a retardé la livraison
+// au-delà.
 type AssertWebhook struct {
-	Count  int    `yaml:"count"`
-	Status string `yaml:"status,omitempty"`
+	Count   int      `yaml:"count"`
+	Status  string   `yaml:"status,omitempty"`
+	Timeout Duration `yaml:"timeout,omitempty"`
 }
 
 // AssertState vérifie que le paiement courant est dans l'état State (nom

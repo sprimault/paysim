@@ -291,20 +291,34 @@ func (r *Runner) doWait(ctx context.Context, in *Wait) error {
 // cet enrichissement pour être asserté finement. Pour un scénario
 // monoprovider mono-paiement (cas courant), le cursor temporel suffit.
 func (r *Runner) doAssertWebhook(ctx context.Context, st *state, in *AssertWebhook) error {
-	all, err := r.client.ListWebhooks(ctx)
-	if err != nil {
-		return err
+	timeout := defaultAssertWebhookTimeout
+	if in.Timeout > 0 {
+		timeout = time.Duration(in.Timeout)
 	}
-	got := 0
-	for _, w := range all {
-		if w.CreatedAt.Before(st.startedAt) {
-			continue
+	deadline := time.Now().Add(timeout)
+
+	// La livraison d'un webhook est asynchrone : le handler enqueue et
+	// répond, le worker livre et historise ensuite. Lire une seule fois
+	// revient à parier sur cet ordonnancement — en mode SQLite le pari
+	// est perdu régulièrement. On attend donc d'avoir le compte attendu,
+	// et on n'échoue qu'au bout du délai.
+	var got int
+	for {
+		all, err := r.client.ListWebhooks(ctx)
+		if err != nil {
+			return err
 		}
-		if in.Status != "" && w.Status != in.Status {
-			continue
+		got = countWebhooks(all, st.startedAt, in.Status)
+		if got >= in.Count || time.Now().After(deadline) {
+			break
 		}
-		got++
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(assertWebhookPollInterval):
+		}
 	}
+
 	if got != in.Count {
 		if in.Status != "" {
 			return fmt.Errorf("%w: nombre de webhooks avec status=%q: obtenu %d, veut %d",
@@ -313,6 +327,34 @@ func (r *Runner) doAssertWebhook(ctx context.Context, st *state, in *AssertWebho
 		return fmt.Errorf("%w: nombre de webhooks: obtenu %d, veut %d", ErrAssertion, got, in.Count)
 	}
 	return nil
+}
+
+// defaultAssertWebhookTimeout borne l'attente d'assert_webhook. Cinq
+// secondes couvrent largement une livraison locale ou en cluster, y
+// compris sur un runner de CI lent, sans transformer un scénario faux
+// en scénario long : le cas nominal sort au premier tour de boucle.
+const defaultAssertWebhookTimeout = 5 * time.Second
+
+// assertWebhookPollInterval espace les relectures. Assez court pour que
+// le cas nominal ne coûte rien de perceptible, assez long pour ne pas
+// marteler l'API.
+const assertWebhookPollInterval = 25 * time.Millisecond
+
+// countWebhooks compte les livraisons postérieures au cursor, filtrées
+// sur status quand il est renseigné. Extrait de doAssertWebhook pour
+// que la boucle d'attente reste lisible.
+func countWebhooks(all []WebhookEntry, since time.Time, status string) int {
+	n := 0
+	for _, w := range all {
+		if w.CreatedAt.Before(since) {
+			continue
+		}
+		if status != "" && w.Status != status {
+			continue
+		}
+		n++
+	}
+	return n
 }
 
 // doAssertState lit l'état du paiement courant et compare. Erreur

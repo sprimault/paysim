@@ -70,7 +70,7 @@ Eleven actions covering the three payment patterns.
 | `create_payment` | Create a payment. Optional `card`, `form_action`, `customer.email`, `metadata`, `notification_url`. `amount: 0` valid when `form_action: REGISTER` (register-only, no debit). |
 | `simulate`       | Advance the payment via the browser-return simulation endpoint.         |
 | `assert_state`   | Assert the current payment is in the given state.                       |
-| `assert_webhook` | Count webhooks delivered since the scenario started (optional `status`).|
+| `assert_webhook` | Count webhooks delivered since the scenario started (optional `status`, optional `timeout`).|
 
 ### Recurring token pattern
 
@@ -106,6 +106,29 @@ then reset):
 
 Persistent chaos: `inject` before every `simulate` you want it to
 affect. See `examples/scenarios/chaos-duplicate.yml`.
+
+### Why `assert_webhook` waits
+
+Webhook delivery is asynchronous: the handler enqueues and answers, the
+worker delivers and records afterwards. `assert_webhook` therefore polls
+until the expected count is reached, and only fails once a deadline
+expires — **5 seconds** by default. A scenario whose count is correct
+exits on the first read and costs nothing.
+
+Raise `timeout` when an `inject` has delayed delivery beyond that:
+
+```yaml
+  - action: inject
+    mode: delay=8000
+  - action: simulate
+    status: captured
+  - action: assert_webhook
+    count: 1
+    timeout: 12s
+```
+
+Note that `count: 0` returns immediately — it asserts that nothing has
+been delivered *yet*, not that nothing ever will be.
 
 ## The `card` object
 

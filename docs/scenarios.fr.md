@@ -71,7 +71,7 @@ Onze actions qui couvrent les trois patterns de paiement.
 | `create_payment` | Crée un paiement. `card`, `form_action`, `customer.email`, `metadata`, `notification_url` optionnels. `amount: 0` valide quand `form_action: REGISTER` (enrôlement pur, aucun débit). |
 | `simulate`       | Fait avancer le paiement via l'endpoint de simulation navigateur.       |
 | `assert_state`   | Assert que le paiement courant est dans l'état demandé.                 |
-| `assert_webhook` | Compte les webhooks livrés depuis le début du scénario (`status` optionnel).|
+| `assert_webhook` | Compte les webhooks livrés depuis le début du scénario (`status` et `timeout` optionnels).|
 
 ### Récurrence par token
 
@@ -107,6 +107,29 @@ puis remis à zéro) :
 
 Chaos persistant : réinjecter avant chaque `simulate` concerné. Voir
 `examples/scenarios/chaos-duplicate.yml`.
+
+### Pourquoi `assert_webhook` attend
+
+La livraison d'un webhook est asynchrone : le handler enqueue et répond,
+le worker livre et historise ensuite. `assert_webhook` interroge donc
+l'API jusqu'à atteindre le compte attendu, et n'échoue qu'au bout d'un
+délai — **5 secondes** par défaut. Un scénario dont le compte est juste
+sort au premier tour et ne coûte rien.
+
+Relever `timeout` quand un `inject` a retardé la livraison au-delà :
+
+```yaml
+  - action: inject
+    mode: delay=8000
+  - action: simulate
+    status: captured
+  - action: assert_webhook
+    count: 1
+    timeout: 12s
+```
+
+À noter : `count: 0` retourne immédiatement — il assert que rien n'a
+*encore* été livré, pas que rien ne le sera jamais.
 
 ## L'objet `card`
 
