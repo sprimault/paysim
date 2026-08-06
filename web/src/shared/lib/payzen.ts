@@ -7,7 +7,16 @@
  */
 
 export interface ParsedPayzenBody {
+  /**
+   * Contenu de kr-answer désérialisé, ou null si le champ est absent
+   * ou illisible — un corps altéré par le chaos ne doit pas casser
+   * l'affichage.
+   */
   krAnswer: unknown | null;
+  /**
+   * Les autres champs du formulaire, kr-hash en tête. Conservés bruts
+   * pour que la vue puisse montrer ce qui a réellement été transmis.
+   */
   rest: Record<string, string>;
 }
 

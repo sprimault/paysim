@@ -247,15 +247,33 @@ func buildKrAnswer(tx *Transaction, pm *PaymentMethod, opts BrowserReturnOpts, s
 // browserReturn et ipn — permet de partager buildKrAnswer sans
 // dupliquer le decodage cote handler.
 type BrowserReturnOpts struct {
-	Outcome           string
+	// Outcome est l'issue à jouer : PAID, AUTHORISED, UNPAID, EXPIRED
+	// ou ABANDONED. C'est elle qui pilote toute la table outcomeSpecs.
+	Outcome string
+
+	// PaymentMethodType et CardBrand décrivent le moyen annoncé.
+	// Ignorés dès qu'un moyen enrôlé accompagne la transaction : ce
+	// qu'on annonce vient alors de la carte réelle.
 	PaymentMethodType string
 	CardBrand         string
-	Wallet            string
-	ThreeDSStatus     string
-	ErrorCode         string
-	ErrorMessage      string
-	Chaos             WebhookChaos
-	DeliveryDelayMs   int
+
+	// Wallet nomme le portefeuille employé (APPLE_PAY, GOOGLEPAY).
+	Wallet string
+
+	// ThreeDSStatus est le verdict d'authentification annoncé —
+	// SUCCESS, CHALLENGE ou FAILURE. Il détermine aussi
+	// authenticationType dans le webhook.
+	ThreeDSStatus string
+
+	// ErrorCode et ErrorMessage habillent un refus.
+	ErrorCode    string
+	ErrorMessage string
+
+	// Chaos et DeliveryDelayMs portent l'injection de panne sur cette
+	// livraison. Inertes par défaut : le chaos ne s'active jamais tout
+	// seul.
+	Chaos           WebhookChaos
+	DeliveryDelayMs int
 }
 
 // buildDeliveryWebhook construit le Webhook a remettre a

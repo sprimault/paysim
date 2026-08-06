@@ -15,9 +15,13 @@ import { create } from 'zustand';
 export type ToastTone = 'success' | 'error' | 'info' | 'warning';
 
 export interface Toast {
+  /** Identifiant monotone, sert de clé React et cible la fermeture. */
   id: number;
+  /** Couleur et icône du bandeau. */
   tone: ToastTone;
+  /** Ligne principale, toujours affichée. */
   title: string;
+  /** Détail facultatif — un message d'erreur, un décompte. */
   message?: string;
 }
 

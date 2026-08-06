@@ -15,9 +15,19 @@ import "time"
 // structure des payloads (map, struct provider…). À la relecture,
 // Data est désérialisé en `map[string]any` pour rester générique.
 type EventRecord struct {
-	ID       uint64
-	Type     string
-	At       time.Time
+	// ID est le compteur monotone du bus. C'est lui qui permet à un
+	// client SSE reconnecté de reprendre où il s'était arrêté après un
+	// redémarrage, sans trou ni doublon.
+	ID uint64
+
+	// Type nomme l'événement.
+	Type string
+
+	// At est l'instant de publication, en UTC.
+	At time.Time
+
+	// DataJSON est la charge utile sérialisée. Le store ne l'interprète
+	// pas : il transporte ce que le bus lui donne.
 	DataJSON string
 }
 

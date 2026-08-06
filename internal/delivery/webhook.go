@@ -65,6 +65,6 @@ type Webhook struct {
 	// Permet aux appelants du chaos de simuler un webhook retardé
 	// (out-of-order avec un second webhook non retardé) sans bloquer
 	// les autres livraisons — le scheduler lance chaque delivery en
-	// goroutine indépendante depuis le vertical 3 phase 2.
+	// goroutine indépendante.
 	Delay time.Duration
 }

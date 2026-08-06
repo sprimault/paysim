@@ -4,6 +4,7 @@
 import { Radio, Zap } from 'lucide-react';
 import { Link, NavLink } from 'react-router';
 import { LangToggle } from '@/shared/ui/LangToggle';
+import { ResetAllButton } from '@/shared/ui/ResetAllButton';
 import { ThemeToggle } from '@/shared/ui/ThemeToggle';
 import { useT } from '@/shared/i18n/useT';
 
@@ -34,6 +35,10 @@ export function Header({ connected = true }: HeaderProps) {
           <ConnectionIndicator connected={connected} />
           <ThemeToggle />
           <LangToggle />
+          {/* Séparé des sélecteurs par un filet : action destructive
+              voisine de réglages anodins, la frontière doit se voir. */}
+          <span className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-800" aria-hidden="true" />
+          <ResetAllButton />
         </div>
       </div>
     </header>

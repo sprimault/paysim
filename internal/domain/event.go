@@ -39,8 +39,19 @@ const (
 //   - Note  : texte libre pour les événements qui en portent (raison d'un
 //     refus, référence externe d'un chargeback). Vide sinon.
 type Event struct {
-	At     time.Time
-	Kind   EventKind
+	// At est l'instant de l'événement, en UTC.
+	At time.Time
+
+	// Kind est la nature du fait consigné. C'est le journal qui
+	// raconte l'histoire, pas l'état : un remboursement partiel produit
+	// un événement même quand l'état reste le même.
+	Kind EventKind
+
+	// Amount en centimes, sur les événements qui portent un montant —
+	// un remboursement notamment. Zéro ailleurs.
 	Amount format.Amount
-	Note   string
+
+	// Note porte le motif quand il existe, par exemple la raison d'un
+	// refus. Vide sinon.
+	Note string
 }

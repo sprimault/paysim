@@ -175,7 +175,7 @@ func withBearerToken(next http.Handler, expected string, logger *slog.Logger) ht
 // portent les valeurs marchand pour un appel natif.
 //
 // Card et PaymentMethodToken sont deux modes de gestion des moyens de
-// paiement récurrents (4.4.5) :
+// paiement récurrents :
 //   - Card + FormAction=REGISTER_PAY : Paysim génère un
 //     paymentMethodToken lors de la création et l'enregistre.
 //   - PaymentMethodToken (sans Card) : rejeu one-click à partir d'un
@@ -184,15 +184,37 @@ func withBearerToken(next http.Handler, expected string, logger *slog.Logger) ht
 // Fournir les deux en même temps est une erreur (Card ignorée, seul le
 // token est utilisé — mais autant l'omettre côté appelant).
 type CreateInput struct {
-	Amount             format.Amount
-	Currency           string
-	OrderID            string
-	FormAction         string
-	Customer           Customer
-	Metadata           map[string]string
-	ReturnURL          string
-	NotificationURL    string
-	Card               *Card
+	// Amount en centimes entiers, Currency en ISO 4217. Zéro est
+	// valide et désigne l'enrôlement pur.
+	Amount   format.Amount
+	Currency string
+
+	// OrderID est la référence de commande du marchand.
+	OrderID string
+
+	// FormAction déclare l'intention PayZen. Conservée pour
+	// restitution, sans effet sur l'enrôlement.
+	FormAction string
+
+	// Customer et Metadata sont le contexte marchand, restitués tels
+	// quels. Vides sur un appel générique, renseignés sur un appel
+	// natif V4.
+	Customer Customer
+	Metadata map[string]string
+
+	// ReturnURL et NotificationURL ciblent le retour navigateur et
+	// l'IPN. Absentes, les endpoints de simulation retombent sur la
+	// configuration globale.
+	ReturnURL       string
+	NotificationURL string
+
+	// Card enrôle un moyen de paiement à la création.
+	Card *Card
+
+	// PaymentMethodToken bascule sur le rejeu one-click : pas de
+	// formulaire, issue immédiate, webhook émis. Prend le pas sur Card
+	// si les deux sont fournis — mais les fournir ensemble n'a pas de
+	// sens, autant omettre Card.
 	PaymentMethodToken string
 }
 
@@ -643,13 +665,23 @@ var ErrSubscriptionCancelled = errors.New("abonnement annule")
 // programmatique d'un abonnement. Utilisé par l'endpoint générique
 // et le handler HTTP natif partagent la même mécanique.
 type CreateSubscriptionInput struct {
+	// PaymentMethodToken désigne le moyen à prélever. Doit exister :
+	// la création échoue sinon, plutôt que de laisser un abonnement
+	// sans rien à débiter.
 	PaymentMethodToken string
-	Amount             format.Amount
-	Currency           string
-	OrderID            string
-	EffectDate         string
-	Rrule              string
-	Metadata           map[string]string
+
+	// Amount en centimes entiers, Currency en ISO 4217, OrderID libre.
+	Amount   format.Amount
+	Currency string
+	OrderID  string
+
+	// EffectDate et Rrule sont l'échéancier déclaré, conservé sans
+	// être consommé.
+	EffectDate string
+	Rrule      string
+
+	// Metadata est recopiée sur chaque Transaction d'échéance.
+	Metadata map[string]string
 }
 
 // CreateSubscription matérialise un abonnement PayZen : vérifie que
@@ -1059,11 +1091,24 @@ func (h *Handler) ipn(w http.ResponseWriter, r *http.Request) {
 // (au lieu de 5 paramètres positionnels) pour rester lisible côté
 // appelants — les handlers HTTP internes et l'API UI.
 type SimulateInput struct {
-	FormToken   string
-	URLOverride string                    // vide = fallback sur la Transaction
-	AnswerType  string                    // "V4/Payment"
-	Opts        BrowserReturnOpts
-	FallbackURL func(*Transaction) string // ex : func(tx){return tx.ReturnURL}
+	// FormToken désigne la transaction à faire avancer.
+	FormToken string
+
+	// URLOverride est la cible fournie par la requête. Vide, on
+	// retombe sur FallbackURL puis sur la configuration globale.
+	URLOverride string
+
+	// AnswerType est le type annoncé dans le corps signé, par exemple
+	// V4/Payment. Le marchand s'en sert pour choisir son décodage.
+	AnswerType string
+
+	// Opts porte l'issue à jouer et l'habillage du webhook.
+	Opts BrowserReturnOpts
+
+	// FallbackURL extrait l'URL par défaut de la transaction. Passée en
+	// fonction parce qu'elle diffère selon le canal : le retour
+	// navigateur vise ReturnURL, l'IPN vise NotificationURL.
+	FallbackURL func(*Transaction) string
 }
 
 // Simulate est la logique de simulation d'un retour signé. Exportée

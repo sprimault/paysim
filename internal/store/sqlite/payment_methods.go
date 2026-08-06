@@ -173,6 +173,20 @@ func (r *PaymentMethodsRepository) Revoke(token string) error {
 	return err
 }
 
+// DeleteAll supprime tous les moyens de paiement, tous providers
+// confondus. Distinct de Revoke, qui conserve l'entree en la rendant
+// inutilisable.
+func (r *PaymentMethodsRepository) DeleteAll() (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := r.db.ExecContext(ctx, `DELETE FROM payment_methods`)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 // Count total, cross-provider.
 func (r *PaymentMethodsRepository) Count() (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -87,6 +87,14 @@ type PaymentMethodRepository interface {
 	// Count retourne le nombre total. Cross-provider.
 	Count() (int, error)
 
+	// DeleteAll supprime tous les moyens de paiement, quel que soit le
+	// provider. Retourne le nombre supprimé.
+	//
+	// Distinct de Revoke : révoquer conserve l'entrée en la rendant
+	// inutilisable — ce qui sert à tester un impayé — là où supprimer
+	// la fait disparaître. Une réinitialisation veut la seconde.
+	DeleteAll() (int, error)
+
 	// Close libère les ressources sous-jacentes.
 	Close() error
 }

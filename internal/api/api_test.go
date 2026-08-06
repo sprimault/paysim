@@ -1598,3 +1598,91 @@ func TestCreatePayment_refusNeRendPasDeToken(t *testing.T) {
 		t.Errorf("le moyen doit exister et etre marque inexploitable : %+v", list)
 	}
 }
+
+// TestReset_videToutesLesTables : une reinitialisation doit vider les
+// quatre collections et rendre compte de ce qu'elle a supprime — c'est
+// ce compte qui permet a l'interface d'annoncer ce qui va disparaitre
+// plutot qu'un « etes-vous sur ? » qui n'informe de rien.
+func TestReset_videToutesLesTables(t *testing.T) {
+	t.Parallel()
+	server := setupWithSQLite(t)
+
+	// Un enrolement produit un paiement et un moyen ; on y ajoute un
+	// abonnement pour couvrir les trois collections persistees.
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "O",
+		Card: &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var created CreatePaymentOutput
+	_ = json.NewDecoder(resp.Body).Decode(&created)
+	_ = resp.Body.Close()
+
+	subBody, _ := json.Marshal(CreateSubscriptionInput{
+		Provider: "payzen", PaymentMethodToken: created.PaymentMethodToken,
+		Amount: 990, Currency: "EUR", OrderID: "SUB",
+	})
+	subResp, err := http.Post(server.URL+"/paysim/api/v1/subscriptions",
+		"application/json", bytes.NewReader(subBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = subResp.Body.Close()
+
+	// Réinitialisation.
+	rst, err := http.Post(server.URL+"/paysim/api/v1/reset", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rst.Body.Close() }()
+	if rst.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, veut 200", rst.StatusCode)
+	}
+	var out ResetOutput
+	_ = json.NewDecoder(rst.Body).Decode(&out)
+
+	if out.Payments < 1 {
+		t.Errorf("Payments = %d, veut au moins 1", out.Payments)
+	}
+	if out.PaymentMethods < 1 {
+		t.Errorf("PaymentMethods = %d, veut au moins 1", out.PaymentMethods)
+	}
+	if out.Subscriptions < 1 {
+		t.Errorf("Subscriptions = %d, veut au moins 1", out.Subscriptions)
+	}
+
+	// Les collections doivent être vides ensuite.
+	for _, path := range []string{"payments", "payment-methods", "subscriptions"} {
+		r, err := http.Get(server.URL + "/paysim/api/v1/" + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var items []json.RawMessage
+		_ = json.NewDecoder(r.Body).Decode(&items)
+		_ = r.Body.Close()
+		if len(items) != 0 {
+			t.Errorf("%s : %d entrees restantes apres reset", path, len(items))
+		}
+	}
+}
+
+// TestReset_baseVideNEchouePas : reinitialiser deux fois de suite doit
+// etre sans effet la seconde, pas une erreur.
+func TestReset_baseVideNEchouePas(t *testing.T) {
+	t.Parallel()
+	server := setupWithSQLite(t)
+	for i := range 2 {
+		resp, err := http.Post(server.URL+"/paysim/api/v1/reset", "application/json", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("passe %d : status = %d, veut 200", i+1, resp.StatusCode)
+		}
+	}
+}

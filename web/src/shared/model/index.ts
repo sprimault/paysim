@@ -65,7 +65,7 @@ export type SimulatePaymentResponse = Omit<SimulatePaymentResponseRaw, 'channel'
 };
 
 export type { ReplayWebhookResponse };
-// Types 4.4.5/6/7 — subscriptions & payment methods. Réexports directs :
+// Abonnements et moyens de paiement enregistrés. Réexports directs :
 // pas d'affinage d'unions à faire côté front (les booléens et strings
 // libres restent tels quels).
 export type {

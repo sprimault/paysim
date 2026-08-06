@@ -74,14 +74,25 @@ type customerReq struct {
 //   - après un enrôlement (Card fournie),
 //   - après un rejeu one-click (echo du token utilisé).
 type CreatedPayment struct {
-	UUID               string `json:"uuid"`
-	Provider           string `json:"provider"`
-	State              string `json:"state"`
+	// UUID du paiement, mémorisé par le runner pour les assertions
+	// suivantes.
+	UUID string `json:"uuid"`
+
+	// Provider ayant matérialisé le paiement.
+	Provider string `json:"provider"`
+
+	// State à l'issue de l'appel : initiated en attente d'un simulate,
+	// captured ou declined quand l'issue est immédiate.
+	State string `json:"state"`
+
+	// PaymentMethodToken renvoyé par un enrôlement. Le runner le
+	// mémorise, ce qui permet aux charge_token suivants d'omettre leur
+	// champ token.
 	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
 }
 
 // CreatePayment appelle POST /paysim/api/v1/payments (endpoint générique).
-// Propage tous les champs 4.4.5 (Card, FormAction, NotificationURL).
+// Propage Card, FormAction et NotificationURL.
 func (c *Client) CreatePayment(ctx context.Context, in *CreatePayment) (*CreatedPayment, error) {
 	body := createPaymentReq{
 		Provider:        in.Provider,
@@ -156,17 +167,32 @@ type createSubReq struct {
 // l'API. Champs alignés sur api.SubscriptionOutput ; suffisamment pour
 // les assertions et la mémorisation côté runner.
 type SubscriptionDetail struct {
-	ID                 string `json:"id"`
-	Provider           string `json:"provider"`
+	// ID de l'abonnement, mémorisé par le runner.
+	ID string `json:"id"`
+
+	// Provider ayant enregistré l'abonnement.
+	Provider string `json:"provider"`
+
+	// PaymentMethodToken du moyen prélevé à chaque échéance.
 	PaymentMethodToken string `json:"paymentMethodToken"`
-	Cancelled          bool   `json:"cancelled"`
+
+	// Cancelled est ce que vérifie assert_subscription. Définitif :
+	// les échéances suivantes sont refusées.
+	Cancelled bool `json:"cancelled"`
 }
 
 // CreatedBilling résume un renewal déclenché par TriggerBilling.
 type CreatedBilling struct {
+	// SubscriptionID est l'abonnement facturé.
 	SubscriptionID string `json:"subscriptionId"`
-	PaymentUUID    string `json:"paymentUuid"`
-	State          string `json:"state"`
+
+	// PaymentUUID est la transaction créée pour cette échéance. Le
+	// runner la mémorise, ce qui permet à l'assert_state suivant de
+	// porter dessus sans la nommer.
+	PaymentUUID string `json:"paymentUuid"`
+
+	// State est l'issue de l'échéance.
+	State string `json:"state"`
 }
 
 // CreateSubscription appelle POST /paysim/api/v1/subscriptions.
@@ -236,10 +262,21 @@ type simulateReq struct {
 // éviter d'importer internal/providers/payzen depuis scenarios. Un
 // intégrateur qui compose un simulate manuellement l'utilise via
 // SimulateOpts, un scénario YAML la remplit implicitement via l'action
-// inject (4.4.2b).
+// inject.
 type ChaosOpts struct {
-	Duplicate          bool `json:"duplicate,omitempty"`
-	BadSignature       bool `json:"badSignature,omitempty"`
+	// Duplicate livre le webhook deux fois, avec deux identifiants
+	// distincts mais un même contenu : de quoi vérifier qu'un marchand
+	// déduplique sur l'UUID de transaction.
+	Duplicate bool `json:"duplicate,omitempty"`
+
+	// BadSignature alt��re le kr-hash envoyé en préservant sa forme. Un
+	// marchand qui vérifie la signature doit refuser ; un qui se
+	// contente d'en constater la présence ne verra rien.
+	BadSignature bool `json:"badSignature,omitempty"`
+
+	// RaceBeforeResponse fait partir le webhook avant la réponse HTTP.
+	// C'est l'échec qu'aucune sandbox ne sait produire à la demande, et
+	// la raison d'être du projet.
 	RaceBeforeResponse bool `json:"raceBeforeResponse,omitempty"`
 }
 
@@ -248,7 +285,13 @@ type ChaosOpts struct {
 // une signature à sept args et laisse la place aux extensions futures
 // sans casse binaire des consommateurs.
 type SimulateOpts struct {
+	// NotificationURL surcharge la cible du webhook.
 	NotificationURL string
+
+	// Chaos et DeliveryDelayMs portent le mode de panne armé par un
+	// inject. Leur portée est d'un seul simulate : le runner les
+	// consomme puis les remet à zéro, pour qu'une panne ne déborde pas
+	// sur les étapes suivantes.
 	Chaos           ChaosOpts
 	DeliveryDelayMs int
 }
@@ -272,6 +315,9 @@ func (c *Client) SimulatePayment(ctx context.Context, uuid, outcome, channel str
 // besoins des assertions. Le journal d'événements est ignoré — le scénario
 // n'assert que l'état pour l'instant.
 type PaymentDetail struct {
+	// Vue volontairement réduite : le runner n'a besoin que de l'état
+	// pour ses assertions. Décoder davantage le rendrait sensible à des
+	// évolutions de l'API qui ne le concernent pas.
 	UUID  string `json:"uuid"`
 	State string `json:"state"`
 }
@@ -288,9 +334,19 @@ func (c *Client) GetPayment(ctx context.Context, uuid string) (*PaymentDetail, e
 // WebhookEntry est la vue minimale d'un webhook livré, alignée sur
 // api.WebhookEntry pour les champs consommés par assert_webhook.
 type WebhookEntry struct {
-	ID        string    `json:"id"`
-	Status    string    `json:"status"`
-	Outcome   string    `json:"outcome"`
+	// ID de la tentative de livraison.
+	ID string `json:"id"`
+
+	// Status est l'acheminement HTTP, Outcome le résultat métier
+	// annoncé. assert_webhook filtre sur l'un, sur l'autre, ou sur les
+	// deux — les confondre revient à asserter autre chose que ce qu'on
+	// croit.
+	Status  string `json:"status"`
+	Outcome string `json:"outcome"`
+
+	// CreatedAt sert de curseur : le runner ne compte que les
+	// livraisons postérieures au début du scénario, pour ignorer ce
+	// qu'une exécution précédente aurait laissé.
 	CreatedAt time.Time `json:"createdAt"`
 }
 
@@ -310,10 +366,18 @@ func (c *Client) ListWebhooks(ctx context.Context) ([]WebhookEntry, error) {
 // sur uuid inexistant) transitent par ce type — le runner peut ainsi
 // distinguer un défaut du scénario d'un défaut réseau.
 type HTTPError struct {
-	Method     string
-	Path       string
+	// Method et Path situent l'appel fautif — sans eux, un scénario de
+	// vingt étapes ne dit pas laquelle a échoué.
+	Method string
+	Path   string
+
+	// StatusCode est le code HTTP reçu.
 	StatusCode int
-	Body       string
+
+	// Body est la réponse brute du serveur. C'est là que se trouve le
+	// message d'erreur métier, par exemple la liste des outcomes
+	// acceptés quand la valeur envoyée est inconnue.
+	Body string
 }
 
 // Error implémente error.

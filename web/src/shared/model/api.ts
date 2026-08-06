@@ -28,14 +28,45 @@ endpoints /paysim/*).
  * les entités survivent au run mais ne sont pas listées globalement).
  */
 export interface Deps {
+  /**
+   * Store est le magasin des transactions PayZen, seul disponible en
+   * mode mémoire.
+   */
   Store: any /* payzen.Store */;
-  PaymentRepo: any /* store.PaymentRepository */; // optionnel — nil en mode mémoire ; permet les endpoints DELETE cross-provider
-  SubscriptionRepo: any /* store.SubscriptionRepository */; // optionnel — mode SQLite uniquement pour listing global
-  PaymentMethodRepo: any /* store.PaymentMethodRepository */; // optionnel — mode SQLite uniquement
+  /**
+   * Les trois dépôts cross-provider sont nil en mode mémoire. Les
+   * endpoints qui en dépendent retournent alors une liste vide ou
+   * retombent sur Store — un mode dégradé assumé, pas une panne :
+   * les entités survivent au run, elles ne sont simplement pas
+   * listables globalement.
+   */
+  PaymentRepo: any /* store.PaymentRepository */;
+  SubscriptionRepo: any /* store.SubscriptionRepository */;
+  PaymentMethodRepo: any /* store.PaymentMethodRepository */;
+  /**
+   * Queue porte la file de livraison et l'historique des webhooks.
+   */
   Queue?: any /* delivery.Queue */;
+  /**
+   * Publisher diffuse les événements vers les abonnés SSE, ce qui
+   * tient l'interface à jour sans qu'elle interroge en boucle.
+   */
   Publisher?: any /* bus.Bus */;
+  /**
+   * Logger reçoit les journaux structurés de l'API.
+   */
   Logger?: any /* slog.Logger */;
-  Token: string; // Bearer requis si non vide, sinon API ouverte
+  /**
+   * Token protège l'API par Bearer. Vide, l'API est ouverte — le
+   * comportement voulu en local, et la raison pour laquelle activer
+   * ce jeton désactive l'interface web.
+   */
+  Token: string;
+  /**
+   * PayzenHandler permet de créer un paiement sans repasser par HTTP.
+   * L'API de contrôle appelle directement l'adaptateur plutôt que de
+   * se requêter elle-même.
+   */
   PayzenHandler?: any /* payzen.Handler */;
 }
 /**
@@ -48,12 +79,42 @@ export interface Handler {
  * PaymentSummary est le résumé d'un paiement pour les listes.
  */
 export interface PaymentSummary {
+  /**
+   * UUID identifie le paiement côté Paysim. C'est lui qu'on passe à
+   * /payments/{uuid}/simulate, et il se retrouve dans le webhook sous
+   * transactions[0].uuid.
+   */
   uuid: string;
+  /**
+   * Provider nomme l'adaptateur qui a matérialisé le paiement
+   * ("payzen" aujourd'hui). Sert à filtrer les listes.
+   */
   provider: string;
+  /**
+   * OrderID est la référence de commande choisie par le marchand.
+   * Libre et non unique côté Paysim.
+   */
   orderId: string;
+  /**
+   * Amount est en centimes entiers, jamais en unité monétaire — un
+   * paiement de 49,90 € vaut 4990. Zéro est légitime : c'est
+   * l'enrôlement pur, qui crée un moyen de paiement sans débiter.
+   */
   amount: number /* int64 */;
+  /**
+   * Currency au format ISO 4217 ("EUR").
+   */
   currency: string;
+  /**
+   * State est l'état du domaine, pas le vocabulaire du provider :
+   * initiated, authorized, captured, partially_refunded, refunded,
+   * declined, expired, chargeback. Voir docs/states.md.
+   */
   state: string;
+  /**
+   * CreatedAt et UpdatedAt sont en UTC. UpdatedAt bouge à chaque
+   * transition ; sur un paiement jamais joué, les deux sont égales.
+   */
   createdAt: string /* RFC 3339 */;
   updatedAt: string /* RFC 3339 */;
 }
@@ -62,22 +123,52 @@ export interface PaymentSummary {
  */
 export interface PaymentDetail {
   PaymentSummary: PaymentSummary;
+  /**
+   * Events est le journal complet, dans l'ordre chronologique. Il
+   * raconte l'histoire du paiement là où State n'en donne que le
+   * dernier mot — un remboursement partiel y laisse une trace même
+   * quand l'état ne change pas.
+   */
   events: EventEntry[];
 }
 /**
  * EventEntry est une entrée du journal d'événements du domaine.
  */
 export interface EventEntry {
+  /**
+   * At est l'instant de l'événement, en UTC.
+   */
   at: string /* RFC 3339 */;
+  /**
+   * Kind est la nature de l'événement — created, authorized,
+   * captured, refunded… Le journal est immuable : un remboursement
+   * partiel produit un événement même quand l'état ne bouge pas.
+   */
   kind: string;
+  /**
+   * Amount en centimes, renseigné sur les événements qui portent un
+   * montant comme un remboursement.
+   */
   amount?: number /* int64 */;
+  /**
+   * Note porte le motif quand il y en a un, par exemple la raison
+   * d'un refus.
+   */
   note?: string;
 }
 /**
  * WebhookEntry résume une tentative de livraison — pour la liste UI.
  */
 export interface WebhookEntry {
+  /**
+   * ID identifie la tentative de livraison. Un rejeu en produit une
+   * nouvelle, avec son propre ID — c'est ce qui permet de suivre
+   * chaque essai séparément.
+   */
   id: string;
+  /**
+   * URL est la cible effectivement appelée.
+   */
   url: string;
   /**
    * Status décrit l'acheminement HTTP ("delivered", "failed",
@@ -88,9 +179,22 @@ export interface WebhookEntry {
    */
   status: string;
   outcome?: string;
+  /**
+   * StatusCode est le code HTTP reçu, zéro quand l'erreur est
+   * survenue avant toute réponse — DNS, timeout, connexion refusée.
+   * ErrorMsg porte alors le détail.
+   */
   statusCode?: number /* int */;
   errorMsg?: string;
+  /**
+   * Attempts compte les tentatives sur cette livraison.
+   */
   attempts: number /* int */;
+  /**
+   * CreatedAt est l'entrée en file, CompletedAt la fin de tentative.
+   * Leur écart mesure ce qu'a coûté la livraison, délai de chaos
+   * compris.
+   */
   createdAt: string /* RFC 3339 */;
   completedAt: string /* RFC 3339 */;
 }
@@ -100,49 +204,96 @@ export interface WebhookEntry {
  */
 export interface WebhookDetail {
   WebhookEntry: WebhookEntry;
+  /**
+   * Headers et Body sont ce qui a réellement été envoyé. C'est là que
+   * le marchand va vérifier sa signature ou relire le kr-answer —
+   * d'où leur absence de la vue liste, qui n'a pas à transporter des
+   * corps entiers.
+   */
   headers: { [key: string]: string};
   body: string;
 }
 /**
  * CreatePaymentInput est le corps de POST /paysim/api/v1/payments,
- * endpoint générique de création cross-provider. Le champ Provider
- * choisit l'adaptateur qui matérialise le paiement (seul "payzen"
- * est câblé aujourd'hui ; Stripe arrivera en phase 5). Vide = payzen
- * par défaut pour ne pas alourdir les scénarios monoprovider.
- * FormAction, NotificationURL, Card et PaymentMethodToken ouvrent le
- * support des paiements récurrents (4.4.5) :
- *   - FormAction=REGISTER_PAY|ASK_REGISTER_PAY + Card : enregistre le
- *     moyen de paiement à l'issue, retourne un paymentMethodToken.
- *   - PaymentMethodToken sans Card : rejeu one-click à partir du moyen
- *     stocké — capture directe, webhook émis (si NotificationURL et
- *     token de la boutique configurés côté serveur).
+ * endpoint générique de création cross-provider.
+ * Trois usages selon ce qu'on fournit : ni Card ni token pour un
+ * paiement classique qui attend d'être joué, Card pour enrôler un
+ * moyen au passage, ou un token seul pour rejouer sans formulaire.
  */
 export interface CreatePaymentInput {
+  /**
+   * Provider choisit l'adaptateur. Vide vaut "payzen", avec un log
+   * Debug pour tracer les choix implicites dans un journal chargé.
+   */
   provider?: string;
+  /**
+   * Amount en centimes entiers — 49,90 € vaut 4990. Zéro est valide
+   * et désigne l'enrôlement pur : on enregistre une carte sans rien
+   * débiter.
+   */
   amount: any /* format.Amount */;
+  /**
+   * Currency en ISO 4217, OrderID libre côté marchand.
+   */
   currency: string;
   orderId: string;
+  /**
+   * FormAction déclare l'intention (PAYMENT, REGISTER,
+   * REGISTER_PAY…). Conservée et restituée, mais sans effet sur
+   * l'enrôlement : une carte fournie est toujours enregistrée.
+   */
   formAction?: string;
+  /**
+   * Customer et Metadata sont restitués tels quels dans le webhook.
+   * Metadata est le canal prévu pour rattacher un paiement à un objet
+   * métier sans dépendre de l'orderId.
+   */
   customer?: any /* payzen.Customer */;
   metadata?: { [key: string]: string};
+  /**
+   * NotificationURL est la cible de l'IPN. Absente, le serveur
+   * retombe sur PAYSIM_CALLBACK_URL — ce qui rend les rejeux
+   * notifiables sans URL au coup par coup.
+   */
   notificationUrl?: string;
+  /**
+   * Card enrôle un moyen de paiement. Extension Paysim : le vrai
+   * PayZen collecte la carte par le SmartForm client, jamais par
+   * l'API marchand.
+   */
   card?: any /* payzen.Card */;
+  /**
+   * PaymentMethodToken déclenche un rejeu one-click sur un moyen déjà
+   * enregistré : pas de formulaire, issue immédiate, webhook émis
+   * dans la foulée. Prend le pas sur Card si les deux sont fournis.
+   */
   paymentMethodToken?: string;
 }
 /**
- * CreatePaymentOutput retourne l'uuid attribué au paiement et son
- * état à l'issue de l'appel. PaymentMethodToken est renseigné dans
- * deux cas :
- *   - après un enrôlement (Card + FormAction REGISTER_PAY),
- *   - après un rejeu one-click (echo du token utilisé).
- * Le marchand n'a pas besoin de GET juste après pour lire l'état,
- * State est présent dans la réponse même en cas de rejeu (où l'état
- * devient captured ou declined dès le retour HTTP).
+ * CreatePaymentOutput est la réponse de création. Elle porte déjà
+ * l'état, ce qui évite un GET juste après — utile sur un rejeu, où
+ * l'issue est connue dès le retour HTTP.
  */
 export interface CreatePaymentOutput {
+  /**
+   * UUID identifie le paiement créé.
+   */
   uuid: string;
+  /**
+   * Provider nomme l'adaptateur qui l'a matérialisé.
+   */
   provider: string;
+  /**
+   * State est l'état à l'issue de l'appel. initiated sur un paiement
+   * qui attend d'être joué ; captured ou declined quand l'issue est
+   * immédiate — rejeu one-click, ou autoplay actif.
+   */
   state: string;
+  /**
+   * PaymentMethodToken est l'alias créé par un enrôlement. Absent sur
+   * un paiement refusé : l'annoncer à côté d'un refus laisserait
+   * croire qu'il est débitable.
+   */
   paymentMethodToken?: string;
 }
 /**
@@ -152,12 +303,36 @@ export interface CreatePaymentOutput {
  * channel choisit entre retour navigateur (défaut) et IPN pur.
  */
 export interface SimulatePaymentRequest {
-  outcome: string; // PAID | AUTHORISED | UNPAID | EXPIRED | ABANDONED
-  channel?: string; // "browserReturn" (défaut) | "ipn"
+  /**
+   * Outcome est l'issue à jouer : PAID, AUTHORISED, UNPAID, EXPIRED
+   * ou ABANDONED. Toute autre valeur est refusée avec la liste des
+   * valeurs acceptées.
+   */
+  outcome: string;
+  /**
+   * Channel choisit le canal d'émission : browserReturn (défaut)
+   * suit le navigateur du porteur, ipn part serveur à serveur. Deux
+   * chemins distincts pour un même kr-answer — c'est ce qui permet
+   * de provoquer leur inversion.
+   */
+  channel?: string;
+  /**
+   * ReturnURL et NotificationURL surchargent les cibles de la
+   * transaction, selon le canal retenu. Absentes des deux, le
+   * serveur retombe sur PAYSIM_CALLBACK_URL.
+   */
   returnUrl?: string;
   notificationUrl?: string;
+  /**
+   * CardBrand et ThreeDSStatus habillent le webhook : marque
+   * annoncée, verdict d'authentification. CardBrand est ignoré dès
+   * qu'un moyen enrôlé existe.
+   */
   cardBrand?: string;
   threeDSStatus?: string;
+  /**
+   * ErrorCode et ErrorMessage détaillent un refus.
+   */
   errorCode?: string;
   errorMessage?: string;
   /**
@@ -180,8 +355,21 @@ export interface SimulatePaymentRequest {
  * SimulatePaymentResponse retourne le deliveryId et le hash calculé.
  */
 export interface SimulatePaymentResponse {
+  /**
+   * DeliveryID identifie la livraison déclenchée, pour la retrouver
+   * dans l'historique des webhooks.
+   */
   deliveryId: string;
+  /**
+   * KrHash est la signature réellement calculée. Retournée même
+   * lorsque le chaos bad-signature altère celle qui part : le
+   * marchand peut ainsi constater que ce qu'il reçoit ne correspond
+   * pas, ce qui est tout l'intérêt de ce mode.
+   */
   krHash: string;
+  /**
+   * Channel rappelle le canal employé, browserReturn ou ipn.
+   */
   channel: string;
 }
 /**
@@ -190,6 +378,11 @@ export interface SimulatePaymentResponse {
  * nouvelle tentative distincte.
  */
 export interface ReplayWebhookResponse {
+  /**
+   * NewDeliveryID identifie la nouvelle tentative. Un rejeu ne
+   * remplace pas l'original : les deux coexistent dans l'historique,
+   * ce qui permet de suivre chaque essai séparément.
+   */
   newDeliveryId: string;
 }
 /**
@@ -202,13 +395,36 @@ export interface ReplayWebhookResponse {
  * (RFC 5545) — recopiés tels quels, cf. providers.md.
  */
 export interface CreateSubscriptionInput {
+  /**
+   * Provider choisit l'adaptateur, "payzen" à défaut.
+   */
   provider?: string;
+  /**
+   * PaymentMethodToken désigne le moyen à prélever. Obligatoire :
+   * un abonnement sans moyen de paiement n'a rien à débiter.
+   */
   paymentMethodToken: string;
+  /**
+   * Amount est le montant d'une échéance en centimes, Currency sa
+   * devise ISO 4217.
+   */
   amount: any /* format.Amount */;
   currency: string;
+  /**
+   * OrderID est la référence marchand de l'abonnement.
+   */
   orderId?: string;
+  /**
+   * EffectDate et Rrule décrivent l'échéancier. Stockés et restitués
+   * tels quels, jamais interprétés : chaque échéance se déclenche
+   * explicitement, aucun moteur ne tourne en fond.
+   */
   effectDate?: string;
   rrule?: string;
+  /**
+   * Metadata est recopiée sur chaque Transaction d'échéance, enrichie
+   * de subscriptionId.
+   */
   metadata?: { [key: string]: string};
 }
 /**
@@ -216,16 +432,54 @@ export interface CreateSubscriptionInput {
  * remonte pour que le marchand puisse le voir sans recharger.
  */
 export interface SubscriptionOutput {
+  /**
+   * ID est le subscriptionId assigné par Paysim, à passer aux
+   * endpoints trigger-billing et cancel.
+   */
   id: string;
+  /**
+   * Provider nomme l'adaptateur ("payzen" aujourd'hui).
+   */
   provider: string;
+  /**
+   * PaymentMethodToken désigne le moyen prélevé à chaque échéance.
+   * L'abonnement ne le possède pas : révoquer ce moyen fait échouer
+   * les échéances sans annuler l'abonnement.
+   */
   paymentMethodToken: string;
+  /**
+   * Amount est le montant d'une échéance, en centimes entiers.
+   */
   amount: any /* format.Amount */;
+  /**
+   * Currency au format ISO 4217.
+   */
   currency: string;
+  /**
+   * OrderID est la référence marchand de l'abonnement.
+   */
   orderId?: string;
+  /**
+   * EffectDate et Rrule décrivent l'échéancier déclaré par le
+   * marchand. Paysim les conserve et les restitue tels quels mais ne
+   * les consomme jamais : aucun moteur ne tourne en fond, chaque
+   * échéance est déclenchée explicitement par trigger-billing. Choix
+   * délibéré, voir docs/subscriptions.md.
+   */
   effectDate?: string;
   rrule?: string;
+  /**
+   * Metadata est la map libre du marchand, restituée à l'identique.
+   */
   metadata?: { [key: string]: string};
+  /**
+   * Cancelled passe à true après un cancel. Les trigger-billing
+   * suivants répondent alors 400 — l'annulation est définitive.
+   */
   cancelled: boolean;
+  /**
+   * CreatedAt en UTC.
+   */
   createdAt: string /* RFC 3339 */;
 }
 /**
@@ -234,8 +488,20 @@ export interface SubscriptionOutput {
  * pour lire l'état complet et la trace du domaine.
  */
 export interface TriggerBillingOutput {
+  /**
+   * SubscriptionID est l'abonnement facturé.
+   */
   subscriptionId: string;
+  /**
+   * PaymentUUID est la transaction créée pour cette échéance. Elle
+   * porte subscriptionId dans sa metadata — c'est ce lien qui la
+   * rattache à l'abonnement, sans table dédiée.
+   */
   paymentUuid: string;
+  /**
+   * State est l'issue de l'échéance : captured, ou declined quand le
+   * moyen est révoqué, expiré, ou porte un PAN de refus.
+   */
   state: string;
 }
 /**
@@ -245,11 +511,36 @@ export interface TriggerBillingOutput {
  * vrai PSP dans son back-office).
  */
 export interface PaymentMethodOutput {
+  /**
+   * Token est l'alias réutilisable — le paymentMethodToken à repasser
+   * pour débiter sans formulaire. Opaque, propre à Paysim.
+   */
   token: string;
+  /**
+   * Provider nomme l'adaptateur qui a enrôlé la carte.
+   */
   provider: string;
+  /**
+   * PANMasked est le numéro tronqué, dérivé du PAN réellement
+   * enregistré. Le PAN complet n'est jamais exposé par l'API, même
+   * si le simulateur le stocke en clair.
+   */
   panMasked: string;
+  /**
+   * Brand est la marque, déduite du BIN quand l'enrôlement ne la
+   * fournit pas.
+   */
   brand?: string;
+  /**
+   * HolderName est le nom du porteur tel que saisi. Absent quand
+   * l'enrôlement ne l'a pas transmis — un wallet n'en fournit pas.
+   */
   holderName?: string;
+  /**
+   * ExpiryMonth (1-12) et ExpiryYear (4 chiffres). Une carte reste
+   * valide jusqu'au dernier jour de son mois d'expiration, convention
+   * bancaire reprise telle quelle.
+   */
   expiryMonth: number /* int */;
   expiryYear: number /* int */;
   /**
@@ -260,7 +551,17 @@ export interface PaymentMethodOutput {
   country?: string;
   productCategory?: string;
   issuerName?: string;
+  /**
+   * Revoked marque une révocation explicite par le marchand. Distinct
+   * d'Usable : révoquer est une action, être inutilisable un état qui
+   * peut avoir trois causes.
+   */
   revoked: boolean;
+  /**
+   * CreatedAt est l'instant d'enrôlement, en UTC. Il n'y a pas
+   * d'UpdatedAt : un moyen enregistré ne se modifie pas, il se
+   * révoque et un nouveau prend le relais.
+   */
   createdAt: string /* RFC 3339 */;
   /**
    * Usable dit si ce moyen peut encore produire un paiement accepté,
@@ -275,4 +576,27 @@ export interface PaymentMethodOutput {
    */
   usable: boolean;
   unusableReason?: string;
+}
+/**
+ * deletePayments supprime tous les paiements. Filtrable par provider
+ * via le query param ?provider=payzen — sans filtre, purge complète
+ * cross-provider.
+ * Retourne 200 avec le compteur du nombre supprimé, pour que l'UI
+ * puisse afficher un feedback (« 42 paiements supprimés »).
+ * ResetOutput détaille ce qu'une réinitialisation a supprimé. Le
+ * compte par table sert à la confirmation côté interface : annoncer
+ * « 12 paiements, 4 moyens, 2 abonnements et 18 webhooks » dit à
+ * l'utilisateur ce qu'il perd, là où « Êtes-vous sûr ? » ne dit rien.
+ */
+export interface ResetOutput {
+  /**
+   * Nombre d'entrées supprimées dans chaque collection. Zéro signifie
+   * que la collection était déjà vide, pas qu'elle a été ignorée — en
+   * mode mémoire, les dépôts absents laissent simplement leur compte
+   * à zéro.
+   */
+  payments: number /* int */;
+  subscriptions: number /* int */;
+  paymentMethods: number /* int */;
+  webhooks: number /* int */;
 }
