@@ -39,15 +39,38 @@ import (
 // une liste vide (comportement cohérent avec le mode dégradé mémoire :
 // les entités survivent au run mais ne sont pas listées globalement).
 type Deps struct {
-	Store             payzen.Store
-	PaymentRepo       store.PaymentRepository       // optionnel — nil en mode mémoire ; permet les endpoints DELETE cross-provider
-	SubscriptionRepo  store.SubscriptionRepository  // optionnel — mode SQLite uniquement pour listing global
-	PaymentMethodRepo store.PaymentMethodRepository // optionnel — mode SQLite uniquement
-	Queue             *delivery.Queue
-	Publisher         *bus.Bus
-	Logger            *slog.Logger
-	Token             string // Bearer requis si non vide, sinon API ouverte
-	PayzenHandler     *payzen.Handler
+	// Store est le magasin des transactions PayZen, seul disponible en
+	// mode mémoire.
+	Store payzen.Store
+
+	// Les trois dépôts cross-provider sont nil en mode mémoire. Les
+	// endpoints qui en dépendent retournent alors une liste vide ou
+	// retombent sur Store — un mode dégradé assumé, pas une panne :
+	// les entités survivent au run, elles ne sont simplement pas
+	// listables globalement.
+	PaymentRepo       store.PaymentRepository
+	SubscriptionRepo  store.SubscriptionRepository
+	PaymentMethodRepo store.PaymentMethodRepository
+
+	// Queue porte la file de livraison et l'historique des webhooks.
+	Queue *delivery.Queue
+
+	// Publisher diffuse les événements vers les abonnés SSE, ce qui
+	// tient l'interface à jour sans qu'elle interroge en boucle.
+	Publisher *bus.Bus
+
+	// Logger reçoit les journaux structurés de l'API.
+	Logger *slog.Logger
+
+	// Token protège l'API par Bearer. Vide, l'API est ouverte — le
+	// comportement voulu en local, et la raison pour laquelle activer
+	// ce jeton désactive l'interface web.
+	Token string
+
+	// PayzenHandler permet de créer un paiement sans repasser par HTTP.
+	// L'API de contrôle appelle directement l'adaptateur plutôt que de
+	// se requêter elle-même.
+	PayzenHandler *payzen.Handler
 }
 
 // Handler regroupe les dépendances nécessaires pour servir les
@@ -86,6 +109,7 @@ func NewHandler(deps Deps) http.Handler {
 	mux.HandleFunc("GET /paysim/api/v1/payments/{uuid}", h.getPayment)
 	mux.HandleFunc("DELETE /paysim/api/v1/payments/{uuid}", h.deletePayment)
 	mux.HandleFunc("POST /paysim/api/v1/payments/{uuid}/simulate", h.simulatePayment)
+	mux.HandleFunc("POST /paysim/api/v1/reset", h.reset)
 	mux.HandleFunc("GET /paysim/api/v1/webhooks", h.listWebhooks)
 	mux.HandleFunc("GET /paysim/api/v1/webhooks/{id}", h.getWebhook)
 	mux.HandleFunc("POST /paysim/api/v1/webhooks/{id}/replay", h.replayWebhook)
@@ -140,12 +164,34 @@ func withBearer(next http.Handler, token string, logger *slog.Logger) http.Handl
 
 // PaymentSummary est le résumé d'un paiement pour les listes.
 type PaymentSummary struct {
-	UUID      string    `json:"uuid"`
-	Provider  string    `json:"provider"`
-	OrderID   string    `json:"orderId"`
-	Amount    int64     `json:"amount"`
-	Currency  string    `json:"currency"`
-	State     string    `json:"state"`
+	// UUID identifie le paiement côté Paysim. C'est lui qu'on passe à
+	// /payments/{uuid}/simulate, et il se retrouve dans le webhook sous
+	// transactions[0].uuid.
+	UUID string `json:"uuid"`
+
+	// Provider nomme l'adaptateur qui a matérialisé le paiement
+	// ("payzen" aujourd'hui). Sert à filtrer les listes.
+	Provider string `json:"provider"`
+
+	// OrderID est la référence de commande choisie par le marchand.
+	// Libre et non unique côté Paysim.
+	OrderID string `json:"orderId"`
+
+	// Amount est en centimes entiers, jamais en unité monétaire — un
+	// paiement de 49,90 € vaut 4990. Zéro est légitime : c'est
+	// l'enrôlement pur, qui crée un moyen de paiement sans débiter.
+	Amount int64 `json:"amount"`
+
+	// Currency au format ISO 4217 ("EUR").
+	Currency string `json:"currency"`
+
+	// State est l'état du domaine, pas le vocabulaire du provider :
+	// initiated, authorized, captured, partially_refunded, refunded,
+	// declined, expired, chargeback. Voir docs/states.md.
+	State string `json:"state"`
+
+	// CreatedAt et UpdatedAt sont en UTC. UpdatedAt bouge à chaque
+	// transition ; sur un paiement jamais joué, les deux sont égales.
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -153,20 +199,41 @@ type PaymentSummary struct {
 // PaymentDetail ajoute le journal d'événements.
 type PaymentDetail struct {
 	PaymentSummary
+
+	// Events est le journal complet, dans l'ordre chronologique. Il
+	// raconte l'histoire du paiement là où State n'en donne que le
+	// dernier mot — un remboursement partiel y laisse une trace même
+	// quand l'état ne change pas.
 	Events []EventEntry `json:"events"`
 }
 
 // EventEntry est une entrée du journal d'événements du domaine.
 type EventEntry struct {
-	At     time.Time `json:"at"`
-	Kind   string    `json:"kind"`
-	Amount int64     `json:"amount,omitempty"`
-	Note   string    `json:"note,omitempty"`
+	// At est l'instant de l'événement, en UTC.
+	At time.Time `json:"at"`
+
+	// Kind est la nature de l'événement — created, authorized,
+	// captured, refunded… Le journal est immuable : un remboursement
+	// partiel produit un événement même quand l'état ne bouge pas.
+	Kind string `json:"kind"`
+
+	// Amount en centimes, renseigné sur les événements qui portent un
+	// montant comme un remboursement.
+	Amount int64 `json:"amount,omitempty"`
+
+	// Note porte le motif quand il y en a un, par exemple la raison
+	// d'un refus.
+	Note string `json:"note,omitempty"`
 }
 
 // WebhookEntry résume une tentative de livraison — pour la liste UI.
 type WebhookEntry struct {
-	ID  string `json:"id"`
+	// ID identifie la tentative de livraison. Un rejeu en produit une
+	// nouvelle, avec son propre ID — c'est ce qui permet de suivre
+	// chaque essai séparément.
+	ID string `json:"id"`
+
+	// URL est la cible effectivement appelée.
 	URL string `json:"url"`
 
 	// Status décrit l'acheminement HTTP ("delivered", "failed",
@@ -177,9 +244,18 @@ type WebhookEntry struct {
 	Status  string `json:"status"`
 	Outcome string `json:"outcome,omitempty"`
 
-	StatusCode  int       `json:"statusCode,omitempty"`
-	ErrorMsg    string    `json:"errorMsg,omitempty"`
-	Attempts    int       `json:"attempts"`
+	// StatusCode est le code HTTP reçu, zéro quand l'erreur est
+	// survenue avant toute réponse — DNS, timeout, connexion refusée.
+	// ErrorMsg porte alors le détail.
+	StatusCode int    `json:"statusCode,omitempty"`
+	ErrorMsg   string `json:"errorMsg,omitempty"`
+
+	// Attempts compte les tentatives sur cette livraison.
+	Attempts int `json:"attempts"`
+
+	// CreatedAt est l'entrée en file, CompletedAt la fin de tentative.
+	// Leur écart mesure ce qu'a coûté la livraison, délai de chaos
+	// compris.
 	CreatedAt   time.Time `json:"createdAt"`
 	CompletedAt time.Time `json:"completedAt"`
 }
@@ -188,48 +264,80 @@ type WebhookEntry struct {
 // requête/réponse côte à côte.
 type WebhookDetail struct {
 	WebhookEntry
+
+	// Headers et Body sont ce qui a réellement été envoyé. C'est là que
+	// le marchand va vérifier sa signature ou relire le kr-answer —
+	// d'où leur absence de la vue liste, qui n'a pas à transporter des
+	// corps entiers.
 	Headers map[string]string `json:"headers"`
 	Body    string            `json:"body"`
 }
 
 // CreatePaymentInput est le corps de POST /paysim/api/v1/payments,
-// endpoint générique de création cross-provider. Le champ Provider
-// choisit l'adaptateur qui matérialise le paiement (seul "payzen"
-// est câblé aujourd'hui ; Stripe arrivera en phase 5). Vide = payzen
-// par défaut pour ne pas alourdir les scénarios monoprovider.
+// endpoint générique de création cross-provider.
 //
-// FormAction, NotificationURL, Card et PaymentMethodToken ouvrent le
-// support des paiements récurrents (4.4.5) :
-//   - FormAction=REGISTER_PAY|ASK_REGISTER_PAY + Card : enregistre le
-//     moyen de paiement à l'issue, retourne un paymentMethodToken.
-//   - PaymentMethodToken sans Card : rejeu one-click à partir du moyen
-//     stocké — capture directe, webhook émis (si NotificationURL et
-//     token de la boutique configurés côté serveur).
+// Trois usages selon ce qu'on fournit : ni Card ni token pour un
+// paiement classique qui attend d'être joué, Card pour enrôler un
+// moyen au passage, ou un token seul pour rejouer sans formulaire.
 type CreatePaymentInput struct {
-	Provider           string            `json:"provider,omitempty"`
-	Amount             format.Amount     `json:"amount"`
-	Currency           string            `json:"currency"`
-	OrderID            string            `json:"orderId"`
-	FormAction         string            `json:"formAction,omitempty"`
-	Customer           payzen.Customer   `json:"customer,omitempty"`
-	Metadata           map[string]string `json:"metadata,omitempty"`
-	NotificationURL    string            `json:"notificationUrl,omitempty"`
-	Card               *payzen.Card      `json:"card,omitempty"`
-	PaymentMethodToken string            `json:"paymentMethodToken,omitempty"`
+	// Provider choisit l'adaptateur. Vide vaut "payzen", avec un log
+	// Debug pour tracer les choix implicites dans un journal chargé.
+	Provider string `json:"provider,omitempty"`
+
+	// Amount en centimes entiers — 49,90 € vaut 4990. Zéro est valide
+	// et désigne l'enrôlement pur : on enregistre une carte sans rien
+	// débiter.
+	Amount format.Amount `json:"amount"`
+
+	// Currency en ISO 4217, OrderID libre côté marchand.
+	Currency string `json:"currency"`
+	OrderID  string `json:"orderId"`
+
+	// FormAction déclare l'intention (PAYMENT, REGISTER,
+	// REGISTER_PAY…). Conservée et restituée, mais sans effet sur
+	// l'enrôlement : une carte fournie est toujours enregistrée.
+	FormAction string `json:"formAction,omitempty"`
+
+	// Customer et Metadata sont restitués tels quels dans le webhook.
+	// Metadata est le canal prévu pour rattacher un paiement à un objet
+	// métier sans dépendre de l'orderId.
+	Customer payzen.Customer   `json:"customer,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+
+	// NotificationURL est la cible de l'IPN. Absente, le serveur
+	// retombe sur PAYSIM_CALLBACK_URL — ce qui rend les rejeux
+	// notifiables sans URL au coup par coup.
+	NotificationURL string `json:"notificationUrl,omitempty"`
+
+	// Card enrôle un moyen de paiement. Extension Paysim : le vrai
+	// PayZen collecte la carte par le SmartForm client, jamais par
+	// l'API marchand.
+	Card *payzen.Card `json:"card,omitempty"`
+
+	// PaymentMethodToken déclenche un rejeu one-click sur un moyen déjà
+	// enregistré : pas de formulaire, issue immédiate, webhook émis
+	// dans la foulée. Prend le pas sur Card si les deux sont fournis.
+	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
 }
 
-// CreatePaymentOutput retourne l'uuid attribué au paiement et son
-// état à l'issue de l'appel. PaymentMethodToken est renseigné dans
-// deux cas :
-//   - après un enrôlement (Card + FormAction REGISTER_PAY),
-//   - après un rejeu one-click (echo du token utilisé).
-// Le marchand n'a pas besoin de GET juste après pour lire l'état,
-// State est présent dans la réponse même en cas de rejeu (où l'état
-// devient captured ou declined dès le retour HTTP).
+// CreatePaymentOutput est la réponse de création. Elle porte déjà
+// l'état, ce qui évite un GET juste après — utile sur un rejeu, où
+// l'issue est connue dès le retour HTTP.
 type CreatePaymentOutput struct {
-	UUID               string `json:"uuid"`
-	Provider           string `json:"provider"`
-	State              string `json:"state"`
+	// UUID identifie le paiement créé.
+	UUID string `json:"uuid"`
+
+	// Provider nomme l'adaptateur qui l'a matérialisé.
+	Provider string `json:"provider"`
+
+	// State est l'état à l'issue de l'appel. initiated sur un paiement
+	// qui attend d'être joué ; captured ou declined quand l'issue est
+	// immédiate — rejeu one-click, ou autoplay actif.
+	State string `json:"state"`
+
+	// PaymentMethodToken est l'alias créé par un enrôlement. Absent sur
+	// un paiement refusé : l'annoncer à côté d'un refus laisserait
+	// croire qu'il est débitable.
 	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
 }
 
@@ -238,14 +346,32 @@ type CreatePaymentOutput struct {
 // le formToken interne — Paysim le retrouve depuis l'uuid. Le champ
 // channel choisit entre retour navigateur (défaut) et IPN pur.
 type SimulatePaymentRequest struct {
-	Outcome         string `json:"outcome"`           // PAID | AUTHORISED | UNPAID | EXPIRED | ABANDONED
-	Channel         string `json:"channel,omitempty"` // "browserReturn" (défaut) | "ipn"
+	// Outcome est l'issue à jouer : PAID, AUTHORISED, UNPAID, EXPIRED
+	// ou ABANDONED. Toute autre valeur est refusée avec la liste des
+	// valeurs acceptées.
+	Outcome string `json:"outcome"`
+
+	// Channel choisit le canal d'émission : browserReturn (défaut)
+	// suit le navigateur du porteur, ipn part serveur à serveur. Deux
+	// chemins distincts pour un même kr-answer — c'est ce qui permet
+	// de provoquer leur inversion.
+	Channel string `json:"channel,omitempty"`
+
+	// ReturnURL et NotificationURL surchargent les cibles de la
+	// transaction, selon le canal retenu. Absentes des deux, le
+	// serveur retombe sur PAYSIM_CALLBACK_URL.
 	ReturnURL       string `json:"returnUrl,omitempty"`
 	NotificationURL string `json:"notificationUrl,omitempty"`
-	CardBrand       string `json:"cardBrand,omitempty"`
-	ThreeDSStatus   string `json:"threeDSStatus,omitempty"`
-	ErrorCode       string `json:"errorCode,omitempty"`
-	ErrorMessage    string `json:"errorMessage,omitempty"`
+
+	// CardBrand et ThreeDSStatus habillent le webhook : marque
+	// annoncée, verdict d'authentification. CardBrand est ignoré dès
+	// qu'un moyen enrôlé existe.
+	CardBrand     string `json:"cardBrand,omitempty"`
+	ThreeDSStatus string `json:"threeDSStatus,omitempty"`
+
+	// ErrorCode et ErrorMessage détaillent un refus.
+	ErrorCode    string `json:"errorCode,omitempty"`
+	ErrorMessage string `json:"errorMessage,omitempty"`
 
 	// Chaos active des modes de panne sur le webhook émis par cet
 	// appel — chaque flag indépendant, tous inertes par défaut. Ces
@@ -263,15 +389,27 @@ type SimulatePaymentRequest struct {
 
 // SimulatePaymentResponse retourne le deliveryId et le hash calculé.
 type SimulatePaymentResponse struct {
+	// DeliveryID identifie la livraison déclenchée, pour la retrouver
+	// dans l'historique des webhooks.
 	DeliveryID string `json:"deliveryId"`
-	KrHash     string `json:"krHash"`
-	Channel    string `json:"channel"`
+
+	// KrHash est la signature réellement calculée. Retournée même
+	// lorsque le chaos bad-signature altère celle qui part : le
+	// marchand peut ainsi constater que ce qu'il reçoit ne correspond
+	// pas, ce qui est tout l'intérêt de ce mode.
+	KrHash string `json:"krHash"`
+
+	// Channel rappelle le canal employé, browserReturn ou ipn.
+	Channel string `json:"channel"`
 }
 
 // ReplayWebhookResponse retourne l'identifiant du nouveau webhook
 // enqueue. L'original reste dans l'historique — le rejeu est une
 // nouvelle tentative distincte.
 type ReplayWebhookResponse struct {
+	// NewDeliveryID identifie la nouvelle tentative. Un rejeu ne
+	// remplace pas l'original : les deux coexistent dans l'historique,
+	// ce qui permet de suivre chaque essai séparément.
 	NewDeliveryID string `json:"newDeliveryId"`
 }
 
@@ -356,39 +494,90 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 // EffectDate et Rrule reprennent le vocabulaire PayZen / iCalendar
 // (RFC 5545) — recopiés tels quels, cf. providers.md.
 type CreateSubscriptionInput struct {
-	Provider           string            `json:"provider,omitempty"`
-	PaymentMethodToken string            `json:"paymentMethodToken"`
-	Amount             format.Amount     `json:"amount"`
-	Currency           string            `json:"currency"`
-	OrderID            string            `json:"orderId,omitempty"`
-	EffectDate         string            `json:"effectDate,omitempty"`
-	Rrule              string            `json:"rrule,omitempty"`
-	Metadata           map[string]string `json:"metadata,omitempty"`
+	// Provider choisit l'adaptateur, "payzen" à défaut.
+	Provider string `json:"provider,omitempty"`
+
+	// PaymentMethodToken désigne le moyen à prélever. Obligatoire :
+	// un abonnement sans moyen de paiement n'a rien à débiter.
+	PaymentMethodToken string `json:"paymentMethodToken"`
+
+	// Amount est le montant d'une échéance en centimes, Currency sa
+	// devise ISO 4217.
+	Amount   format.Amount `json:"amount"`
+	Currency string        `json:"currency"`
+
+	// OrderID est la référence marchand de l'abonnement.
+	OrderID string `json:"orderId,omitempty"`
+
+	// EffectDate et Rrule décrivent l'échéancier. Stockés et restitués
+	// tels quels, jamais interprétés : chaque échéance se déclenche
+	// explicitement, aucun moteur ne tourne en fond.
+	EffectDate string `json:"effectDate,omitempty"`
+	Rrule      string `json:"rrule,omitempty"`
+
+	// Metadata est recopiée sur chaque Transaction d'échéance, enrichie
+	// de subscriptionId.
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // SubscriptionOutput est la vue exposée d'un abonnement. Cancelled
 // remonte pour que le marchand puisse le voir sans recharger.
 type SubscriptionOutput struct {
-	ID                 string            `json:"id"`
-	Provider           string            `json:"provider"`
-	PaymentMethodToken string            `json:"paymentMethodToken"`
-	Amount             format.Amount     `json:"amount"`
-	Currency           string            `json:"currency"`
-	OrderID            string            `json:"orderId,omitempty"`
-	EffectDate         string            `json:"effectDate,omitempty"`
-	Rrule              string            `json:"rrule,omitempty"`
-	Metadata           map[string]string `json:"metadata,omitempty"`
-	Cancelled          bool              `json:"cancelled"`
-	CreatedAt          time.Time         `json:"createdAt"`
+	// ID est le subscriptionId assigné par Paysim, à passer aux
+	// endpoints trigger-billing et cancel.
+	ID string `json:"id"`
+
+	// Provider nomme l'adaptateur ("payzen" aujourd'hui).
+	Provider string `json:"provider"`
+
+	// PaymentMethodToken désigne le moyen prélevé à chaque échéance.
+	// L'abonnement ne le possède pas : révoquer ce moyen fait échouer
+	// les échéances sans annuler l'abonnement.
+	PaymentMethodToken string `json:"paymentMethodToken"`
+
+	// Amount est le montant d'une échéance, en centimes entiers.
+	Amount format.Amount `json:"amount"`
+
+	// Currency au format ISO 4217.
+	Currency string `json:"currency"`
+
+	// OrderID est la référence marchand de l'abonnement.
+	OrderID string `json:"orderId,omitempty"`
+
+	// EffectDate et Rrule décrivent l'échéancier déclaré par le
+	// marchand. Paysim les conserve et les restitue tels quels mais ne
+	// les consomme jamais : aucun moteur ne tourne en fond, chaque
+	// échéance est déclenchée explicitement par trigger-billing. Choix
+	// délibéré, voir docs/subscriptions.md.
+	EffectDate string `json:"effectDate,omitempty"`
+	Rrule      string `json:"rrule,omitempty"`
+
+	// Metadata est la map libre du marchand, restituée à l'identique.
+	Metadata map[string]string `json:"metadata,omitempty"`
+
+	// Cancelled passe à true après un cancel. Les trigger-billing
+	// suivants répondent alors 400 — l'annulation est définitive.
+	Cancelled bool `json:"cancelled"`
+
+	// CreatedAt en UTC.
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // TriggerBillingOutput retourne l'identifiant du paiement créé par
 // le trigger d'échéance. L'appelant peut ensuite GET /payments/{uuid}
 // pour lire l'état complet et la trace du domaine.
 type TriggerBillingOutput struct {
+	// SubscriptionID est l'abonnement facturé.
 	SubscriptionID string `json:"subscriptionId"`
-	PaymentUUID    string `json:"paymentUuid"`
-	State          string `json:"state"`
+
+	// PaymentUUID est la transaction créée pour cette échéance. Elle
+	// porte subscriptionId dans sa metadata — c'est ce lien qui la
+	// rattache à l'abonnement, sans table dédiée.
+	PaymentUUID string `json:"paymentUuid"`
+
+	// State est l'issue de l'échéance : captured, ou declined quand le
+	// moyen est révoqué, expiré, ou porte un PAN de refus.
+	State string `json:"state"`
 }
 
 // createSubscription traite POST /paysim/api/v1/subscriptions.
@@ -583,13 +772,31 @@ func subscriptionToOutput(sub *payzen.Subscription, provider string) Subscriptio
 // clair, mais l'API l'expose sous forme masquée uniquement (comme un
 // vrai PSP dans son back-office).
 type PaymentMethodOutput struct {
-	Token       string `json:"token"`
-	Provider    string `json:"provider"`
-	PANMasked   string `json:"panMasked"`
-	Brand       string `json:"brand,omitempty"`
-	HolderName  string `json:"holderName,omitempty"`
-	ExpiryMonth int    `json:"expiryMonth"`
-	ExpiryYear  int    `json:"expiryYear"`
+	// Token est l'alias réutilisable — le paymentMethodToken à repasser
+	// pour débiter sans formulaire. Opaque, propre à Paysim.
+	Token string `json:"token"`
+
+	// Provider nomme l'adaptateur qui a enrôlé la carte.
+	Provider string `json:"provider"`
+
+	// PANMasked est le numéro tronqué, dérivé du PAN réellement
+	// enregistré. Le PAN complet n'est jamais exposé par l'API, même
+	// si le simulateur le stocke en clair.
+	PANMasked string `json:"panMasked"`
+
+	// Brand est la marque, déduite du BIN quand l'enrôlement ne la
+	// fournit pas.
+	Brand string `json:"brand,omitempty"`
+
+	// HolderName est le nom du porteur tel que saisi. Absent quand
+	// l'enrôlement ne l'a pas transmis — un wallet n'en fournit pas.
+	HolderName string `json:"holderName,omitempty"`
+
+	// ExpiryMonth (1-12) et ExpiryYear (4 chiffres). Une carte reste
+	// valide jusqu'au dernier jour de son mois d'expiration, convention
+	// bancaire reprise telle quelle.
+	ExpiryMonth int `json:"expiryMonth"`
+	ExpiryYear  int `json:"expiryYear"`
 
 	// Caractérisation émetteur, telle qu'enrôlée. Absentes du JSON
 	// quand l'enrôlement ne les a pas fournies — l'API ne réaffirme
@@ -598,7 +805,14 @@ type PaymentMethodOutput struct {
 	ProductCategory string `json:"productCategory,omitempty"`
 	IssuerName      string `json:"issuerName,omitempty"`
 
-	Revoked   bool      `json:"revoked"`
+	// Revoked marque une révocation explicite par le marchand. Distinct
+	// d'Usable : révoquer est une action, être inutilisable un état qui
+	// peut avoir trois causes.
+	Revoked bool `json:"revoked"`
+
+	// CreatedAt est l'instant d'enrôlement, en UTC. Il n'y a pas
+	// d'UpdatedAt : un moyen enregistré ne se modifie pas, il se
+	// révoque et un nouveau prend le relais.
 	CreatedAt time.Time `json:"createdAt"`
 
 	// Usable dit si ce moyen peut encore produire un paiement accepté,
@@ -616,7 +830,7 @@ type PaymentMethodOutput struct {
 }
 
 // listPaymentMethods traite GET /paysim/api/v1/payment-methods.
-// Retourne la liste cross-provider — utilisé par l'UI (4.4.7) pour
+// Retourne la liste cross-provider, consommée par l'interface pour
 // la vue « Moyens de paiement enregistrés ». En mode mémoire, aucun
 // listing global n'est possible côté payzen.Store — on renvoie vide.
 func (h *Handler) listPaymentMethods(w http.ResponseWriter, _ *http.Request) {
@@ -790,6 +1004,93 @@ func (h *Handler) deletePayment(w http.ResponseWriter, r *http.Request) {
 //
 // Retourne 200 avec le compteur du nombre supprimé, pour que l'UI
 // puisse afficher un feedback (« 42 paiements supprimés »).
+// ResetOutput détaille ce qu'une réinitialisation a supprimé. Le
+// compte par table sert à la confirmation côté interface : annoncer
+// « 12 paiements, 4 moyens, 2 abonnements et 18 webhooks » dit à
+// l'utilisateur ce qu'il perd, là où « Êtes-vous sûr ? » ne dit rien.
+type ResetOutput struct {
+	// Nombre d'entrées supprimées dans chaque collection. Zéro signifie
+	// que la collection était déjà vide, pas qu'elle a été ignorée — en
+	// mode mémoire, les dépôts absents laissent simplement leur compte
+	// à zéro.
+	Payments       int `json:"payments"`
+	Subscriptions  int `json:"subscriptions"`
+	PaymentMethods int `json:"paymentMethods"`
+	Webhooks       int `json:"webhooks"`
+}
+
+// reset vide toutes les tables — POST /paysim/api/v1/reset.
+//
+// Opération et non ressource, d'où le POST : elle ne supprime pas
+// « une » collection mais remet le simulateur à zéro, et rend compte
+// de ce qu'elle a fait.
+//
+// Chaque purge est tentée même si la précédente échoue : laisser la
+// base à moitié vidée sans le dire serait pire qu'un échec franc. Les
+// erreurs sont journalisées et la première remonte en 500, mais le
+// travail déjà fait reste fait.
+//
+// Les dépôts cross-provider sont nil en mode mémoire ; on retombe
+// alors sur le store payzen, seul existant.
+func (h *Handler) reset(w http.ResponseWriter, _ *http.Request) {
+	var out ResetOutput
+	var firstErr error
+
+	note := func(op string, err error) {
+		if err == nil {
+			return
+		}
+		h.logger.Error("api_reset_failed", "op", op, "err", err)
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	if h.paymentRepo != nil {
+		n, err := h.paymentRepo.DeleteAll()
+		note("payments", err)
+		out.Payments = n
+	} else {
+		n, err := h.store.DeleteAllTransactions()
+		note("payments", err)
+		out.Payments = n
+	}
+
+	if h.subscriptionRepo != nil {
+		n, err := h.subscriptionRepo.DeleteAll()
+		note("subscriptions", err)
+		out.Subscriptions = n
+	}
+	if h.paymentMethodRepo != nil {
+		n, err := h.paymentMethodRepo.DeleteAll()
+		note("paymentMethods", err)
+		out.PaymentMethods = n
+	}
+
+	n, err := h.queue.PurgeWebhooks()
+	note("webhooks", err)
+	out.Webhooks = n
+
+	if firstErr != nil {
+		http.Error(w, "reinitialisation partielle", http.StatusInternalServerError)
+		return
+	}
+
+	// Un seul événement plutôt qu'un par table : l'interface doit
+	// recharger l'ensemble, pas réagir quatre fois.
+	h.publisher.Publish(bus.Event{
+		Type: "reset",
+		At:   time.Now().UTC(),
+		Data: map[string]any{
+			"payments":       out.Payments,
+			"subscriptions":  out.Subscriptions,
+			"paymentMethods": out.PaymentMethods,
+			"webhooks":       out.Webhooks,
+		},
+	})
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (h *Handler) deletePayments(w http.ResponseWriter, r *http.Request) {
 	provider := r.URL.Query().Get("provider")
 

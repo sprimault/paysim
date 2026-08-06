@@ -20,15 +20,34 @@ import (
 // PCI-DSS n'est appliquée. Le PAN est stocké en clair dans PANFull.
 // N'utilisez JAMAIS ce store avec de vraies cartes en usage.
 type PaymentMethod struct {
-	Token       string
-	PANFull     string // en clair, jamais de vraies CB
-	PANMasked   string // "4111XXXXXXXX1111" (format PayZen)
-	Brand       string // VISA, MASTERCARD, AMEX, CB, …
-	HolderName  string // "DUPONT JEAN", vide si non fourni
-	ExpiryMonth int    // 1-12
-	ExpiryYear  int    // 4 chiffres
-	CreatedAt   time.Time
-	Revoked     bool
+	// Token est l'alias opaque rendu au marchand — le
+	// paymentMethodToken à repasser pour débiter sans formulaire.
+	Token string
+
+	// PANFull est le numéro complet, stocké en clair : aucune
+	// protection PCI-DSS, jamais de vraie carte ici. PANMasked en est
+	// la forme tronquée, la seule que l'API expose.
+	PANFull   string
+	PANMasked string
+
+	// Brand est la marque, déduite du BIN si l'enrôlement ne la donne
+	// pas. HolderName est le nom du porteur, vide si non fourni.
+	Brand      string
+	HolderName string
+
+	// ExpiryMonth (1-12) et ExpiryYear (4 chiffres). La carte reste
+	// valide jusqu'au dernier jour de son mois d'expiration.
+	ExpiryMonth int
+	ExpiryYear  int
+
+	// CreatedAt en UTC. Pas d'UpdatedAt : un moyen enregistré ne se
+	// modifie pas, il se révoque et un nouveau prend le relais.
+	CreatedAt time.Time
+
+	// Revoked marque une révocation explicite par le marchand. Un
+	// moyen révoqué reste stocké — c'est ce qui permet de rejouer un
+	// impayé dessus — mais tout débit le refuse.
+	Revoked bool
 
 	// Caractérisation par l'émetteur. Vides quand l'enrôlement ne les
 	// a pas fournis ; le rendu applique alors ses défauts.
@@ -63,12 +82,20 @@ func isExpired(expiryMonth, expiryYear int, now time.Time) bool {
 // fourni par les scénarios YAML ou les tests d'intégration. Reprend
 // la structure minimale que le SmartForm envoie au PSP en usage réel.
 // Le PAN entre en clair — aucun rejet, aucune validation Luhn,
-// aveugle sur le contenu (choix Q3(a) 4.4.5).
+// aveugle sur le contenu.
 type Card struct {
-	PAN         string `json:"pan"`
-	ExpiryMonth int    `json:"expiryMonth"`
-	ExpiryYear  int    `json:"expiryYear"`
-	Brand       string `json:"brand,omitempty"` // optionnel, déduit du BIN si absent
+	// PAN est le numéro complet, en clair. Aucune validation Luhn : le
+	// simulateur est aveugle au contenu, hormis les quatre PAN de test
+	// réservés qui déclenchent un refus.
+	PAN string `json:"pan"`
+
+	// ExpiryMonth (1-12) et ExpiryYear (4 chiffres). Une date passée
+	// fait refuser tout débit, ce qui en fait un levier de test.
+	ExpiryMonth int `json:"expiryMonth"`
+	ExpiryYear  int `json:"expiryYear"`
+
+	// Brand est la marque. Optionnelle : déduite du BIN si absente.
+	Brand string `json:"brand,omitempty"`
 
 	// HolderName est le nom du porteur ("DUPONT JEAN"). Optionnel :
 	// un wallet n'en transmet pas. Conservé tel quel, sans
@@ -182,7 +209,7 @@ func BrandFromBIN(pan string) string {
 // IsLuhnValid retourne true si le PAN passe la vérification Luhn
 // (algorithme de checksum standard des numéros de carte). Utilisé
 // uniquement en informatif — Paysim n'effectue AUCUN rejet basé sur
-// Luhn (choix Q2(a) 4.4.5), c'est un simulateur. Un logger peut
+// Luhn, c'est un simulateur. Un logger peut
 // néanmoins avertir si un scénario utilise un PAN qui échoue Luhn,
 // pour aider un dev qui saisit une valeur bidon par erreur.
 func IsLuhnValid(pan string) bool {

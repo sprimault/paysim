@@ -50,9 +50,21 @@ const bufferCap = 10_000
 //   - webhook_delivered
 //   - webhook_failed
 type Event struct {
-	ID   uint64
+	// ID est un compteur monotone attribué à la publication. Il permet
+	// à un client SSE reconnecté de reprendre où il s'était arrêté,
+	// sans trou ni doublon.
+	ID uint64
+
+	// Type nomme l'événement — payment_created, payment_state_changed,
+	// webhook_enqueued, reset…
 	Type string
-	At   time.Time
+
+	// At est l'instant de publication, en UTC.
+	At time.Time
+
+	// Data porte la charge utile, sérialisée en JSON vers les abonnés.
+	// Volontairement typée any : le bus ne connaît pas les domaines
+	// qu'il transporte.
 	Data any
 }
 

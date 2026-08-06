@@ -35,11 +35,25 @@ var (
 // le résultat effectif de la tentative. Consommé par l'API UI pour
 // afficher le journal de livraison avec bouton de rejeu.
 type WebhookRecord struct {
-	Webhook     Webhook
-	Status      string    // "delivered" | "failed"
-	StatusCode  int       // status HTTP reçu, 0 si erreur avant réponse
-	ErrorMsg    string    // message si failed, sinon vide
-	CompletedAt time.Time // instant fin de tentative
+	// Webhook est la livraison telle qu'elle a été tentée, corps et
+	// en-têtes compris. Conservée pour permettre le rejeu.
+	Webhook Webhook
+
+	// Status décrit l'acheminement : delivered ou failed. À ne pas
+	// confondre avec le résultat métier annoncé dans le corps — un
+	// webhook remis avec succès peut annoncer un refus.
+	Status string
+
+	// StatusCode est le code HTTP reçu, zéro quand l'erreur précède
+	// toute réponse : DNS, timeout, connexion refusée. ErrorMsg porte
+	// alors le détail.
+	StatusCode int
+	ErrorMsg   string
+
+	// CompletedAt marque la fin de la tentative. Son écart avec le
+	// CreatedAt du Webhook mesure ce qu'a coûté la livraison, délai de
+	// chaos compris.
+	CompletedAt time.Time
 }
 
 // Queue est la file de livraison. Une unique instance par processus,
@@ -70,6 +84,9 @@ type Queue struct {
 // Stats est un instantané des compteurs. Utile pour l'observabilité,
 // l'API de contrôle (phase 3) et les tests.
 type Stats struct {
+	// Pending est ce qui attend dans la file, Delivered et Failed les
+	// compteurs cumulés depuis le démarrage. Pending redescend, les
+	// deux autres ne font que croître.
 	Pending   int
 	Delivered int
 	Failed    int

@@ -20,12 +20,23 @@ import type { EventEntry, PaymentDetail, PaymentSummary } from '@/shared/model';
 export type PaymentInStore = PaymentSummary & { events?: EventEntry[] };
 
 interface PaymentState {
+  /** Paiements indexés par uuid — un seul exemplaire par paiement. */
   payments: Record<string, PaymentInStore>;
-  listLoaded: boolean; // true après un premier setList
+  /**
+   * Passe à true au premier setList. Distingue « liste vide » de
+   * « liste pas encore chargée », que le rendu ne doit pas confondre :
+   * l'un affiche un état vide, l'autre un squelette.
+   */
+  listLoaded: boolean;
+  /** Remplace la liste, en préservant les events déjà chargés. */
   setList: (payments: PaymentSummary[]) => void;
+  /** Insère ou met à jour un paiement, sans toucher à ses events. */
   upsert: (payment: PaymentSummary) => void;
+  /** Enregistre le détail complet, events compris. */
   setDetail: (detail: PaymentDetail) => void;
+  /** Retire un paiement du cache. */
   remove: (uuid: string) => void;
+  /** Vide le cache — après une purge ou une réinitialisation. */
   clear: () => void;
 }
 

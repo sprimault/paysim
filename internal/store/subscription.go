@@ -91,6 +91,10 @@ type SubscriptionRepository interface {
 	// Retourne le nombre effectivement supprimé.
 	DeleteByProvider(provider string) (int, error)
 
+	// DeleteAll supprime tous les abonnements, quel que soit le
+	// provider. Retourne le nombre supprimé.
+	DeleteAll() (int, error)
+
 	// Cancel marque l'abonnement comme annulé. Idempotent : ID inconnu
 	// ne remonte pas d'erreur (l'état demandé « abonnement annulé »
 	// est atteint pour un ID inexistant).

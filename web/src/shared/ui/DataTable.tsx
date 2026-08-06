@@ -22,7 +22,9 @@ export interface Column<T> {
 }
 
 export interface DataTableProps<T> {
+  /** Colonnes déclaratives : en-tête, rendu de cellule, alignement. */
   columns: Column<T>[];
+  /** Lignes à rendre, déjà triées et filtrées par l'appelant. */
   rows: T[];
   /** Extracteur d'identifiant unique pour la clé React. */
   rowKey: (row: T) => string;

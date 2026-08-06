@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package scenarios porte le format YAML des scénarios de test et son loader.
-// Un scénario est une suite d'étapes typées que l'exécuteur (à venir en 4.4.2)
-// applique contre un Paysim distant : création de paiement, avancement dans la
+// Un scénario est une suite d'étapes typées que le runner applique
+// contre un Paysim distant : création de paiement, avancement dans la
 // machine à états, injection de panne, assertions sur les webhooks et l'état
 // final. Le loader garantit qu'après Load réussi tout est déjà validé —
 // l'exécuteur n'a pas à revérifier la forme, seulement la sémantique métier
@@ -47,25 +47,64 @@ const (
 // obtenu via Load ou LoadFile, tous ses champs sont conformes au format
 // (name non vide, au moins une étape, chaque étape validée).
 type Scenario struct {
-	Name        string `yaml:"name"`
+	// Name identifie le scénario dans les rapports d'exécution.
+	Name string `yaml:"name"`
+
+	// Description explique ce que le scénario vérifie. Facultative
+	// pour le format, précieuse pour qui relit un fichier six mois
+	// plus tard.
 	Description string `yaml:"description,omitempty"`
-	Steps       []Step `yaml:"steps"`
+
+	// Steps est la suite ordonnée d'étapes. Au moins une : un scénario
+	// vide est refusé au chargement.
+	Steps []Step `yaml:"steps"`
 }
 
-// Step est une étape typée. Le champ Action porte le discriminant lu depuis
-// YAML ; exactement un des pointeurs concrets est non nil, celui qui
-// correspond à Action. C'est la responsabilité du loader ; les consommateurs
-// peuvent s'appuyer sur cette invariante sans revérifier.
+// Step est une étape typée du scénario.
 type Step struct {
+	// Action est le discriminant lu depuis la clé `action:` du YAML.
+	// Il détermine lequel des pointeurs ci-dessous est renseigné.
 	Action string
 
-	CreatePayment      *CreatePayment
-	Simulate           *Simulate
-	Inject             *Inject
-	Wait               *Wait
-	AssertWebhook      *AssertWebhook
-	AssertState        *AssertState
-	ChargeToken        *ChargeToken
+	// Les pointeurs typés portent les champs propres à chaque action.
+	// Exactement un est non nil après un Load réussi — le loader en
+	// fait son invariant, les consommateurs peuvent s'y fier sans
+	// revérifier.
+	//
+	// Trois familles : le paiement one-shot (création, simulation,
+	// assertions), la récurrence pilotée par le marchand
+	// (charge_token), et les abonnements pilotés par le PSP
+	// (souscription, échéance, annulation).
+
+	// CreatePayment crée un paiement, avec enrôlement de carte si une
+	// `card` est fournie.
+	CreatePayment *CreatePayment
+
+	// Simulate joue l'acte de paiement à la place du porteur.
+	Simulate *Simulate
+
+	// Inject arme un mode de chaos consommé par le prochain simulate,
+	// puis remis à zéro.
+	Inject *Inject
+
+	// Wait suspend l'exécution, pour laisser une livraison différée
+	// arriver avant une assertion.
+	Wait *Wait
+
+	// AssertWebhook compte les livraisons, AssertState vérifie l'état
+	// du paiement courant. Toutes deux échouent avec ErrAssertion, que
+	// la CLI distingue d'une erreur d'exécution pour choisir son code
+	// de retour.
+	AssertWebhook *AssertWebhook
+	AssertState   *AssertState
+
+	// ChargeToken rejoue un paiement sur un moyen déjà enrôlé, sans
+	// formulaire.
+	ChargeToken *ChargeToken
+
+	// CreateSubscription déclare un abonnement, TriggerBilling en
+	// déclenche une échéance, AssertSubscription vérifie son état et
+	// CancelSubscription l'annule.
 	CreateSubscription *CreateSubscription
 	TriggerBilling     *TriggerBilling
 	AssertSubscription *AssertSubscription
@@ -73,38 +112,47 @@ type Step struct {
 }
 
 // CreatePayment demande à Paysim de créer un paiement via un provider.
-// Amount est en centimes entiers de la devise (invariant Paysim, jamais de
-// flottant), OrderID identifie la commande côté marchand.
 //
-// Champs 4.4.5 (paiements récurrents) :
-//   - Card : si présent, Paysim enregistre le moyen de paiement à la
-//     création et retourne un paymentMethodToken réutilisable par
-//     charge_token. Cet enrôlement est **systématique** dès qu'une Card
-//     est fournie, indépendamment de FormAction — cf. handler.Create.
-//   - FormAction : info métadata PayZen (`REGISTER_PAY`,
-//     `ASK_REGISTER_PAY`, `PAYMENT`…) conservée mais sans effet sur
-//     l'enrôlement côté Paysim.
-//   - NotificationURL : URL de destination du webhook émis par le
-//     simulate ultérieur — indispensable en cas de rejeu direct
-//     (charge_token), utile aussi côté one-shot pour tester le flux
-//     de notification.
+// Fournir une Card déclenche l'enrôlement d'un moyen de paiement, et ce
+// quelle que soit la FormAction déclarée : côté simulateur, une carte
+// présentée est toujours enregistrée.
 type CreatePayment struct {
-	Provider        string            `yaml:"provider"`
-	Amount          int64             `yaml:"amount"`
-	Currency        string            `yaml:"currency"`
-	OrderID         string            `yaml:"order_id"`
-	FormAction      string            `yaml:"form_action,omitempty"`
-	Customer        *Customer         `yaml:"customer,omitempty"`
-	Metadata        map[string]string `yaml:"metadata,omitempty"`
-	NotificationURL string            `yaml:"notification_url,omitempty"`
-	Card            *Card             `yaml:"card,omitempty"`
+	// Provider choisit l'adaptateur, "payzen" à défaut.
+	Provider string `yaml:"provider"`
+
+	// Amount en centimes entiers — jamais de flottant, invariant du
+	// projet. Zéro est valide avec form_action REGISTER.
+	Amount int64 `yaml:"amount"`
+
+	// Currency en ISO 4217, OrderID libre.
+	Currency string `yaml:"currency"`
+	OrderID  string `yaml:"order_id"`
+
+	// FormAction déclare l'intention PayZen, sans effet sur
+	// l'enrôlement.
+	FormAction string `yaml:"form_action,omitempty"`
+
+	// Customer et Metadata permettent de vérifier que le contexte
+	// marchand revient intact dans le webhook.
+	Customer *Customer         `yaml:"customer,omitempty"`
+	Metadata map[string]string `yaml:"metadata,omitempty"`
+
+	// NotificationURL cible l'IPN émis par le simulate suivant.
+	// Indispensable sur un rejeu direct, utile en one-shot pour
+	// observer le flux de notification.
+	NotificationURL string `yaml:"notification_url,omitempty"`
+
+	// Card enrôle un moyen de paiement, dont le token est mémorisé par
+	// le runner pour les charge_token suivants.
+	Card *Card `yaml:"card,omitempty"`
 }
 
-// Customer decrit un client marchand associe au paiement. Seul l'email
-// est supporte en scenario YAML pour l'instant — Paysim propage le
-// bloc customer complet dans les webhooks (kr-answer.customer), utile
-// pour tester que le marchand recoit bien les infos qu'il a envoyees.
+// Customer decrit un client marchand associe au paiement. Paysim le
+// restitue tel quel dans le kr-answer, ce qui permet a un scenario de
+// verifier que le marchand retrouve ce qu'il a envoye.
 type Customer struct {
+	// Email de l'acheteur, restitué tel quel dans le webhook — de quoi
+	// vérifier qu'un scénario retrouve ce qu'il a envoyé.
 	Email string `yaml:"email,omitempty"`
 
 	// Reference est l'identifiant du client côté marchand, à la racine
@@ -113,27 +161,37 @@ type Customer struct {
 	Reference string `yaml:"reference,omitempty"`
 }
 
-// Card décrit un moyen de paiement fictif présenté à Paysim.
-// PAN complet, mois et année d'expiration, marque optionnelle
-// (déduite du BIN si absente). Les tags JSON/YAML séparés permettent
-// à la même struct d'être sérialisée côté client HTTP (camelCase
-// PayZen) et parsée côté loader YAML (snake_case scénario).
+// Card décrit un moyen de paiement fictif présenté à Paysim. Le double
+// jeu de tags permet à la même struct d'être sérialisée vers l'API
+// (camelCase PayZen) et lue depuis un scénario (snake_case YAML).
 //
-// HolderName, Country, ProductCategory et IssuerName sont facultatifs
-// et alimentent le bloc cardDetails du kr-answer. Ce sont eux qui
-// rendent scriptables la carte étrangère, la carte de débit et le
-// routage par émetteur — sans eux, le webhook annonçait toujours une
-// carte de crédit française.
+// Les champs facultatifs alimentent le bloc cardDetails du kr-answer :
+// ce sont eux qui rendent scriptables la carte étrangère, la carte de
+// débit et le routage par émetteur.
 //
 // AVERTISSEMENT : les PAN sont stockés en clair côté serveur — ne
 // jamais utiliser une CB réelle. Voir docs/testing-cards.md.
 type Card struct {
-	PAN         string `json:"pan"                yaml:"pan"`
-	ExpiryMonth int    `json:"expiryMonth"        yaml:"expiry_month"`
-	ExpiryYear  int    `json:"expiryYear"         yaml:"expiry_year"`
-	Brand       string `json:"brand,omitempty"    yaml:"brand,omitempty"`
+	// PAN est le numéro complet, en clair. Aucune validation Luhn :
+	// le simulateur est aveugle au contenu, sauf pour les quatre PAN
+	// de test réservés qui déclenchent un refus.
+	PAN string `json:"pan"                yaml:"pan"`
 
-	HolderName      string `json:"holderName,omitempty"      yaml:"holder_name,omitempty"`
+	// ExpiryMonth (1-12) et ExpiryYear (4 chiffres). Une date passée
+	// fait refuser tout débit — c'est l'un des leviers de test.
+	ExpiryMonth int `json:"expiryMonth"        yaml:"expiry_month"`
+	ExpiryYear  int `json:"expiryYear"         yaml:"expiry_year"`
+
+	// Brand est la marque, déduite du BIN si absente.
+	Brand string `json:"brand,omitempty"    yaml:"brand,omitempty"`
+
+	// HolderName est le nom du porteur, restitué tel quel.
+	HolderName string `json:"holderName,omitempty"      yaml:"holder_name,omitempty"`
+
+	// Country (ISO 3166-1 alpha-2), ProductCategory (CREDIT, DEBIT,
+	// PREPAID) et IssuerName caractérisent la carte côté émetteur.
+	// Défauts appliqués au rendu quand ils sont absents : FR, CREDIT,
+	// PAYSIM.
 	Country         string `json:"country,omitempty"         yaml:"country,omitempty"`
 	ProductCategory string `json:"productCategory,omitempty" yaml:"product_category,omitempty"`
 	IssuerName      string `json:"issuerName,omitempty"      yaml:"issuer_name,omitempty"`
@@ -146,29 +204,55 @@ type Card struct {
 // assert_state. Amount peut différer du montant initial, comme dans un
 // vrai abonnement où chaque échéance a son propre montant.
 type ChargeToken struct {
-	Token           string `yaml:"token,omitempty"`
-	Provider        string `yaml:"provider,omitempty"`
-	Amount          int64  `yaml:"amount"`
-	Currency        string `yaml:"currency"`
-	OrderID         string `yaml:"order_id"`
+	// Token désigne le moyen à débiter. Vide, le runner reprend le
+	// dernier enrôlé — ce qui rend le scénario courant lisible sans
+	// recopier un identifiant.
+	Token string `yaml:"token,omitempty"`
+
+	// Provider choisit l'adaptateur, payzen à défaut.
+	Provider string `yaml:"provider,omitempty"`
+
+	// Amount peut différer du paiement initial : chaque échéance d'un
+	// abonnement a son propre montant. En centimes entiers.
+	Amount int64 `yaml:"amount"`
+
+	// Currency en ISO 4217, OrderID libre.
+	Currency string `yaml:"currency"`
+	OrderID  string `yaml:"order_id"`
+
+	// NotificationURL cible l'IPN. Absente, le serveur retombe sur sa
+	// configuration globale — un rejeu notifie toujours.
 	NotificationURL string `yaml:"notification_url,omitempty"`
 }
 
 // CreateSubscription crée un abonnement PSP-driven — Paysim retient la
 // définition (moyen de paiement, montant, rrule, effect_date), l'appelant
 // déclenche ensuite chaque échéance via trigger_billing (pas de moteur
-// RRule qui tourne en fond côté simulateur, choix explicite 4.4.6).
+// RRule qui tourne en fond côté simulateur, choix explicite).
 // Token vide → utilise le dernier paymentMethodToken vu, cohérent avec
 // charge_token. Provider vide → payzen par défaut.
 type CreateSubscription struct {
-	Provider   string            `yaml:"provider,omitempty"`
-	Token      string            `yaml:"token,omitempty"`
-	Amount     int64             `yaml:"amount"`
-	Currency   string            `yaml:"currency"`
-	OrderID    string            `yaml:"order_id"`
-	EffectDate string            `yaml:"effect_date,omitempty"`
-	Rrule      string            `yaml:"rrule,omitempty"`
-	Metadata   map[string]string `yaml:"metadata,omitempty"`
+	// Provider choisit l'adaptateur, payzen à défaut.
+	Provider string `yaml:"provider,omitempty"`
+
+	// Token désigne le moyen à prélever. Vide, le runner reprend le
+	// dernier paymentMethodToken vu — un scénario enchaîne
+	// généralement enrôlement puis souscription.
+	Token string `yaml:"token,omitempty"`
+
+	// Amount en centimes entiers, Currency en ISO 4217, OrderID libre.
+	Amount   int64  `yaml:"amount"`
+	Currency string `yaml:"currency"`
+	OrderID  string `yaml:"order_id"`
+
+	// EffectDate et Rrule déclarent l'échéancier. Restitués tels quels
+	// mais jamais interprétés : chaque échéance se déclenche par un
+	// trigger_billing explicite.
+	EffectDate string `yaml:"effect_date,omitempty"`
+	Rrule      string `yaml:"rrule,omitempty"`
+
+	// Metadata est recopiée sur chaque échéance.
+	Metadata map[string]string `yaml:"metadata,omitempty"`
 }
 
 // TriggerBilling déclenche manuellement une échéance d'un abonnement.
@@ -176,6 +260,8 @@ type CreateSubscription struct {
 // les assertions suivantes. SubscriptionID vide → utilise
 // state.currentSubID (dernier abonnement créé).
 type TriggerBilling struct {
+	// SubscriptionID désigne l'abonnement à facturer. Vide, le runner
+	// reprend le dernier créé.
 	SubscriptionID string `yaml:"subscription_id,omitempty"`
 }
 
@@ -185,13 +271,22 @@ type TriggerBilling struct {
 // « fourni avec false, on veut cancelled=false ».
 // SubscriptionID vide → utilise state.currentSubID.
 type AssertSubscription struct {
+	// SubscriptionID désigne l'abonnement à vérifier. Vide, le runner
+	// reprend le dernier créé.
 	SubscriptionID string `yaml:"subscription_id,omitempty"`
-	Cancelled      *bool  `yaml:"cancelled,omitempty"`
+
+	// Cancelled est un pointeur pour distinguer trois cas là où un
+	// booléen n'en donnerait que deux : absent, on vérifie seulement
+	// l'existence ; false, on exige un abonnement actif ; true, un
+	// abonnement annulé.
+	Cancelled *bool `yaml:"cancelled,omitempty"`
 }
 
 // CancelSubscription annule un abonnement. Idempotent côté serveur.
 // SubscriptionID vide → utilise state.currentSubID.
 type CancelSubscription struct {
+	// SubscriptionID désigne l'abonnement à annuler. Vide, le runner
+	// reprend le dernier créé.
 	SubscriptionID string `yaml:"subscription_id,omitempty"`
 }
 
@@ -199,6 +294,10 @@ type CancelSubscription struct {
 // de Paysim. Status est l'état cible tel que perçu côté API (`captured`,
 // `refunded`, `declined`…), pas un statut protocolaire de fournisseur.
 type Simulate struct {
+	// Status est l'état visé, en vocabulaire du domaine — captured,
+	// declined, authorized… Le runner le traduit vers l'outcome du
+	// provider, de sorte qu'un scénario reste lisible quand un second
+	// fournisseur arrive.
 	Status string `yaml:"status"`
 }
 
@@ -206,12 +305,17 @@ type Simulate struct {
 // partir de l'étape suivante. Le vocabulaire de Mode suit celui du paquet
 // internal/chaos (`duplicate`, `delay`, `bad-signature`, `race`).
 type Inject struct {
+	// Mode nomme la panne à armer : duplicate, bad-signature, race, ou
+	// delay=NNN en millisecondes. Un mode inconnu échoue franchement
+	// plutôt que d'être ignoré — un chaos qui ne se déclenche pas sans
+	// le dire vaut moins que pas de chaos du tout.
 	Mode string `yaml:"mode"`
 }
 
 // Wait suspend l'exécution du scénario pendant Duration. Utile pour laisser
 // la file de livraison drainer un webhook différé avant une assertion.
 type Wait struct {
+	// Duration au format Go — 500ms, 2s, 1m30s.
 	Duration Duration `yaml:"duration"`
 }
 
@@ -232,9 +336,18 @@ type Wait struct {
 // les confondre, c'est asserter autre chose que ce qu'on croit.
 // Cumulables : les deux doivent être satisfaits.
 type AssertWebhook struct {
-	Count   int      `yaml:"count"`
-	Status  string   `yaml:"status,omitempty"`
-	Outcome string   `yaml:"outcome,omitempty"`
+	// Count est le nombre attendu, comparé strictement. Un écart
+	// signale soit un chaos non prévu, soit un défaut de la simulation.
+	Count int `yaml:"count"`
+
+	// Status filtre sur l'acheminement (delivered, failed, pending),
+	// Outcome sur le résultat métier (PAID, UNPAID…). Cumulables : les
+	// deux doivent alors être satisfaits.
+	Status  string `yaml:"status,omitempty"`
+	Outcome string `yaml:"outcome,omitempty"`
+
+	// Timeout borne l'attente. À relever quand un inject a retardé la
+	// livraison au-delà du défaut.
 	Timeout Duration `yaml:"timeout,omitempty"`
 }
 
@@ -242,6 +355,8 @@ type AssertWebhook struct {
 // canonique de la machine à états : `initiated`, `authorized`, `captured`,
 // `partially_refunded`, `refunded`, `declined`, `expired`, `chargeback`).
 type AssertState struct {
+	// State attendu, en vocabulaire du domaine. Voir docs/states.md
+	// pour la liste et les transitions permises.
 	State string `yaml:"state"`
 }
 

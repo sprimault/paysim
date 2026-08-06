@@ -184,6 +184,18 @@ func (r *SubscriptionsRepository) DeleteByID(id string) error {
 }
 
 // DeleteByProvider retourne le nombre effectivement supprimé.
+// DeleteAll supprime tous les abonnements, tous providers confondus.
+func (r *SubscriptionsRepository) DeleteAll() (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := r.db.ExecContext(ctx, `DELETE FROM subscriptions`)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 func (r *SubscriptionsRepository) DeleteByProvider(provider string) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

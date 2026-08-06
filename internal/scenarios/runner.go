@@ -36,21 +36,42 @@ func NewRunner(c *Client) *Runner {
 // et l'erreur éventuelle. Une étape non exécutée (annulation via ctx,
 // erreur précédente en mode strict) a Duration=0 et Err="skipped".
 type StepResult struct {
-	Index    int
-	Action   string
+	// Index est le rang de l'étape, 1-based — même vocabulaire que les
+	// messages d'erreur du loader, pour qu'un rapport et une erreur de
+	// chargement désignent la même chose.
+	Index int
+
+	// Action est le discriminant de l'étape jouée.
+	Action string
+
+	// Duration mesure l'étape. Zéro sur une étape non exécutée.
 	Duration time.Duration
-	Err      error
+
+	// Err est l'échec éventuel. Les assertions y déposent une erreur
+	// qui enveloppe ErrAssertion, ce qui permet à la CLI de distinguer
+	// un scénario faux d'une panne d'exécution et de choisir son code
+	// de retour.
+	Err error
 }
 
 // Report est le résultat d'un Run. Il expose la trace complète des
 // étapes et une erreur agrégée. Utile pour l'affichage étape-par-étape
-// que fera la CLI en 4.4.3, et pour un usage CI qui n'a besoin que du
+// que fait la CLI, et pour un usage CI qui n'a besoin que du
 // booléen de succès (Err() == nil).
 type Report struct {
-	Scenario  string
+	// Scenario est le nom déclaré dans le YAML.
+	Scenario string
+
+	// StartedAt et EndedAt bornent l'exécution. StartedAt sert aussi de
+	// curseur aux assertions webhook, qui ignorent les livraisons
+	// antérieures.
 	StartedAt time.Time
 	EndedAt   time.Time
-	Steps     []StepResult
+
+	// Steps porte le résultat de chaque étape, dans l'ordre. Une étape
+	// en échec interrompt la suite : les étapes restantes n'y figurent
+	// pas.
+	Steps []StepResult
 }
 
 // Err agrège les erreurs des étapes en une seule via errors.Join.
@@ -119,11 +140,11 @@ func (r *Runner) Run(ctx context.Context, s *Scenario) *Report {
 // state porte le contexte d'exécution partagé entre étapes : cursor
 // temporel pour les assertions webhook, uuid du paiement courant pour
 // les assertions qui n'ont pas de champ id explicite (voir D4 de la
-// note de conception 4.4.2), et token du dernier moyen de paiement
+// note de conception), et token du dernier moyen de paiement
 // enregistré pour les rejeux one-click (charge_token sans token
-// explicite, cf. 4.4.5c). currentSubID mémorise le dernier abonnement
+// explicite). currentSubID mémorise le dernier abonnement
 // créé pour trigger_billing/assert_subscription/cancel_subscription
-// sans ID explicite (4.4.6).
+// sans ID explicite.
 type state struct {
 	startedAt    time.Time
 	currentUUID  string // dernier paiement créé, référence implicite

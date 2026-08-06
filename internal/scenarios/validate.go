@@ -127,7 +127,7 @@ func (c *CreatePayment) Validate() error {
 }
 
 // Validate contrôle la forme d'une Card. Aucune validation Luhn (choix
-// projet 4.4.5 : Paysim accepte tout PAN). ExpiryMonth 1-12 ; ExpiryYear
+// projet : Paysim accepte tout PAN). ExpiryMonth 1-12 ; ExpiryYear
 // pas contraint côté loader — c'est au runner/serveur de refuser au
 // moment de la vérification d'expiration (via `IsExpired`).
 func (c *Card) Validate() error {
