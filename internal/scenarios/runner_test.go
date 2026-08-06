@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -420,16 +421,22 @@ func TestRunner_assertStateEchoue(t *testing.T) {
 func TestRunner_assertWebhookCount(t *testing.T) {
 	t.Parallel()
 
+	// Les cas d'échec portent un timeout court : l'assertion attend
+	// désormais que le compte soit atteint, et un compte qui ne le sera
+	// jamais consommerait sinon les 5 s du défaut.
+	const bref = Duration(80 * time.Millisecond)
+
 	cases := []struct {
 		name    string
 		want    int
 		status  string
+		timeout Duration
 		wantErr string // sous-chaîne attendue, vide = pas d'erreur
 	}{
-		{"count exact sans filtre", 1, "", ""},
-		{"count exact avec status", 1, "PAID", ""},
-		{"count trop haut", 2, "", "obtenu 1, veut 2"},
-		{"status mauvais", 1, "UNPAID", "avec status=\"UNPAID\": obtenu 0, veut 1"},
+		{"count exact sans filtre", 1, "", 0, ""},
+		{"count exact avec status", 1, "PAID", 0, ""},
+		{"count trop haut", 2, "", bref, "obtenu 1, veut 2"},
+		{"status mauvais", 1, "UNPAID", bref, "avec status=\"UNPAID\": obtenu 0, veut 1"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -447,7 +454,7 @@ func TestRunner_assertWebhookCount(t *testing.T) {
 					}},
 					{Action: ActionSimulate, Simulate: &Simulate{Status: "captured"}},
 					{Action: ActionAssertWebhook, AssertWebhook: &AssertWebhook{
-						Count: c.want, Status: c.status,
+						Count: c.want, Status: c.status, Timeout: c.timeout,
 					}},
 				},
 			}
@@ -940,5 +947,45 @@ func TestMapDomainToOutcome(t *testing.T) {
 				t.Errorf("got = %q, want %q", got, c.want)
 			}
 		})
+	}
+}
+
+// TestRunner_assertWebhookAttendLaLivraison reproduit la course qui
+// faisait echouer les scenarios en mode SQLite : la livraison n'est
+// visible qu'apres coup, le worker historisant apres que le handler a
+// repondu. L'assertion doit attendre au lieu de conclure au premier
+// coup d'oeil.
+func TestRunner_assertWebhookAttendLaLivraison(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	visible := false
+	created := time.Now().UTC()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/paysim/api/v1/webhooks" {
+			mu.Lock()
+			defer mu.Unlock()
+			if !visible {
+				// Premiere lecture : le webhook n'est pas encore
+				// historise. Il le devient pour les suivantes.
+				visible = true
+				_, _ = w.Write([]byte(`[]`))
+				return
+			}
+			_, _ = fmt.Fprintf(w, `[{"id":"wh-1","url":"http://m","status":"delivered","attempts":1,"createdAt":%q}]`,
+				created.Format(time.RFC3339Nano))
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	r := NewRunner(NewClient(srv.URL, ""))
+	st := &state{startedAt: created.Add(-time.Second)}
+	err := r.doAssertWebhook(context.Background(), st, &AssertWebhook{Count: 1})
+	if err != nil {
+		t.Fatalf("l'assertion doit attendre la livraison, obtenu: %v", err)
 	}
 }
