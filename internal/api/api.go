@@ -613,18 +613,32 @@ func (h *Handler) listPaymentMethods(w http.ResponseWriter, _ *http.Request) {
 	}
 	out := make([]PaymentMethodOutput, 0, len(recs))
 	for _, rec := range recs {
-		out = append(out, PaymentMethodOutput{
-			Token:       rec.Token,
-			Provider:    rec.Provider,
-			PANMasked:   rec.PANMasked,
-			Brand:       rec.Brand,
-			ExpiryMonth: rec.ExpiryMonth,
-			ExpiryYear:  rec.ExpiryYear,
-			Revoked:     rec.Revoked,
-			CreatedAt:   rec.CreatedAt,
-		})
+		out = append(out, toPaymentMethodOutput(rec))
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// toPaymentMethodOutput convertit un record en vue exposée. Construite
+// à la main aux deux endroits qui en avaient besoin, la struct avait
+// fini par diverger : les attributs de carte ajoutés au détail
+// manquaient à la liste, si bien qu'un même moyen de paiement portait
+// un porteur ou pas selon la route interrogée. Un seul convertisseur
+// rend cette divergence impossible.
+func toPaymentMethodOutput(rec *store.PaymentMethodRecord) PaymentMethodOutput {
+	return PaymentMethodOutput{
+		Token:           rec.Token,
+		Provider:        rec.Provider,
+		PANMasked:       rec.PANMasked,
+		Brand:           rec.Brand,
+		HolderName:      rec.HolderName,
+		Country:         rec.Country,
+		ProductCategory: rec.ProductCategory,
+		IssuerName:      rec.IssuerName,
+		ExpiryMonth:     rec.ExpiryMonth,
+		ExpiryYear:      rec.ExpiryYear,
+		Revoked:         rec.Revoked,
+		CreatedAt:       rec.CreatedAt,
+	}
 }
 
 // getPaymentMethod traite GET /paysim/api/v1/payment-methods/{token}.
@@ -648,20 +662,7 @@ func (h *Handler) getPaymentMethod(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "moyen de paiement inconnu", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, PaymentMethodOutput{
-		Token:           rec.Token,
-		Provider:        rec.Provider,
-		PANMasked:       rec.PANMasked,
-		Brand:           rec.Brand,
-		HolderName:      rec.HolderName,
-		Country:         rec.Country,
-		ProductCategory: rec.ProductCategory,
-		IssuerName:      rec.IssuerName,
-		ExpiryMonth:     rec.ExpiryMonth,
-		ExpiryYear:      rec.ExpiryYear,
-		Revoked:     rec.Revoked,
-		CreatedAt:   rec.CreatedAt,
-	})
+	writeJSON(w, http.StatusOK, toPaymentMethodOutput(rec))
 }
 
 // revokePaymentMethod traite POST /paysim/api/v1/payment-methods/{token}/revoke.
