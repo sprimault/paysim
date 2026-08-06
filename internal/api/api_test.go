@@ -541,6 +541,49 @@ func TestSimulatePaymentInvalidChannel(t *testing.T) {
 	}
 }
 
+// TestSimulatePaymentUnknownOutcomeListsAccepted verifie que l'erreur
+// enonce les valeurs acceptees. Sans elles, un integrateur qui envoie
+// CAPTURED ou AUTHORIZED (avec un Z la ou PayZen ecrit un S) n'a aucun
+// moyen de deviner l'attendu autrement qu'en lisant le code.
+func TestSimulatePaymentUnknownOutcomeListsAccepted(t *testing.T) {
+	t.Parallel()
+	logger := discardLogger()
+	store := payzen.NewMemoryStore()
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	b := bus.New()
+	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{HMACKey: "k", Publisher: b})
+	handler := NewHandler(Deps{
+		Store: store, Queue: queue, Publisher: b, Logger: logger, PayzenHandler: ph,
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	addPayment(t, store, "uuid-o", "order-o", 100)
+
+	body, _ := json.Marshal(SimulatePaymentRequest{Outcome: "CAPTURED"})
+	resp, err := http.Post(
+		server.URL+"/paysim/api/v1/payments/uuid-o/simulate",
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(resp.Body)
+	msg := string(raw)
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("status = %d, veut 400", resp.StatusCode)
+	}
+	if !strings.Contains(msg, "CAPTURED") {
+		t.Errorf("le message doit rappeler la valeur refusee : %q", msg)
+	}
+	for _, want := range []string{"PAID", "AUTHORISED", "UNPAID", "EXPIRED", "ABANDONED"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("le message doit lister %q, obtenu : %q", want, msg)
+		}
+	}
+}
+
 func TestSSEStreamReceivesEvents(t *testing.T) {
 	t.Parallel()
 	server, _, _, b := setup(t, "")

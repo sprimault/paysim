@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
 	"time"
 
 	"github.com/sprimault/paysim/internal/delivery"
@@ -56,6 +57,18 @@ var outcomeSpecs = map[string]outcomeSpec{
 // inconnue. Sentinelle interne au paquet — le handler la convertit
 // en réponse HTTP appropriée.
 var ErrUnknownOutcome = errors.New("outcome inconnu")
+
+// knownOutcomes liste les outcomes acceptés, triés pour que le message
+// d'erreur reste stable d'un appel à l'autre — un ordre de map rendrait
+// deux réponses identiques textuellement différentes.
+func knownOutcomes() []string {
+	out := make([]string, 0, len(outcomeSpecs))
+	for k := range outcomeSpecs {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // applyOutcome fait progresser le domain.Payment de la transaction
 // selon l'outcome demandé. Miroir des transitions autorisées par le
