@@ -244,8 +244,23 @@ est déployé, bouton d'actualisation par vue.
 
 ## Statut
 
-Préversion, tag `v0.4.0` (2026-08-02). Le support Stripe et une
-sortie publique avec un GIF de démo sont prévus.
+Préversion, tag `v0.5.5`. Le support Stripe et un GIF de démonstration
+sont prévus.
+
+**Comment c'est validé.** Chaque pull request exécute le linter, les tests
+unitaires avec le détecteur de concurrence, un audit des dépendances et les
+sept scénarios canoniques contre un vrai binaire en mode SQLite. Le workflow
+est public, ses exécutions sont dans l'onglet Actions. La signature
+`kr-hash` est vérifiée contre les vecteurs de la RFC 4231 et contre un
+vecteur du SDK Java officiel de Lyra — aucun des deux n'est produit par
+notre propre code.
+
+L'essentiel des correctifs vient de l'usage plutôt que de la théorie :
+brancher Paysim sur une intégration marchande fait apparaître ce qu'aucun
+test unitaire ne montre — un champ qui disparaît en silence au décodage, un
+motif de refus qui n'atteint jamais le marchand, un alias qui ne porte pas
+son client. Chacun de ces défauts devient ensuite un scénario, pour qu'il ne
+revienne pas.
 
 ## Retours
 
