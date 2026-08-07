@@ -78,6 +78,20 @@ export function PaymentOverview({ payment }: { payment: PaymentInStore }) {
               </dd>
             </div>
           )}
+          {/* L'UUID vivait en haut de page, nu et sans étiquette : rien
+              ne disait ce qu'était cette chaîne. Il rejoint les autres
+              identifiants, nommé et copiable. */}
+          <div className="contents">
+            <dt className="text-xs text-zinc-500 dark:text-zinc-400">
+              {t('payment.detail.overview.fieldUuid')}
+            </dt>
+            <dd className="flex items-center gap-1 text-sm">
+              <span className="font-mono text-xs text-zinc-700 dark:text-zinc-300">
+                {truncate(payment.uuid, 20)}
+              </span>
+              <CopyButton value={payment.uuid} className="p-0.5" />
+            </dd>
+          </div>
         </dl>
       </Card>
 
