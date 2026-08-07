@@ -292,13 +292,14 @@ func (h *Handler) Create(in CreateInput) (*Transaction, error) {
 // de simulation explicite peut encore rattraper.
 func (h *Handler) autoplay(tx *Transaction, pm *PaymentMethod) {
 	outcome, reason := OutcomePaid, ""
+	var decline chaos.DeclineReason
 	if pm != nil {
-		outcome, reason = decideReplayOutcome(pm, tx.Amount, h.clock().Now())
+		outcome, reason, decline = decideReplayOutcome(pm, tx.Amount, h.clock().Now())
 	} else if magic := chaos.MagicOutcome(tx.Amount); magic != "" {
-		outcome, reason = magic, "montant magique"
+		outcome, reason, decline = magic, "montant magique", chaos.MagicDeclineReason(tx.Amount)
 	}
 
-	if err := applyOutcome(tx, outcome, reason); err != nil {
+	if err := applyOutcome(tx, outcome, declineNote(reason, decline)); err != nil {
 		h.logger.Warn("autoplay_transition_failed",
 			"uuid", tx.UUID, "outcome", outcome, "err", err)
 		return
@@ -321,7 +322,7 @@ func (h *Handler) autoplay(tx *Transaction, pm *PaymentMethod) {
 	})
 
 	if target := h.callbackTarget(tx.NotificationURL, tx.UUID, "autoplay"); target != "" && h.cfg.HMACKey != "" {
-		if err := h.emitAutoplayWebhook(tx, pm, outcome, reason, target); err != nil {
+		if err := h.emitAutoplayWebhook(tx, pm, outcome, reason, decline, target); err != nil {
 			h.logger.Warn("autoplay_webhook_emit_failed", "uuid", tx.UUID, "err", err)
 		}
 	}
@@ -330,8 +331,11 @@ func (h *Handler) autoplay(tx *Transaction, pm *PaymentMethod) {
 // emitAutoplayWebhook diffère d'emitReplayWebhook sur un seul point :
 // le moyen de paiement peut être absent, un paiement sans carte n'ayant
 // pas de marque à annoncer.
-func (h *Handler) emitAutoplayWebhook(tx *Transaction, pm *PaymentMethod, outcome, reason, targetURL string) error {
-	opts := BrowserReturnOpts{Outcome: outcome, ErrorMessage: reason}
+func (h *Handler) emitAutoplayWebhook(
+	tx *Transaction, pm *PaymentMethod,
+	outcome, reason string, decline chaos.DeclineReason, targetURL string,
+) error {
+	opts := BrowserReturnOpts{Outcome: outcome, ErrorMessage: reason, DeclineReason: decline}
 	if pm != nil {
 		opts.CardBrand = pm.Brand
 	}
@@ -495,8 +499,8 @@ func (h *Handler) createFromToken(in CreateInput) (*Transaction, error) {
 		UpdatedAt:          now,
 	}
 
-	outcome, reason := decideReplayOutcome(pm, in.Amount, now)
-	if err := applyOutcome(tx, outcome, reason); err != nil {
+	outcome, reason, decline := decideReplayOutcome(pm, in.Amount, now)
+	if err := applyOutcome(tx, outcome, declineNote(reason, decline)); err != nil {
 		return nil, fmt.Errorf("apply outcome: %w", err)
 	}
 	tx.UpdatedAt = h.clock().Now()
@@ -524,7 +528,7 @@ func (h *Handler) createFromToken(in CreateInput) (*Transaction, error) {
 	// pour l'appelant qui compte sur la configuration globale.
 	// L'échec de livraison ne fait pas échouer le rejeu lui-même.
 	if target := h.callbackTarget(in.NotificationURL, tx.UUID, "replay"); target != "" && h.cfg.HMACKey != "" {
-		if err := h.emitReplayWebhook(tx, pm, outcome, reason, target); err != nil {
+		if err := h.emitReplayWebhook(tx, pm, outcome, reason, decline, target); err != nil {
 			h.logger.Warn("replay_webhook_emit_failed",
 				"uuid", tx.UUID, "err", err)
 		}
@@ -537,11 +541,15 @@ func (h *Handler) createFromToken(in CreateInput) (*Transaction, error) {
 // un rejeu one-click. Duplique volontairement une partie de la logique
 // de simulate — les deux flows partageront un helper commun quand un
 // troisième cas apparaîtra (règle de trois).
-func (h *Handler) emitReplayWebhook(tx *Transaction, pm *PaymentMethod, outcome, reason, targetURL string) error {
+func (h *Handler) emitReplayWebhook(
+	tx *Transaction, pm *PaymentMethod,
+	outcome, reason string, decline chaos.DeclineReason, targetURL string,
+) error {
 	opts := BrowserReturnOpts{
-		Outcome:      outcome,
-		CardBrand:    pm.Brand,
-		ErrorMessage: reason,
+		Outcome:       outcome,
+		CardBrand:     pm.Brand,
+		ErrorMessage:  reason,
+		DeclineReason: decline,
 	}
 	answer := buildKrAnswer(tx, pm, opts, "", "TEST")
 
@@ -592,11 +600,21 @@ func (h *Handler) callbackTarget(explicit, uuid, origin string) string {
 // (simulate) et au rejeu récurrent (charge_token). C'est cohérent avec
 // le comportement bancaire — une carte expirée est refusée dès qu'un
 // paiement est tenté, pas seulement au moment du prélèvement récurrent.
-func evaluateMethodOutcome(pm *PaymentMethod, now time.Time) (outcome, reason string) {
-	if usable, reason := MethodUsability(pm.PANFull, pm.ExpiryMonth, pm.ExpiryYear, pm.Revoked, now); !usable {
-		return OutcomeUnpaid, reason
+//
+// Retourne trois choses distinctes qu'il ne faut pas confondre :
+// l'outcome protocolaire, un motif en clair destiné au journal, et le
+// code bancaire ISO 8583 sur lequel le marchand décide de retenter. Un
+// moyen révoqué ou expiré n'a pas de code bancaire — c'est Paysim qui
+// refuse, pas un émetteur.
+func evaluateMethodOutcome(pm *PaymentMethod, now time.Time) (outcome, reason string, decline chaos.DeclineReason) {
+	usable, why := MethodUsability(pm.PANFull, pm.ExpiryMonth, pm.ExpiryYear, pm.Revoked, now)
+	if usable {
+		return "", "", chaos.DeclineReason{}
 	}
-	return "", ""
+	// Seul le PAN de test porte un motif bancaire : il simule un refus
+	// venu de l'émetteur, là où révocation et expiration sont des
+	// verdicts locaux.
+	return OutcomeUnpaid, why, chaos.DeclineReasonForPAN(pm.PANFull)
 }
 
 // MethodUsability dit si un moyen de paiement peut encore produire un
@@ -629,14 +647,14 @@ func MethodUsability(panFull string, expiryMonth, expiryYear int, revoked bool, 
 // et le magic amount pour choisir l'outcome d'un rejeu one-click.
 // Ordre : conditions du PM (révocation/expiration/magic PAN) puis
 // magic amount, sinon PAID.
-func decideReplayOutcome(pm *PaymentMethod, amount format.Amount, now time.Time) (outcome, reason string) {
-	if o, r := evaluateMethodOutcome(pm, now); o != "" {
-		return o, r
+func decideReplayOutcome(pm *PaymentMethod, amount format.Amount, now time.Time) (outcome, reason string, decline chaos.DeclineReason) {
+	if o, r, d := evaluateMethodOutcome(pm, now); o != "" {
+		return o, r, d
 	}
 	if magic := chaos.MagicOutcome(amount); magic != "" {
-		return magic, "montant magique"
+		return magic, "montant magique", chaos.MagicDeclineReason(amount)
 	}
-	return OutcomePaid, ""
+	return OutcomePaid, "", chaos.DeclineReason{}
 }
 
 // createPayment traite POST /api-payment/V4/Charge/CreatePayment.
@@ -859,8 +877,8 @@ func (h *Handler) TriggerBilling(subID string) (*Transaction, error) {
 		UpdatedAt:          now,
 	}
 
-	outcome, reason := decideReplayOutcome(pm, sub.Amount, now)
-	if err := applyOutcome(tx, outcome, reason); err != nil {
+	outcome, reason, decline := decideReplayOutcome(pm, sub.Amount, now)
+	if err := applyOutcome(tx, outcome, declineNote(reason, decline)); err != nil {
 		return nil, fmt.Errorf("apply outcome: %w", err)
 	}
 	tx.UpdatedAt = h.clock().Now()
@@ -889,7 +907,7 @@ func (h *Handler) TriggerBilling(subID string) (*Transaction, error) {
 	// Comme pour le rejeu, un échec de livraison ne remet pas en cause
 	// l'échéance elle-même : elle a eu lieu.
 	if target := h.callbackTarget("", tx.UUID, "subscription_billing"); target != "" && h.cfg.HMACKey != "" {
-		if err := h.emitReplayWebhook(tx, pm, outcome, reason, target); err != nil {
+		if err := h.emitReplayWebhook(tx, pm, outcome, reason, decline, target); err != nil {
 			h.logger.Warn("billing_webhook_emit_failed",
 				"subscriptionId", subID, "uuid", tx.UUID, "err", err)
 		}
@@ -1206,6 +1224,10 @@ func (h *Handler) simulate(
 	// un mode d'activation légitime, sans besoin de config globale.
 	if magic := chaos.MagicOutcome(tx.Amount); magic != "" {
 		opts.Outcome = magic
+		// Le motif accompagne le refus : c'est lui qui distingue une
+		// provision insuffisante d'une opposition, et donc ce qu'un
+		// marchand doit faire ensuite.
+		opts.DeclineReason = chaos.MagicDeclineReason(tx.Amount)
 	}
 	// Conditions du moyen de paiement (révocation / expiration /
 	// magic PAN) : si la Transaction porte un PaymentMethod stocké,
@@ -1214,10 +1236,15 @@ func (h *Handler) simulate(
 	// on reproduit ce comportement pour rester fidèle (invariant 3).
 	if tx.PaymentMethodToken != "" {
 		if pm, _ := h.store.MethodByToken(tx.PaymentMethodToken); pm != nil {
-			if o, r := evaluateMethodOutcome(pm, h.clock().Now()); o != "" {
+			if o, r, d := evaluateMethodOutcome(pm, h.clock().Now()); o != "" {
 				opts.Outcome = o
 				if opts.ErrorMessage == "" {
 					opts.ErrorMessage = r
+				}
+				// Le PAN de test l'emporte sur le montant magique : il
+				// décrit un refus de l'émetteur, plus spécifique.
+				if d.Code != "" {
+					opts.DeclineReason = d
 				}
 			}
 		}
@@ -1236,7 +1263,7 @@ func (h *Handler) simulate(
 	if targetURL == "" {
 		return "", "", errors.New("URL cible manquante : ni fournie dans la requete, ni stockee dans la transaction, ni PAYSIM_CALLBACK_URL configuree")
 	}
-	if err := applyOutcome(tx, opts.Outcome, opts.ErrorMessage); err != nil {
+	if err := applyOutcome(tx, opts.Outcome, declineNote(opts.ErrorMessage, opts.DeclineReason)); err != nil {
 		return "", "", fmt.Errorf("transition domain: %w", err)
 	}
 	tx.UpdatedAt = time.Now().UTC()

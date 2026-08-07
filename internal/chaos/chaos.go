@@ -198,14 +198,21 @@ func (c *Chaos) Middleware(next http.Handler) http.Handler {
 
 // MagicOutcome inspecte un montant et retourne un outcome forcé si le
 // montant porte une valeur magique. Retourne "" si aucune magic value
-// détectée. Convention initiale phase 2 v1 :
+// détectée.
 //
-//   - centimes terminant par 01 → outcome "UNPAID" (refus systématique).
+//   - centimes 01 → UNPAID, provision insuffisante
+//   - centimes 02 → UNPAID, carte volée
+//   - centimes 04 → UNPAID, émetteur inaccessible
 //
-// D'autres magic values (02 → 3DS échoue, cartes spéciales) arrivent
-// en phase 2 v2. Ajout non-breaking pour les consommateurs.
+// Les trois refusent ; ils se distinguent par leur motif, que
+// MagicDeclineReason porte. Un marchand ne traite pas de la même façon
+// un solde à reconstituer et une opposition — c'est cette différence
+// que les trois valeurs rendent testable.
+//
+// Les centimes 03 sont pris par la latence et ne changent pas l'issue.
 func MagicOutcome(amount format.Amount) string {
-	if amount%100 == 1 {
+	switch amount % 100 {
+	case 1, 2, 4:
 		return "UNPAID"
 	}
 	return ""

@@ -417,6 +417,49 @@ to the session. PayZen does not claim to replace them either.
 Aliases enrolled before v0.5.4 carry no customer: the charge then falls back to the
 request's, for lack of anything better.
 
+## Decline reasons
+
+A merchant does not treat every decline alike: insufficient funds is retried a few days
+later, an opposition means asking for another card right away. Without a reason in the
+response, that retry logic can neither be written nor tested — it ships blind, and gets
+discovered through a customer suspended by mistake.
+
+Declined transactions carry the reason in `detailedErrorCode`, alongside a human-readable
+`detailedErrorMessage`:
+
+```json
+"transactions": [{
+  "status": "UNPAID",
+  "detailedStatus": "REFUSED",
+  "errorCode": "PAYSIM_REFUSED",
+  "detailedErrorCode": "51",
+  "detailedErrorMessage": "provision insuffisante"
+}]
+```
+
+| Code | Meaning                     | Typical merchant response      |
+| :--: | --------------------------- | ------------------------------ |
+| `51` | Insufficient funds          | retry in a few days            |
+| `43` | Stolen card, opposition     | ask for another payment method |
+| `91` | Issuer unavailable          | retry shortly                  |
+| `05` | Do not honour (generic)     | no signal either way           |
+| `57` | Not permitted to cardholder | ask for another payment method |
+
+**These are ISO 8583 authorization return codes**, not Paysim values: they are what the
+acquirer sends back and what PayZen relays as-is. Reproducing them verbatim is the only
+way a mapping written against Paysim stays valid in production. Note the contrast with
+`errorCode`, which *is* prefixed `PAYSIM_` — that one is a PSP-level code, and inventing
+a PayZen-looking value there would be passing ourselves off as the real thing.
+
+**Paysim never interprets these codes and exposes no `retryable` flag.** Deciding that a
+`51` is worth retrying and a `43` is not is a merchant policy, not protocol data. Adding
+that verdict would hand you a semantic the real gateway does not provide — and your
+retry logic would then be written against us rather than against PayZen.
+
+Two levers set the reason: the **magic amount** on the checkout path, the **test PAN** on
+the recurring one, where the amount is fixed by the subscription. See
+[testing-cards.md](../testing-cards.md).
+
 ## Chaos values (magic values)
 
 Paysim ships two categories of built-in behaviour tweaks — cf.

@@ -238,8 +238,20 @@ view.
 
 ## Status
 
-Preview release, tag `v0.4.0` (2026-08-02). Stripe support and a
-public release with a demo GIF are planned.
+Preview release, tag `v0.5.5`. Stripe support and a demo GIF are planned.
+
+**How it is validated.** Every pull request runs the linter, the unit tests
+with the race detector, a dependency audit, and the seven canonical
+scenarios against a real binary in SQLite mode. The workflow is public and
+its runs are in the Actions tab. The `kr-hash` signature is checked against
+the IETF RFC 4231 vectors and against a vector from Lyra's official Java
+SDK — neither is produced by our own code.
+
+Most fixes come from use rather than theory: wiring Paysim into a merchant
+integration surfaces what no unit test shows — a field silently dropped at
+decoding, a decline reason that never reaches the merchant, an alias not
+carrying its customer. Each of those defects then becomes a scenario, so
+that it cannot come back.
 
 ## Feedback
 

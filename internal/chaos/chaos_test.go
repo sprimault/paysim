@@ -192,10 +192,11 @@ func TestMagicOutcome(t *testing.T) {
 		want   string
 	}{
 		{100, ""},        // 100 → pas de magic
-		{101, "UNPAID"},  // se termine par 01
-		{1501, "UNPAID"}, // idem
-		{102, ""},        // 02 pas encore mappé
-		{103, ""},        // 03 est pour la latence, pas outcome
+		{101, "UNPAID"},  // 01 → provision insuffisante
+		{1501, "UNPAID"}, // idem, quel que soit l'ordre de grandeur
+		{102, "UNPAID"},  // 02 → carte volée
+		{104, "UNPAID"},  // 04 → émetteur inaccessible
+		{103, ""},        // 03 est pour la latence, pas pour l'issue
 		{200, ""},
 	}
 	for _, c := range cases {
@@ -332,6 +333,58 @@ func TestMagicLatencyMs(t *testing.T) {
 	for _, c := range cases {
 		if got := MagicLatencyMs(c.amount); got != c.want {
 			t.Errorf("MagicLatencyMs(%d) = %d, veut %d", c.amount, got, c.want)
+		}
+	}
+}
+
+// Les trois montants magiques refusent tous, mais avec des motifs
+// distincts : c'est cette différence qui permet à un marchand d'écrire
+// sa logique de reconduction et de la tester.
+func TestMagicDeclineReason(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		amount   format.Amount
+		wantCode string
+	}{
+		{101, "51"},  // provision insuffisante
+		{1501, "51"}, // quel que soit l'ordre de grandeur
+		{102, "43"},  // carte volée
+		{104, "91"},  // émetteur inaccessible
+		{103, ""},    // latence : refuse pas, donc pas de motif
+		{100, ""},    // montant ordinaire
+	}
+	for _, c := range cases {
+		if got := MagicDeclineReason(c.amount).Code; got != c.wantCode {
+			t.Errorf("MagicDeclineReason(%d).Code = %q, veut %q", c.amount, got, c.wantCode)
+		}
+	}
+}
+
+// Le montant est imposé par l'abonnement sur un prélèvement récurrent :
+// le PAN est alors le seul levier pour choisir un motif.
+func TestDeclineReasonForPAN(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"4000000000000002": "51",
+		"5105105105105100": "43",
+		"2223000000000007": "05",
+		"378282000000008":  "57",
+		"4111111111111111": "", // PAN ordinaire, aucun motif
+	}
+	for pan, want := range cases {
+		if got := DeclineReasonForPAN(pan).Code; got != want {
+			t.Errorf("DeclineReasonForPAN(%s).Code = %q, veut %q", pan, got, want)
+		}
+	}
+}
+
+// Tout PAN de refus doit porter un motif, sans quoi le refus reste muet
+// sur le chemin récurrent — celui-là même qu'on veut rendre testable.
+func TestChaqueTestPANPorteUnMotif(t *testing.T) {
+	t.Parallel()
+	for pan := range declinedTestPANs {
+		if DeclineReasonForPAN(pan).Code == "" {
+			t.Errorf("le PAN de refus %s n'a aucun motif associe", pan)
 		}
 	}
 }

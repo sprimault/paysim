@@ -21,12 +21,17 @@ Chaque marque expose un numéro Luhn-valide que Paysim reconnaît comme un
 zéros terminés par le check digit Luhn correct — valeur mémorisable et
 scriptable.
 
-| Marque               | Préfixe  | Longueur | PAN de test         |
-| -------------------- | -------- | :------: | ------------------- |
-| Visa                 | `400000` |    16    | `4000000000000002`  |
-| Mastercard           | `510510` |    16    | `5105105105105100`  |
-| Mastercard série 2   | `222300` |    16    | `2223000000000007`  |
-| American Express     | `378282` |    15    | `378282000000008`   |
+| Marque               | Préfixe  | Longueur | PAN de test         | Motif de refus                  |
+| -------------------- | -------- | :------: | ------------------- | ------------------------------- |
+| Visa                 | `400000` |    16    | `4000000000000002`  | `51` provision insuffisante     |
+| Mastercard           | `510510` |    16    | `5105105105105100`  | `43` carte volée, opposition    |
+| Mastercard série 2   | `222300` |    16    | `2223000000000007`  | `05` refus de l'émetteur        |
+| American Express     | `378282` |    15    | `378282000000008`   | `57` opération non permise      |
+
+Chaque PAN porte un **motif fixe**, restitué dans `detailedErrorCode`. C'est
+ce qui compte sur un prélèvement récurrent : le montant y est imposé par
+l'abonnement, on ne peut pas le tordre pour choisir un motif — le PAN est le
+seul levier qui reste sur ce chemin.
 
 **Portée** : la reconnaissance agit dès qu'un `PaymentMethod` est
 associé au paiement. Ça couvre le **premier paiement où une carte a
@@ -51,9 +56,17 @@ paiement accepté.
 
 ### Montant magique — refus au simulate
 
-Tout montant se terminant par `01` (`1001`, `2001`, `12301`…) force
-l'endpoint `simulate` à retourner `UNPAID`. Contrôle l'issue du parcours
-navigateur côté marchand.
+Trois terminaisons forcent `simulate` à retourner `UNPAID`, chacune avec son
+motif :
+
+| Montant se termine par | `detailedErrorCode` | Signification            | Réaction marchande        |
+| :--------------------: | :-----------------: | ------------------------ | ------------------------- |
+| `01`                   | `51`                | Provision insuffisante   | retenter dans quelques jours |
+| `02`                   | `43`                | Carte volée              | réclamer une autre carte  |
+| `04`                   | `91`                | Émetteur inaccessible    | retenter rapidement       |
+
+`1001`, `2001`, `12301` refusent tous avec `51`. Les terminaisons en `03`
+sont prises par le levier de latence et ne changent pas l'issue.
 
 ### PAN magique — refus sur tout paiement
 
