@@ -242,6 +242,26 @@ paiement, webhooks (avec rejeu en un click), tout en temps réel via
 SSE. Mode sombre, rechargement automatique quand un nouveau build
 est déployé, bouton d'actualisation par vue.
 
+## Images publiées
+
+| Tag      | Contenu                                    | Quand elle bouge          |
+| -------- | ------------------------------------------ | ------------------------- |
+| `latest` | Dernière version stable                    | à chaque release          |
+| `edge`   | État de `master`                           | à chaque fusion de PR     |
+
+```bash
+docker pull ghcr.io/sprimault/paysim:latest   # stable
+docker pull ghcr.io/sprimault/paysim:edge     # en avance d'une release
+```
+
+`edge` existe pour qu'un correctif soit installable sans attendre une version.
+Elle est publiée par la CI **après** que le lint, les tests, l'audit et les sept
+scénarios canoniques sont passés — jamais depuis une pull request. Comme
+`latest`, elle est multi-architecture amd64 et arm64.
+
+Utiliser `edge` en production n'a pas de sens : rien n'y garantit la stabilité
+d'une interface entre deux fusions.
+
 ## Statut
 
 Préversion, tag `v0.5.5`. Le support Stripe et un GIF de démonstration
