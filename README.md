@@ -236,6 +236,26 @@ methods, webhooks (with one-click replay), all live via SSE. Dark
 mode, auto-reload when a new build is deployed, refresh button per
 view.
 
+## Published images
+
+| Tag      | Contents                  | When it moves       |
+| -------- | ------------------------- | ------------------- |
+| `latest` | Latest stable release     | on every release    |
+| `edge`   | State of `master`         | on every merged PR  |
+
+```bash
+docker pull ghcr.io/sprimault/paysim:latest   # stable
+docker pull ghcr.io/sprimault/paysim:edge     # one release ahead
+```
+
+`edge` exists so that a fix is installable without waiting for a version. CI
+publishes it **after** the linter, the tests, the audit and the seven canonical
+scenarios have passed — never from a pull request. Like `latest`, it is
+multi-architecture, amd64 and arm64.
+
+Running `edge` in production makes no sense: nothing guarantees interface
+stability between two merges.
+
 ## Status
 
 Preview release, tag `v0.5.5`. Stripe support and a demo GIF are planned.
