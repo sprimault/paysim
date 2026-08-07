@@ -201,7 +201,7 @@ jamais d'erreur HTTP pour un échec métier.
 | Champ                | Type   | Requis | Notes                                     |
 | -------------------- | ------ | :----: | ----------------------------------------- |
 | `subscriptionId`     | string |  oui   |                                           |
-| `paymentMethodToken` | string |  non   | PayZen l'exige en réel ; Paysim l'ignore (l'id seul est unique). |
+| `paymentMethodToken` | string |  oui   | Doit correspondre au moyen prélevé. Un couple incohérent répond comme un abonnement inconnu. |
 
 **Réponse** — `SubscriptionGetAnswer` :
 

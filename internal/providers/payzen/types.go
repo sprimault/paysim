@@ -449,10 +449,12 @@ type SubscriptionGetRequest struct {
 	// SubscriptionID désigne l'abonnement à relire.
 	SubscriptionID string `json:"subscriptionId"`
 
-	// PaymentMethodToken est accepté par le contrat PayZen mais ignoré
-	// par Paysim : l'identifiant d'abonnement suffit à retrouver
-	// l'enregistrement.
-	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
+	// PaymentMethodToken est requis, comme chez PayZen, et doit
+	// correspondre au moyen prélevé par l'abonnement. L'identifiant
+	// suffirait techniquement à retrouver l'enregistrement — c'est
+	// justement pour ça que Paysim l'exige : accepter ce que le vrai
+	// refuse laisse passer une intégration qui échouera en production.
+	PaymentMethodToken string `json:"paymentMethodToken"`
 }
 
 // SubscriptionGetAnswer est le resume d'un abonnement retourne au marchand.

@@ -504,7 +504,9 @@ func TestSubscriptionGetKnown(t *testing.T) {
 	_ = json.Unmarshal(create.Answer, &ca)
 
 	get, _ := post(t, server.URL+"/api-payment/V4/Subscription/Get",
-		SubscriptionGetRequest{SubscriptionID: ca.SubscriptionID}, "u", "p")
+		SubscriptionGetRequest{
+			SubscriptionID: ca.SubscriptionID, PaymentMethodToken: "pmt-xyz",
+		}, "u", "p")
 
 	if get.Status != "SUCCESS" {
 		t.Fatalf("Status = %q, veut SUCCESS", get.Status)
@@ -524,7 +526,9 @@ func TestSubscriptionGetUnknown(t *testing.T) {
 	server, _ := newTestServer(t)
 
 	resp, _ := post(t, server.URL+"/api-payment/V4/Subscription/Get",
-		SubscriptionGetRequest{SubscriptionID: "inconnu"}, "u", "p")
+		SubscriptionGetRequest{
+			SubscriptionID: "inconnu", PaymentMethodToken: "pmt-xyz",
+		}, "u", "p")
 	if resp.Status != "ERROR" {
 		t.Fatalf("Status = %q, veut ERROR", resp.Status)
 	}
@@ -1586,5 +1590,66 @@ func TestRejeuSurAliasSansClientGardeLaRequete(t *testing.T) {
 	}
 	if tx.Customer.Reference != "client-B" {
 		t.Errorf("reference = %q, veut client-B (l'alias n'en porte pas)", tx.Customer.Reference)
+	}
+}
+
+// Le token est requis, comme chez PayZen. L'accepter absent rendrait
+// Paysim plus permissif que le vrai : l'appel passerait ici et échouerait
+// en production, sans que rien ne l'ait signalé.
+func TestSubscriptionGetSansTokenRefuse(t *testing.T) {
+	t.Parallel()
+	server, _ := newTestServer(t)
+
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreateSubscription",
+		CreateSubscriptionRequest{
+			Amount: 500, Currency: "EUR", PaymentMethodToken: "pmt-abc",
+			EffectDate: "2026-09-01T00:00:00Z",
+			Rrule:      "RRULE:FREQ=MONTHLY;INTERVAL=1",
+		}, "u", "p")
+	var ca CreateSubscriptionAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	resp, _ := post(t, server.URL+"/api-payment/V4/Subscription/Get",
+		SubscriptionGetRequest{SubscriptionID: ca.SubscriptionID}, "u", "p")
+
+	if resp.Status != "ERROR" {
+		t.Fatalf("Status = %q, veut ERROR sans paymentMethodToken", resp.Status)
+	}
+	var e APIError
+	_ = json.Unmarshal(resp.Answer, &e)
+	if e.ErrorCode != ErrCodeInvalidRequest {
+		t.Errorf("ErrorCode = %q, veut %q", e.ErrorCode, ErrCodeInvalidRequest)
+	}
+}
+
+// Un token qui ne correspond pas à l'abonnement est traité comme un
+// abonnement inconnu : ne pas distinguer les deux cas évite de renseigner
+// un appelant sur l'existence d'un abonnement dont il ignore le moyen.
+func TestSubscriptionGetTokenIncoherentRefuse(t *testing.T) {
+	t.Parallel()
+	server, _ := newTestServer(t)
+
+	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreateSubscription",
+		CreateSubscriptionRequest{
+			Amount: 500, Currency: "EUR", PaymentMethodToken: "pmt-vrai",
+			EffectDate: "2026-09-01T00:00:00Z",
+			Rrule:      "RRULE:FREQ=MONTHLY;INTERVAL=1",
+		}, "u", "p")
+	var ca CreateSubscriptionAnswer
+	_ = json.Unmarshal(create.Answer, &ca)
+
+	resp, _ := post(t, server.URL+"/api-payment/V4/Subscription/Get",
+		SubscriptionGetRequest{
+			SubscriptionID: ca.SubscriptionID, PaymentMethodToken: "pmt-autre",
+		}, "u", "p")
+
+	if resp.Status != "ERROR" {
+		t.Fatalf("Status = %q, veut ERROR sur un couple incoherent", resp.Status)
+	}
+	var e APIError
+	_ = json.Unmarshal(resp.Answer, &e)
+	if e.ErrorCode != ErrCodeSubscriptionUnknown {
+		t.Errorf("ErrorCode = %q, veut %q — meme reponse qu'un abonnement inconnu",
+			e.ErrorCode, ErrCodeSubscriptionUnknown)
 	}
 }

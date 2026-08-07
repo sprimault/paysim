@@ -994,12 +994,26 @@ func (h *Handler) getSubscription(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, ErrCodeInvalidRequest, "subscriptionId manquant")
 		return
 	}
+	// PayZen exige le couple : l'identifiant d'abonnement ne suffit pas.
+	// Paysim l'acceptait seul, et se montrait donc plus permissif que le
+	// vrai — une intégration qui omet le token passait ici et échouait en
+	// production. Entre les deux erreurs possibles, celle-ci est la
+	// bruyante : un appel refusé se corrige à la lecture du message, là
+	// où l'acceptation muette ne se découvre qu'en prod.
+	if req.PaymentMethodToken == "" {
+		h.writeError(w, ErrCodeInvalidRequest, "paymentMethodToken manquant")
+		return
+	}
 	sub, err := h.store.SubscriptionByID(req.SubscriptionID)
 	if err != nil {
 		h.storeErr(w, "getSubscription.SubscriptionByID", err)
 		return
 	}
-	if sub == nil {
+	// Un couple incohérent est traité comme un abonnement inconnu, sans
+	// distinguer les deux cas : répondre « il existe mais pas avec ce
+	// moyen » renseignerait un appelant qui n'a pas le droit de le
+	// savoir.
+	if sub == nil || sub.PaymentMethodToken != req.PaymentMethodToken {
 		h.writeError(w, ErrCodeSubscriptionUnknown, "abonnement introuvable")
 		return
 	}
