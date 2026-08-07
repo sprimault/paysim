@@ -48,5 +48,11 @@
     "typescript-eslint": "^8.18.2",
     "vite": "^8.0.16",
     "vitest": "^4.1.8"
+  },
+  "overrides": {
+    "nanoid": "3.3.17"
+  },
+  "overridesReason": {
+    "nanoid": "3.3.17 corrige GHSA-2v37-7h3g-55p8 (boucle infinie sur taille zero). 3.3.18 ecartee : publiee le jour meme de l'avis, et une version parue dans l'heure est le profil type d'une compromission de mainteneur. Exposition nulle de toute facon : postcss est en devDependencies et nanoid n'entre pas dans le bundle publie. A retirer quand postcss remontera nanoid tout seul."
   }
 }
