@@ -98,7 +98,10 @@ curl -X POST http://paysim:8080/paysim/api/v1/payments \
       "issuerName": "BANQUE DE TEST"
     }
   }'
-# → {"uuid":"...","paymentMethodToken":"..."}
+# → {"uuid":"...","paymentMethodToken":"...","brand":"VISA"}
+#   brand ships with the token so the merchant stores the real network
+#   right away, instead of falling back to a default until the next
+#   recurring charge.
 
 # First payment: declines too — the magic PAN is checked at simulate,
 # not only on recurring charges

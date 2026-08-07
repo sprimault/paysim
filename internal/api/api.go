@@ -339,6 +339,17 @@ type CreatePaymentOutput struct {
 	// un paiement refusé : l'annoncer à côté d'un refus laisserait
 	// croire qu'il est débitable.
 	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
+
+	// Brand est la marque du moyen enrôlé (VISA, MASTERCARD, CB…),
+	// livrée avec le token pour que le marchand l'enregistre du premier
+	// coup. Sans elle, il ne connaît la marque qu'à l'IPN — qui, sur un
+	// moyen déjà enregistré, n'a rien à réécrire : la valeur par défaut
+	// posée à l'enrôlement restait affichée jusqu'au paiement récurrent
+	// suivant.
+	//
+	// Toujours accompagnée du token, jamais seule : sans alias à
+	// enregistrer, la marque n'a rien à qualifier.
+	Brand string `json:"brand,omitempty"`
 }
 
 // SimulatePaymentRequest est le corps de POST
@@ -479,10 +490,37 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 		if tx.Payment.State() == domain.StateDeclined {
 			out.PaymentMethodToken = ""
 		}
+		out.Brand = h.brandOf(out.PaymentMethodToken)
 		writeJSON(w, http.StatusCreated, out)
 	default:
 		http.Error(w, fmt.Sprintf("provider %q inconnu", provider), http.StatusBadRequest)
 	}
+}
+
+// brandOf retourne la marque du moyen de paiement désigné, ou la chaîne
+// vide si le token est absent ou l'entrée inconnue.
+//
+// Lit le store du provider et non paymentMethodRepo : ce dernier est nil
+// en mode mémoire, ce qui aurait réservé la marque aux déploiements
+// SQLite. Le store, lui, répond dans les deux modes.
+//
+// Une marque manquante n'est pas une raison d'échouer une création qui a
+// réussi : le paiement existe, son token est valide, seule une mention
+// d'affichage se perd. L'erreur de lecture est donc journalisée, pas
+// remontée.
+func (h *Handler) brandOf(token string) string {
+	if token == "" || h.store == nil {
+		return ""
+	}
+	pm, err := h.store.MethodByToken(token)
+	if err != nil {
+		h.logger.Error("api_brand_lookup_failed", "token", token, "err", err)
+		return ""
+	}
+	if pm == nil {
+		return ""
+	}
+	return pm.Brand
 }
 
 // CreateSubscriptionInput est le corps de POST /paysim/api/v1/subscriptions,

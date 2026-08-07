@@ -331,6 +331,35 @@ func (c *Client) GetPayment(ctx context.Context, uuid string) (*PaymentDetail, e
 	return &out, nil
 }
 
+// PaymentMethodDetail est la vue du moyen enregistré consommée par
+// assert_payment_method, alignée sur api.PaymentMethodOutput. Seuls les
+// champs assertables figurent ici : le runner n'a pas à suivre les
+// évolutions de l'API qui ne le concernent pas.
+type PaymentMethodDetail struct {
+	Token     string `json:"token"`
+	Brand     string `json:"brand"`
+	PANMasked string `json:"panMasked"`
+
+	HolderName      string `json:"holderName"`
+	Country         string `json:"country"`
+	ProductCategory string `json:"productCategory"`
+	IssuerName      string `json:"issuerName"`
+
+	// Usable et UnusableReason sont dérivés à la lecture côté serveur —
+	// révocation, expiration, PAN de test refusé.
+	Usable         bool   `json:"usable"`
+	UnusableReason string `json:"unusableReason"`
+}
+
+// GetPaymentMethod appelle GET /paysim/api/v1/payment-methods/{token}.
+func (c *Client) GetPaymentMethod(ctx context.Context, token string) (*PaymentMethodDetail, error) {
+	var out PaymentMethodDetail
+	if err := c.do(ctx, http.MethodGet, "/paysim/api/v1/payment-methods/"+token, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // WebhookEntry est la vue minimale d'un webhook livré, alignée sur
 // api.WebhookEntry pour les champs consommés par assert_webhook.
 type WebhookEntry struct {

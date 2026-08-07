@@ -185,6 +185,8 @@ func (r *Runner) exec(ctx context.Context, st *state, step Step) error {
 		return r.doAssertSubscription(ctx, st, step.AssertSubscription)
 	case ActionCancelSubscription:
 		return r.doCancelSubscription(ctx, st, step.CancelSubscription)
+	case ActionAssertPaymentMethod:
+		return r.doAssertPaymentMethod(ctx, st, step.AssertPaymentMethod)
 	default:
 		return fmt.Errorf("action inconnue: %q", step.Action)
 	}
@@ -469,6 +471,48 @@ func (r *Runner) doAssertSubscription(ctx context.Context, st *state, in *Assert
 	if in.Cancelled != nil && got.Cancelled != *in.Cancelled {
 		return fmt.Errorf("%w: cancelled: obtenu %v, veut %v",
 			ErrAssertion, got.Cancelled, *in.Cancelled)
+	}
+	return nil
+}
+
+// doAssertPaymentMethod vérifie les attributs du moyen enregistré.
+//
+// Tous les écarts sont collectés avant d'échouer, plutôt que de sortir
+// au premier : quand un enrôlement perd plusieurs champs à la fois — le
+// cas quand un bloc entier n'est pas propagé — les voir d'un coup dit
+// bien plus qu'une découverte champ par champ à chaque relance.
+func (r *Runner) doAssertPaymentMethod(ctx context.Context, st *state, in *AssertPaymentMethod) error {
+	token := in.Token
+	if token == "" {
+		token = st.currentToken
+	}
+	if token == "" {
+		return errors.New("assert_payment_method sans token : place un create_payment avec card avant")
+	}
+	got, err := r.client.GetPaymentMethod(ctx, token)
+	if err != nil {
+		return err
+	}
+
+	var ecarts []string
+	champ := func(nom, veut, obtenu string) {
+		if veut != "" && obtenu != veut {
+			ecarts = append(ecarts, fmt.Sprintf("%s: obtenu %q, veut %q", nom, obtenu, veut))
+		}
+	}
+	champ("brand", in.Brand, got.Brand)
+	champ("pan_masked", in.PANMasked, got.PANMasked)
+	champ("holder_name", in.HolderName, got.HolderName)
+	champ("country", in.Country, got.Country)
+	champ("product_category", in.ProductCategory, got.ProductCategory)
+	champ("issuer_name", in.IssuerName, got.IssuerName)
+	champ("unusable_reason", in.UnusableReason, got.UnusableReason)
+	if in.Usable != nil && got.Usable != *in.Usable {
+		ecarts = append(ecarts, fmt.Sprintf("usable: obtenu %v, veut %v", got.Usable, *in.Usable))
+	}
+
+	if len(ecarts) > 0 {
+		return fmt.Errorf("%w: %s", ErrAssertion, strings.Join(ecarts, " ; "))
 	}
 	return nil
 }

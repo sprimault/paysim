@@ -41,6 +41,7 @@ const (
 	ActionTriggerBilling     = "trigger_billing"
 	ActionAssertSubscription = "assert_subscription"
 	ActionCancelSubscription = "cancel_subscription"
+	ActionAssertPaymentMethod = "assert_payment_method"
 )
 
 // Scenario est un scénario complet chargé depuis un fichier YAML. Une fois
@@ -109,6 +110,10 @@ type Step struct {
 	TriggerBilling     *TriggerBilling
 	AssertSubscription *AssertSubscription
 	CancelSubscription *CancelSubscription
+
+	// AssertPaymentMethod vérifie ce qui a réellement été enregistré à
+	// l'enrôlement — marque, porteur, émetteur, exploitabilité.
+	AssertPaymentMethod *AssertPaymentMethod
 }
 
 // CreatePayment demande à Paysim de créer un paiement via un provider.
@@ -282,6 +287,48 @@ type AssertSubscription struct {
 	Cancelled *bool `yaml:"cancelled,omitempty"`
 }
 
+// AssertPaymentMethod vérifie les attributs du moyen de paiement
+// enregistré. Tous les champs sont optionnels : seuls ceux renseignés
+// sont comparés, les autres sont ignorés.
+//
+// Cette assertion existe parce que les scénarios pouvaient jusqu'ici
+// enrôler une carte avec un porteur, un pays et un émetteur donnés sans
+// jamais vérifier ce qui en était retenu. Ils prouvaient que
+// l'enrôlement n'échouait pas, pas qu'il enregistrait les bonnes
+// valeurs — c'est ce trou qui a laissé passer plusieurs défauts trouvés
+// en intégration réelle plutôt qu'en test.
+//
+// Token vide → utilise le dernier moyen enrôlé.
+type AssertPaymentMethod struct {
+	// Token désigne le moyen à vérifier. Vide, le runner reprend le
+	// dernier enrôlé.
+	Token string `yaml:"token,omitempty"`
+
+	// Brand est la marque attendue (VISA, MASTERCARD, CB, AMEX…).
+	Brand string `yaml:"brand,omitempty"`
+
+	// PANMasked est le numéro tronqué attendu, au format du provider
+	// ("555555XXXXXX4444" pour PayZen).
+	PANMasked string `yaml:"pan_masked,omitempty"`
+
+	// HolderName, Country, ProductCategory et IssuerName sont les
+	// attributs du porteur et de l'émetteur, tels qu'ils ont été
+	// transmis à l'enrôlement.
+	HolderName      string `yaml:"holder_name,omitempty"`
+	Country         string `yaml:"country,omitempty"`
+	ProductCategory string `yaml:"product_category,omitempty"`
+	IssuerName      string `yaml:"issuer_name,omitempty"`
+
+	// Usable est un pointeur pour distinguer « non fourni, on ne
+	// vérifie pas » de « fourni avec false, on exige un moyen
+	// inexploitable » — même raison que Cancelled sur les abonnements.
+	Usable *bool `yaml:"usable,omitempty"`
+
+	// UnusableReason est le motif attendu quand le moyen ne l'est pas
+	// ("moyen de paiement revoque", "carte de test refusee"…).
+	UnusableReason string `yaml:"unusable_reason,omitempty"`
+}
+
 // CancelSubscription annule un abonnement. Idempotent côté serveur.
 // SubscriptionID vide → utilise state.currentSubID.
 type CancelSubscription struct {
@@ -428,6 +475,9 @@ func (s *Step) UnmarshalYAML(node *yaml.Node) error {
 	case ActionCancelSubscription:
 		s.CancelSubscription = &CancelSubscription{}
 		return node.Decode(s.CancelSubscription)
+	case ActionAssertPaymentMethod:
+		s.AssertPaymentMethod = &AssertPaymentMethod{}
+		return node.Decode(s.AssertPaymentMethod)
 	default:
 		return fmt.Errorf("action inconnue: %q", head.Action)
 	}

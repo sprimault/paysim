@@ -295,6 +295,17 @@ export interface CreatePaymentOutput {
    * croire qu'il est débitable.
    */
   paymentMethodToken?: string;
+  /**
+   * Brand est la marque du moyen enrôlé (VISA, MASTERCARD, CB…),
+   * livrée avec le token pour que le marchand l'enregistre du premier
+   * coup. Sans elle, il ne connaît la marque qu'à l'IPN — qui, sur un
+   * moyen déjà enregistré, n'a rien à réécrire : la valeur par défaut
+   * posée à l'enrôlement restait affichée jusqu'au paiement récurrent
+   * suivant.
+   * Toujours accompagnée du token, jamais seule : sans alias à
+   * enregistrer, la marque n'a rien à qualifier.
+   */
+  brand?: string;
 }
 /**
  * SimulatePaymentRequest est le corps de POST

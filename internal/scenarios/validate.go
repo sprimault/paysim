@@ -91,6 +91,11 @@ func (s Step) Validate() error {
 			return errors.New("payload cancel_subscription manquant")
 		}
 		return s.CancelSubscription.Validate()
+	case ActionAssertPaymentMethod:
+		if s.AssertPaymentMethod == nil {
+			return errors.New("payload assert_payment_method manquant")
+		}
+		return s.AssertPaymentMethod.Validate()
 	default:
 		return fmt.Errorf("action inconnue: %q", s.Action)
 	}
@@ -186,6 +191,18 @@ func (a *AssertSubscription) Validate() error { return nil }
 
 // Validate contrôle un CancelSubscription. Aucun champ requis.
 func (c *CancelSubscription) Validate() error { return nil }
+
+// Validate contrôle un AssertPaymentMethod. Tous les champs étant
+// optionnels, le seul cas rejeté est l'assertion entièrement vide :
+// elle passerait toujours et donnerait l'illusion d'une vérification.
+func (a *AssertPaymentMethod) Validate() error {
+	if a.Brand == "" && a.PANMasked == "" && a.HolderName == "" &&
+		a.Country == "" && a.ProductCategory == "" && a.IssuerName == "" &&
+		a.Usable == nil && a.UnusableReason == "" {
+		return errors.New("assert_payment_method sans aucun champ a verifier")
+	}
+	return nil
+}
 
 // Validate contrôle qu'un Simulate porte bien un status. Le vocabulaire est
 // délégué à l'exécuteur — le loader n'a pas à connaître la liste des états.
