@@ -19,6 +19,7 @@ import (
 
 	"github.com/sprimault/paysim/internal/chaos"
 	"github.com/sprimault/paysim/internal/delivery"
+	"github.com/sprimault/paysim/internal/domain"
 	"github.com/sprimault/paysim/internal/format"
 )
 
@@ -1651,5 +1652,149 @@ func TestSubscriptionGetTokenIncoherentRefuse(t *testing.T) {
 	if e.ErrorCode != ErrCodeSubscriptionUnknown {
 		t.Errorf("ErrorCode = %q, veut %q — meme reponse qu'un abonnement inconnu",
 			e.ErrorCode, ErrCodeSubscriptionUnknown)
+	}
+}
+
+// Le motif doit accompagner le refus dans le kr-answer : c'est lui que
+// le marchand lit pour décider s'il retente ou s'il réclame une autre
+// carte. Sans lui, la logique de reconduction s'écrit à l'aveugle.
+func TestMotifDeRefusDansLeKrAnswer(t *testing.T) {
+	t.Parallel()
+	cfg := HandlerConfig{HMACKey: "k"}
+	_, store, queue := newTestServerFull(t, cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+
+	cases := []struct {
+		nom      string
+		pan      string
+		wantCode string
+	}{
+		{"provision insuffisante", "4000000000000002", "51"},
+		{"carte volee", "5105105105105100", "43"},
+		{"refus generique", "2223000000000007", "05"},
+		{"operation non permise", "378282000000008", "57"},
+	}
+	for _, c := range cases {
+		t.Run(c.nom, func(t *testing.T) {
+			enrol, err := h.Create(CreateInput{
+				Amount: 0, Currency: "EUR", OrderID: "ENROL", FormAction: "REGISTER",
+				Card: &Card{PAN: c.pan, ExpiryMonth: 12, ExpiryYear: 2030},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tx, err := h.Create(CreateInput{
+				Amount: 2500, Currency: "EUR", OrderID: "REJEU",
+				PaymentMethodToken: enrol.PaymentMethodToken,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := string(tx.Payment.State()); got != "declined" {
+				t.Fatalf("state = %q, veut declined", got)
+			}
+
+			pm, _ := store.MethodByToken(enrol.PaymentMethodToken)
+			answer := buildKrAnswer(tx, pm, BrowserReturnOpts{
+				Outcome:       OutcomeUnpaid,
+				DeclineReason: chaos.DeclineReasonForPAN(c.pan),
+			}, "", "TEST")
+			if len(answer.Transactions) == 0 {
+				t.Fatal("aucune transaction dans le kr-answer")
+			}
+			if got := answer.Transactions[0].DetailedErrorCode; got != c.wantCode {
+				t.Errorf("detailedErrorCode = %q, veut %q", got, c.wantCode)
+			}
+			if answer.Transactions[0].DetailedErrorMessage == "" {
+				t.Error("detailedErrorMessage vide — le code seul n'est pas lisible")
+			}
+		})
+	}
+}
+
+// Le montant magique est le levier du parcours utilisateur ; le PAN
+// celui du récurrent, où le montant est imposé par l'abonnement.
+func TestMotifDeRefusParMontantMagique(t *testing.T) {
+	t.Parallel()
+	cases := map[format.Amount]string{
+		1001: "51",
+		1002: "43",
+		1004: "91",
+	}
+	for amount, want := range cases {
+		answer := buildKrAnswer(
+			&Transaction{
+				UUID: "u", OrderID: "O", Amount: amount, Currency: "EUR",
+				Payment: newDeclinedPayment(t, amount),
+			},
+			nil,
+			BrowserReturnOpts{
+				Outcome:       OutcomeUnpaid,
+				DeclineReason: chaos.MagicDeclineReason(amount),
+			}, "", "TEST")
+		if got := answer.Transactions[0].DetailedErrorCode; got != want {
+			t.Errorf("montant %d : detailedErrorCode = %q, veut %q", amount, got, want)
+		}
+	}
+}
+
+// Un succès ne porte aucun motif : le champ doit rester absent du JSON,
+// pas valoir une chaîne vide.
+func TestSuccesSansMotifDeRefus(t *testing.T) {
+	t.Parallel()
+	tx := &Transaction{
+		UUID: "u", OrderID: "O", Amount: 1000, Currency: "EUR",
+		Payment: newCapturedPayment(t),
+	}
+	answer := buildKrAnswer(tx, nil, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
+	if got := answer.Transactions[0].DetailedErrorCode; got != "" {
+		t.Errorf("detailedErrorCode = %q sur un succes, veut vide", got)
+	}
+}
+
+func newDeclinedPayment(t *testing.T, amount format.Amount) *domain.Payment {
+	t.Helper()
+	p, err := domain.New("u", amount, "EUR")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Decline("test"); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func newCapturedPayment(t *testing.T) *domain.Payment {
+	t.Helper()
+	p, err := domain.New("u", 1000, "EUR")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Capture(); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// Un refus doit porter un code PSP en plus du motif bancaire : le
+// protocole en promet un, et sans lui le marchand devrait deviner qu'il
+// s'agit d'un refus à partir du seul statut.
+func TestRefusPorteLeCodePSP(t *testing.T) {
+	t.Parallel()
+	tx := &Transaction{
+		UUID: "u", OrderID: "O", Amount: 1001, Currency: "EUR",
+		Payment: newDeclinedPayment(t, 1001),
+	}
+	answer := buildKrAnswer(tx, nil, BrowserReturnOpts{
+		Outcome:       OutcomeUnpaid,
+		DeclineReason: chaos.ReasonInsufficientFunds,
+	}, "", "TEST")
+
+	got := answer.Transactions[0]
+	if got.ErrorCode != ErrCodeRefused {
+		t.Errorf("errorCode = %q, veut %q", got.ErrorCode, ErrCodeRefused)
+	}
+	if got.DetailedErrorCode != "51" {
+		t.Errorf("detailedErrorCode = %q, veut 51", got.DetailedErrorCode)
 	}
 }

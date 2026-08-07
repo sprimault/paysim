@@ -60,6 +60,11 @@ const (
 	ErrCodePaymentMethodUnknown = "PAYSIM_PAYMENT_METHOD_UNKNOWN"
 	ErrCodeExpiredCard          = "PAYSIM_EXPIRED_CARD"
 	ErrCodeRevokedCard          = "PAYSIM_REVOKED_CARD"
+
+	// ErrCodeRefused habille un paiement refusé au niveau PSP. Le motif
+	// bancaire, lui, vit dans detailedErrorCode : c'est un code ISO 8583
+	// non préfixé, parce qu'il vient de l'acquéreur et non de nous.
+	ErrCodeRefused = "PAYSIM_REFUSED"
 )
 
 // CreatePaymentRequest est le corps JSON attendu par POST
@@ -810,9 +815,24 @@ type KrTransaction struct {
 	// CreationDate est l'instant de la transaction, ISO 8601 UTC.
 	CreationDate string `json:"creationDate"`
 
-	// ErrorCode et ErrorMessage détaillent un refus. Vides sur succès.
+	// ErrorCode et ErrorMessage détaillent un refus côté PSP. Vides sur
+	// succès. Préfixe PAYSIM_ pour ne pas se faire passer pour un code
+	// PayZen réel.
 	ErrorCode    string `json:"errorCode,omitempty"`
 	ErrorMessage string `json:"errorMessage,omitempty"`
+
+	// DetailedErrorCode porte le motif bancaire : le code de retour
+	// d'autorisation ISO 8583 que l'acquéreur remonte — 51 pour une
+	// provision insuffisante, 43 pour une opposition, 91 pour un
+	// émetteur injoignable.
+	//
+	// Contrairement à ErrorCode, celui-ci n'est pas préfixé : ce n'est
+	// pas une valeur Paysim, c'est la norme, et c'est sur elle qu'un
+	// marchand écrit sa logique de reconduction. La reproduire à
+	// l'identique est le seul moyen qu'un mapping écrit contre Paysim
+	// reste valable en production.
+	DetailedErrorCode    string `json:"detailedErrorCode,omitempty"`
+	DetailedErrorMessage string `json:"detailedErrorMessage,omitempty"`
 
 	// Metadata restitue la map libre envoyée à la création. C'est le
 	// canal prévu pour rattacher un paiement à un objet métier sans

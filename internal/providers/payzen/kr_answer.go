@@ -11,6 +11,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/sprimault/paysim/internal/chaos"
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/format"
 )
@@ -68,6 +69,39 @@ func knownOutcomes() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// errorCodeFor retourne le code PSP de la transaction : celui fourni
+// par l'appelant s'il y en a un, sinon PAYSIM_REFUSED sur un refus.
+//
+// Centralisé ici plutôt qu'à chaque site d'émission : un refus sans code
+// obligerait le marchand à deviner qu'il en est un, alors que le
+// protocole lui promet un code.
+func errorCodeFor(opts BrowserReturnOpts) string {
+	if opts.ErrorCode != "" {
+		return opts.ErrorCode
+	}
+	if opts.Outcome == OutcomeUnpaid {
+		return ErrCodeRefused
+	}
+	return ""
+}
+
+// declineNote compose le motif inscrit au journal du domaine : le texte
+// en clair, suivi du code bancaire quand il y en a un.
+//
+// Le journal est ce qu'on lit dans l'interface pour comprendre un refus.
+// Y porter le code évite d'avoir à rouvrir le kr-answer brut — c'est
+// exactement le détour qu'on cherche à supprimer.
+func declineNote(reason string, d chaos.DeclineReason) string {
+	switch {
+	case d.Code == "":
+		return reason
+	case reason == "":
+		return fmt.Sprintf("%s (%s)", d.Message, d.Code)
+	default:
+		return fmt.Sprintf("%s (%s %s)", reason, d.Code, d.Message)
+	}
 }
 
 // applyOutcome fait progresser le domain.Payment de la transaction
@@ -201,9 +235,12 @@ func buildKrAnswer(tx *Transaction, pm *PaymentMethod, opts BrowserReturnOpts, s
 		DetailedStatus:     spec.DetailedStatus,
 		OperationType:      spec.OperationType,
 		CreationDate:       now,
-		ErrorCode:          opts.ErrorCode,
+		ErrorCode:          errorCodeFor(opts),
 		ErrorMessage:       opts.ErrorMessage,
-		Metadata:           tx.Metadata,
+
+		DetailedErrorCode:    opts.DeclineReason.Code,
+		DetailedErrorMessage: opts.DeclineReason.Message,
+		Metadata:             tx.Metadata,
 		TransactionDetails: KrTransactionDetails{
 			CreationContext: "CHARGE",
 			Wallet:          opts.Wallet,
@@ -265,9 +302,15 @@ type BrowserReturnOpts struct {
 	// authenticationType dans le webhook.
 	ThreeDSStatus string
 
-	// ErrorCode et ErrorMessage habillent un refus.
+	// ErrorCode et ErrorMessage habillent un refus côté PSP.
 	ErrorCode    string
 	ErrorMessage string
+
+	// DeclineReason porte le motif bancaire du refus — le code ISO 8583
+	// sur lequel un marchand décide de retenter ou de réclamer une autre
+	// carte. Vide sur un succès, ou sur un refus sans motif bancaire
+	// (abandon, expiration).
+	DeclineReason chaos.DeclineReason
 
 	// Chaos et DeliveryDelayMs portent l'injection de panne sur cette
 	// livraison. Inertes par défaut : le chaos ne s'active jamais tout
@@ -341,4 +384,3 @@ func flipFirstHexChar(s string) string {
 	}
 	return string(b)
 }
-
