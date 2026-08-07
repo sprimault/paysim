@@ -20,12 +20,16 @@ Each brand exposes one Luhn-valid card number Paysim recognizes as a
 with the correct Luhn check digit, keeping the value memorable and
 scriptable.
 
-| Brand              | Prefix   | Length | Test PAN            |
-| ------------------ | -------- | :----: | ------------------- |
-| Visa               | `400000` |  16    | `4000000000000002`  |
-| Mastercard         | `510510` |  16    | `5105105105105100`  |
-| Mastercard series 2| `222300` |  16    | `2223000000000007`  |
-| American Express   | `378282` |  15    | `378282000000008`   |
+| Brand              | Prefix   | Length | Test PAN            | Decline reason                    |
+| ------------------ | -------- | :----: | ------------------- | --------------------------------- |
+| Visa               | `400000` |  16    | `4000000000000002`  | `51` insufficient funds           |
+| Mastercard         | `510510` |  16    | `5105105105105100`  | `43` stolen card, opposition      |
+| Mastercard series 2| `222300` |  16    | `2223000000000007`  | `05` do not honour                |
+| American Express   | `378282` |  15    | `378282000000008`   | `57` not permitted to cardholder  |
+
+Each PAN carries a **fixed reason**, reported in `detailedErrorCode`. That
+matters for recurring charges: the amount is set by the subscription, so it
+cannot be bent to pick a reason — the PAN is the only lever left on that path.
 
 **Scope**: recognition fires whenever the payment is linked to a
 stored `PaymentMethod`. That covers both a **first payment where a
@@ -49,9 +53,16 @@ others. All are opt-in: default behaviour is a successful payment.
 
 ### Magic amount — decline at simulate
 
-Any amount whose last two digits are `01` (`1001`, `2001`, `12301`, …)
-forces the `simulate` endpoint to return `UNPAID`. Controls the outcome
-of the browser-side checkout flow.
+Three endings force `simulate` to return `UNPAID`, each with its own reason:
+
+| Amount ends in | `detailedErrorCode` | Meaning                | Merchant response          |
+| :------------: | :-----------------: | ---------------------- | -------------------------- |
+| `01`           | `51`                | Insufficient funds     | retry in a few days        |
+| `02`           | `43`                | Stolen card            | ask for another card       |
+| `04`           | `91`                | Issuer unavailable     | retry shortly              |
+
+`1001`, `2001`, `12301` all decline with `51`. Endings in `03` are taken by
+the latency lever and do not change the outcome.
 
 ### Magic PAN — decline on any payment
 

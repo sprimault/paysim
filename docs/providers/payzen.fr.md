@@ -419,6 +419,51 @@ contexte navigateur à la session. PayZen ne prétend pas les remplacer non plus
 Les alias enrôlés avant la v0.5.4 ne portent aucun client : le débit retombe alors sur
 celui de la requête, faute de mieux.
 
+## Motifs de refus
+
+Un marchand ne traite pas tous les refus de la même façon : une provision insuffisante
+se retente dans quelques jours, une opposition impose de réclamer une autre carte tout
+de suite. Sans motif dans la réponse, cette logique de reconduction ne peut ni s'écrire
+ni se tester — elle part en production à l'aveugle, et se découvre par un client
+suspendu à tort.
+
+Une transaction refusée porte son motif dans `detailedErrorCode`, accompagné d'un
+libellé lisible :
+
+```json
+"transactions": [{
+  "status": "UNPAID",
+  "detailedStatus": "REFUSED",
+  "errorCode": "PAYSIM_REFUSED",
+  "detailedErrorCode": "51",
+  "detailedErrorMessage": "provision insuffisante"
+}]
+```
+
+| Code | Signification                     | Réaction marchande typique    |
+| :--: | --------------------------------- | ----------------------------- |
+| `51` | Provision insuffisante            | retenter dans quelques jours  |
+| `43` | Carte volée, opposition           | réclamer un autre moyen       |
+| `91` | Émetteur inaccessible             | retenter rapidement           |
+| `05` | Refus de l'émetteur (générique)   | aucun signal exploitable      |
+| `57` | Opération non permise au porteur  | réclamer un autre moyen       |
+
+**Ce sont les codes de retour d'autorisation ISO 8583**, pas des valeurs Paysim : c'est
+ce que l'acquéreur remonte et que PayZen relaie tel quel. Les reproduire à l'identique
+est le seul moyen qu'un mapping écrit contre Paysim reste valable en production. Noter
+le contraste avec `errorCode`, lui préfixé `PAYSIM_` : celui-là est un code de niveau
+PSP, et y inventer une valeur d'allure PayZen reviendrait à se faire passer pour le vrai.
+
+**Paysim n'interprète jamais ces codes et n'expose aucun booléen « rejouable ».**
+Décider qu'un `51` se retente et qu'un `43` non est une politique marchande, pas une
+donnée du protocole. Ajouter ce verdict vous donnerait une sémantique que le vrai ne
+fournit pas — et votre logique de reconduction serait alors écrite contre nous plutôt
+que contre PayZen.
+
+Deux leviers fixent le motif : le **montant magique** sur le parcours navigateur, le
+**PAN de test** sur le récurrent, où le montant est imposé par l'abonnement. Voir
+[testing-cards.fr.md](../testing-cards.fr.md).
+
 ## Valeurs magiques (chaos)
 
 Paysim embarque deux catégories de tweaks — cf.
