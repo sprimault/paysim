@@ -12,6 +12,10 @@ description: |
 
   Etape finale : un charge_token avec un vrai montant prouve
   que le token enregistre est bien reutilisable.
+
+  assert_payment_method controle la marque et les attributs du
+  porteur tels qu'ils ont ete retenus a l'enrolement — la carte
+  est une Mastercard pour que la verification soit discriminante.
 steps:
   - action: create_payment
     provider: payzen
@@ -25,7 +29,11 @@ steps:
       plan: pro
       source: onboarding
     card:
-      pan: "4111111111111111"
+      # Mastercard volontairement, pas une VISA : VISA est la valeur de
+      # repli du kr-answer quand aucune marque n'est transmise. Un
+      # scenario sur PAN 4xxx resterait vert meme si la marque se
+      # perdait en route — il ne prouverait rien.
+      pan: "5555555555554444"
       expiry_month: 12
       expiry_year: 2028
       # Attributs du porteur et de l'emetteur : ils remontent tels
@@ -35,6 +43,17 @@ steps:
       country: US
       product_category: DEBIT
       issuer_name: BANQUE DE TEST
+  # Verifie ce qui a REELLEMENT ete enregistre. Sans cette etape, le
+  # scenario prouvait seulement que l'enrolement n'echouait pas : les
+  # quatre attributs ci-dessus pouvaient etre ignores en silence.
+  - action: assert_payment_method
+    brand: MASTERCARD
+    pan_masked: "555555XXXXXX4444"
+    holder_name: DUPONT JEAN
+    country: US
+    product_category: DEBIT
+    issuer_name: BANQUE DE TEST
+    usable: true
   - action: simulate
     status: captured
   - action: assert_state

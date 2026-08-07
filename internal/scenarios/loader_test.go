@@ -410,3 +410,43 @@ func TestLoadFile_notFound(t *testing.T) {
 		t.Errorf("message = %q, veut contenir %q", err.Error(), "ouverture")
 	}
 }
+
+func TestLoad_assertPaymentMethod(t *testing.T) {
+	t.Parallel()
+	src := `
+name: pm
+steps:
+  - action: assert_payment_method
+    brand: MASTERCARD
+    holder_name: DUPONT JEAN
+    usable: true
+`
+	s, err := Load(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	a := s.Steps[0].AssertPaymentMethod
+	if a == nil {
+		t.Fatal("AssertPaymentMethod nil apres decodage")
+	}
+	if a.Brand != "MASTERCARD" || a.HolderName != "DUPONT JEAN" {
+		t.Errorf("brand/holder = %q/%q", a.Brand, a.HolderName)
+	}
+	if a.Usable == nil || !*a.Usable {
+		t.Errorf("usable = %v, veut true", a.Usable)
+	}
+}
+
+// Une assertion sans aucun champ passerait toujours : elle donnerait
+// l'illusion d'une vérification sans en faire aucune.
+func TestLoad_assertPaymentMethodVideRejetee(t *testing.T) {
+	t.Parallel()
+	src := `
+name: pm-vide
+steps:
+  - action: assert_payment_method
+`
+	if _, err := Load(strings.NewReader(src)); err == nil {
+		t.Fatal("Load a accepte une assertion sans aucun champ")
+	}
+}

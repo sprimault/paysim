@@ -48,6 +48,37 @@ type fakeMethod struct {
 	ExpiryMonth int
 	ExpiryYear  int
 	Revoked     bool
+
+	// Attributs restitués par GET /payment-methods/{token}, ce que
+	// assert_payment_method vérifie.
+	HolderName      string
+	Country         string
+	ProductCategory string
+	IssuerName      string
+}
+
+// fakeBrandFromPAN reproduit payzen.BrandFromBIN sur les seuls préfixes
+// utilisés par les tests — dupliqué plutôt qu'importé, comme
+// fakeDeclinedPANs, pour garder le fake indépendant du provider.
+func fakeBrandFromPAN(pan string) string {
+	switch {
+	case strings.HasPrefix(pan, "4"):
+		return "VISA"
+	case strings.HasPrefix(pan, "5"), strings.HasPrefix(pan, "2"):
+		return "MASTERCARD"
+	case strings.HasPrefix(pan, "34"), strings.HasPrefix(pan, "37"):
+		return "AMEX"
+	}
+	return ""
+}
+
+// fakeMaskPAN reproduit payzen.maskPAN : 6 en clair, 4 en clair, le
+// reste masqué.
+func fakeMaskPAN(pan string) string {
+	if len(pan) < 10 {
+		return pan
+	}
+	return pan[:6] + strings.Repeat("X", len(pan)-10) + pan[len(pan)-4:]
 }
 
 // fakeDeclinedPANs miroir léger de chaos.declinedTestPANs — dupliqué
@@ -77,6 +108,7 @@ func (fs *fakeServer) router() http.Handler {
 	mux.HandleFunc("POST /paysim/api/v1/payments/{uuid}/simulate", fs.simulate)
 	mux.HandleFunc("GET /paysim/api/v1/payments/{uuid}", fs.get)
 	mux.HandleFunc("GET /paysim/api/v1/webhooks", fs.list)
+	mux.HandleFunc("GET /paysim/api/v1/payment-methods/{token}", fs.getMethod)
 	mux.HandleFunc("POST /paysim/api/v1/payment-methods/{token}/revoke", fs.revoke)
 	mux.HandleFunc("POST /paysim/api/v1/subscriptions", fs.createSub)
 	mux.HandleFunc("GET /paysim/api/v1/subscriptions/{id}", fs.getSub)
@@ -199,13 +231,51 @@ func (fs *fakeServer) create(w http.ResponseWriter, r *http.Request) {
 	if body.Card != nil {
 		token := "pmt-" + timestamp()
 		fs.methods[token] = &fakeMethod{
-			PAN:         body.Card.PAN,
-			ExpiryMonth: body.Card.ExpiryMonth,
-			ExpiryYear:  body.Card.ExpiryYear,
+			PAN:             body.Card.PAN,
+			ExpiryMonth:     body.Card.ExpiryMonth,
+			ExpiryYear:      body.Card.ExpiryYear,
+			HolderName:      body.Card.HolderName,
+			Country:         body.Card.Country,
+			ProductCategory: body.Card.ProductCategory,
+			IssuerName:      body.Card.IssuerName,
 		}
 		resp.PaymentMethodToken = token
 	}
 	writeJSONResp(w, http.StatusCreated, resp)
+}
+
+// getMethod sert GET /payment-methods/{token}. Usable est dérivé à la
+// lecture, comme côté serveur réel : un champ figé deviendrait faux au
+// premier changement de mois.
+func (fs *fakeServer) getMethod(w http.ResponseWriter, r *http.Request) {
+	token := r.PathValue("token")
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	pm := fs.methods[token]
+	if pm == nil {
+		http.Error(w, "moyen de paiement inconnu", http.StatusNotFound)
+		return
+	}
+	usable, reason := true, ""
+	switch {
+	case pm.Revoked:
+		usable, reason = false, "moyen de paiement revoque"
+	case fakeIsExpired(pm):
+		usable, reason = false, "moyen de paiement expire"
+	case fakeDeclinedPANs[pm.PAN]:
+		usable, reason = false, "carte de test refusee"
+	}
+	writeJSONResp(w, http.StatusOK, PaymentMethodDetail{
+		Token:           token,
+		Brand:           fakeBrandFromPAN(pm.PAN),
+		PANMasked:       fakeMaskPAN(pm.PAN),
+		HolderName:      pm.HolderName,
+		Country:         pm.Country,
+		ProductCategory: pm.ProductCategory,
+		IssuerName:      pm.IssuerName,
+		Usable:          usable,
+		UnusableReason:  reason,
+	})
 }
 
 // revoke marque le moyen comme révoqué. Idempotent sur token inconnu.
@@ -998,5 +1068,139 @@ func TestRunner_assertWebhookAttendLaLivraison(t *testing.T) {
 	err := r.doAssertWebhook(context.Background(), st, &AssertWebhook{Count: 1})
 	if err != nil {
 		t.Fatalf("l'assertion doit attendre la livraison, obtenu: %v", err)
+	}
+}
+
+func TestRunner_assertPaymentMethodNominal(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	vrai := true
+	s := &Scenario{
+		Name: "assert-pm",
+		Steps: []Step{
+			{Action: ActionCreatePayment, CreatePayment: &CreatePayment{
+				Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "REG-1",
+				FormAction: "REGISTER",
+				Card: &Card{
+					PAN: "5555555555554444", ExpiryMonth: 12, ExpiryYear: 2030,
+					HolderName: "DUPONT JEAN", Country: "US",
+					ProductCategory: "DEBIT", IssuerName: "BANQUE DE TEST",
+				},
+			}},
+			{Action: ActionAssertPaymentMethod, AssertPaymentMethod: &AssertPaymentMethod{
+				Brand: "MASTERCARD", PANMasked: "555555XXXXXX4444",
+				HolderName: "DUPONT JEAN", Country: "US",
+				ProductCategory: "DEBIT", IssuerName: "BANQUE DE TEST",
+				Usable: &vrai,
+			}},
+		},
+	}
+	if err := r.Run(context.Background(), s).Err(); err != nil {
+		t.Fatalf("scenario a echoue: %v", err)
+	}
+}
+
+// Une marque erronée doit faire échouer l'assertion — c'est le défaut
+// que l'action existe pour attraper.
+func TestRunner_assertPaymentMethodMarqueFausse(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	s := &Scenario{
+		Name: "brand-ko",
+		Steps: []Step{
+			{Action: ActionCreatePayment, CreatePayment: &CreatePayment{
+				Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "REG-2",
+				Card: &Card{PAN: "5555555555554444", ExpiryMonth: 12, ExpiryYear: 2030},
+			}},
+			{Action: ActionAssertPaymentMethod, AssertPaymentMethod: &AssertPaymentMethod{
+				Brand: "VISA",
+			}},
+		},
+	}
+	err := r.Run(context.Background(), s).Err()
+	if !errors.Is(err, ErrAssertion) {
+		t.Fatalf("erreur = %v, veut ErrAssertion", err)
+	}
+	if !strings.Contains(err.Error(), "MASTERCARD") {
+		t.Errorf("message = %q, veut citer la marque obtenue", err)
+	}
+}
+
+// Plusieurs écarts sont rapportés d'un coup : quand un bloc entier n'est
+// pas propagé, les découvrir un par un à chaque relance coûte cher.
+func TestRunner_assertPaymentMethodCumuleLesEcarts(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	s := &Scenario{
+		Name: "multi-ko",
+		Steps: []Step{
+			{Action: ActionCreatePayment, CreatePayment: &CreatePayment{
+				Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "REG-3",
+				Card: &Card{PAN: "5555555555554444", ExpiryMonth: 12, ExpiryYear: 2030},
+			}},
+			{Action: ActionAssertPaymentMethod, AssertPaymentMethod: &AssertPaymentMethod{
+				HolderName: "DUPONT JEAN", Country: "US", IssuerName: "BANQUE DE TEST",
+			}},
+		},
+	}
+	err := r.Run(context.Background(), s).Err()
+	if !errors.Is(err, ErrAssertion) {
+		t.Fatalf("erreur = %v, veut ErrAssertion", err)
+	}
+	for _, attendu := range []string{"holder_name", "country", "issuer_name"} {
+		if !strings.Contains(err.Error(), attendu) {
+			t.Errorf("message = %q, veut citer %s", err, attendu)
+		}
+	}
+}
+
+// Un moyen inexploitable doit ressortir comme tel, avec son motif : le
+// PAN de test refusé est le cas le plus stable — il ne dépend ni de la
+// date courante ni d'un appel de révocation intercalé.
+func TestRunner_assertPaymentMethodInexploitable(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	faux := false
+	s := &Scenario{
+		Name: "inexploitable",
+		Steps: []Step{
+			{Action: ActionCreatePayment, CreatePayment: &CreatePayment{
+				Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "REG-4",
+				Card: &Card{PAN: "5105105105105100", ExpiryMonth: 12, ExpiryYear: 2030},
+			}},
+			{Action: ActionAssertPaymentMethod, AssertPaymentMethod: &AssertPaymentMethod{
+				Usable: &faux, UnusableReason: "carte de test refusee",
+			}},
+		},
+	}
+	if err := r.Run(context.Background(), s).Err(); err != nil {
+		t.Fatalf("scenario a echoue: %v", err)
+	}
+}
+
+func TestRunner_assertPaymentMethodSansToken(t *testing.T) {
+	t.Parallel()
+	_, srv := newFakeServer(t)
+	r := NewRunner(NewClient(srv.URL, ""))
+
+	s := &Scenario{
+		Name: "sans-token",
+		Steps: []Step{
+			{Action: ActionAssertPaymentMethod, AssertPaymentMethod: &AssertPaymentMethod{
+				Brand: "VISA",
+			}},
+		},
+	}
+	err := r.Run(context.Background(), s).Err()
+	if err == nil || !strings.Contains(err.Error(), "sans token") {
+		t.Errorf("erreur = %v, veut un message explicite sur l'absence de token", err)
 	}
 }

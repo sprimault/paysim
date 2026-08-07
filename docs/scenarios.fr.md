@@ -29,7 +29,7 @@ Codes de retour (adaptés à la CI) :
 | Code | Sens                                                              |
 | :--: | ----------------------------------------------------------------- |
 |  0   | Toutes les étapes ont passé.                                      |
-|  1   | Assertion échouée (`assert_state`, `assert_webhook`, `assert_subscription`). |
+|  1   | Assertion échouée (`assert_state`, `assert_webhook`, `assert_subscription`, `assert_payment_method`). |
 |  2   | Erreur d'exécution (fichier absent, YAML invalide, HTTP down, action inconnue). |
 
 Flag optionnel `--verbose` imprime chaque étape dès qu'elle finit.
@@ -62,7 +62,7 @@ Noms de champs en `snake_case` en YAML, `camelCase` sur le fil (API JSON).
 
 ## Référence des actions
 
-Onze actions qui couvrent les trois patterns de paiement.
+Douze actions qui couvrent les trois patterns de paiement.
 
 ### Paiements one-shot
 
@@ -78,6 +78,7 @@ Onze actions qui couvrent les trois patterns de paiement.
 | Action         | Rôle                                                                             |
 | -------------- | -------------------------------------------------------------------------------- |
 | `charge_token` | Déclenche un prélèvement récurrent one-click via le dernier `paymentMethodToken` enrôlé. `token` optionnel (défaut `currentToken`). |
+| `assert_payment_method` | Vérifie ce qui a réellement été enregistré à l'enrôlement. `token` optionnel (défaut `currentToken`). Tous les champs de contrôle sont optionnels — seuls ceux renseignés sont comparés : `brand`, `pan_masked`, `holder_name`, `country`, `product_category`, `issuer_name`, `usable`, `unusable_reason`. Une assertion sans aucun champ est rejetée au chargement : elle passerait toujours. |
 
 ### Abonnements natifs (PSP-driven)
 
@@ -225,7 +226,10 @@ Voir [examples/scenarios/](../examples/scenarios/) :
 - `register-only.yml` — enrôlement pur de carte (`form_action: REGISTER`,
   `amount: 0`), avec propagation de `customer.email` et `metadata`
   jusqu'au webhook, puis un `charge_token` qui prouve que le token
-  enregistré est réutilisable.
+  enregistré est réutilisable. `assert_payment_method` contrôle la
+  marque et les attributs du porteur réellement retenus ; la carte est
+  une Mastercard pour que la vérification soit discriminante — `VISA`
+  est la valeur de repli du kr-answer.
 - `subscription.yml` — subscription PSP-driven avec deux échéances et
   annulation.
 - `subscription-with-decline.yml` — subscription dont l'échéance

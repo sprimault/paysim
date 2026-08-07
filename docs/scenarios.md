@@ -28,7 +28,7 @@ Exit codes (CI-friendly):
 | Code | Meaning                                                 |
 | :--: | ------------------------------------------------------- |
 |  0   | All steps passed.                                       |
-|  1   | Assertion failed (`assert_state`, `assert_webhook`, `assert_subscription`). |
+|  1   | Assertion failed (`assert_state`, `assert_webhook`, `assert_subscription`, `assert_payment_method`). |
 |  2   | Execution error (file not found, YAML invalid, HTTP down, unknown action). |
 
 Optional flag `--verbose` prints each step as it completes.
@@ -61,7 +61,7 @@ Field names use `snake_case` in YAML, `camelCase` on the wire (JSON API).
 
 ## Actions reference
 
-Eleven actions covering the three payment patterns.
+Twelve actions covering the three payment patterns.
 
 ### One-shot payments
 
@@ -77,6 +77,7 @@ Eleven actions covering the three payment patterns.
 | Action         | Purpose                                                                     |
 | -------------- | --------------------------------------------------------------------------- |
 | `charge_token` | Fire a one-click recurring charge using the last enrolled `paymentMethodToken`. `token` optional (defaults to `currentToken`). |
+| `assert_payment_method` | Assert what was actually stored at enrolment. `token` optional (defaults to `currentToken`). All check fields optional — only those set are compared: `brand`, `pan_masked`, `holder_name`, `country`, `product_category`, `issuer_name`, `usable`, `unusable_reason`. An assertion with no field at all is rejected at load time: it would always pass. |
 
 ### Native subscriptions (PSP-driven)
 
@@ -222,6 +223,9 @@ See [examples/scenarios/](../examples/scenarios/):
 - `register-only.yml` — pure card enrollment (`form_action: REGISTER`,
   `amount: 0`), plus `customer.email` and `metadata` propagation to
   the webhook, then a `charge_token` proving the saved token is usable.
+  `assert_payment_method` checks the brand and cardholder attributes
+  actually retained; the card is a Mastercard so the check is
+  discriminating — `VISA` is the kr-answer fallback value.
 - `subscription.yml` — PSP-driven subscription with two installments
   and cancellation.
 - `subscription-with-decline.yml` — subscription where the recurring
