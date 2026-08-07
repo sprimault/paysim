@@ -55,6 +55,19 @@ RUN mkdir -p /data-init && chown 65532:65532 /data-init
 # Volontairement sans --platform : c'est le seul stage qui doit suivre
 # la cible, pour que BuildKit tire la base de chaque architecture.
 FROM gcr.io/distroless/static-debian12:nonroot
+
+# Rattache l'image au dépôt. GHCR lit ce label au push : sans lui, le
+# package reste orphelin, et un workflow ne peut pas y écrire même avec
+# packages:write — les droits d'un package sont distincts de ceux du
+# dépôt tant que le lien n'est pas établi. C'est ce qui a fait échouer la
+# première publication de l'image edge.
+#
+# Effet visible en prime : la page du package affiche le dépôt, son
+# README et sa licence.
+LABEL org.opencontainers.image.source="https://github.com/sprimault/paysim"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.description="Faux prestataire de paiement pour tests d'integration : provoque a la demande les echecs qu'une sandbox refuse de produire."
+
 COPY --from=gobuild /paysim /paysim
 COPY --from=gobuild --chown=nonroot:nonroot /data-init /data
 EXPOSE 8080
