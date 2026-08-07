@@ -51,7 +51,7 @@ describe('PaymentList', () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole('heading', { name: 'Paiements' })).toBeInTheDocument();
-    expect(screen.getByText(`${samples.length} paiements en mémoire`)).toBeInTheDocument();
+    expect(screen.getByText(`${samples.length} paiements`)).toBeInTheDocument();
   });
 
   it('rend une ligne par paiement du store', () => {
@@ -75,6 +75,8 @@ describe('PaymentList', () => {
         <PaymentList />
       </MemoryRouter>,
     );
-    expect(await screen.findByText('Aucun paiement')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Aucun paiement' }),
+    ).toBeInTheDocument();
   });
 });

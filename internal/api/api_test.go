@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1776,5 +1777,223 @@ func TestCreatePaymentRefuseNAnnonceNiTokenNiMarque(t *testing.T) {
 	}
 	if out.Brand != "" {
 		t.Errorf("Brand = %q, veut vide sur un refus", out.Brand)
+	}
+}
+
+// Le contexte marchand doit traverser sans perte : c'est ce qui a
+// manqué deux fois, sur customer.reference puis sur les blocs shipping
+// et extra. Un champ non modélisé disparaît au décodage JSON, sans
+// erreur ni trace — le test compare donc ce qui ressort à ce qui entre.
+func TestCreatePaymentPropageCustomerComplet(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	envoye := payzen.Customer{
+		Email:     "alice@example.com",
+		Reference: "demo-org",
+		BillingDetails: payzen.BillingDetails{
+			FirstName: "Alice", LastName: "MARTIN",
+			Address: "1 rue de la Paix", City: "Paris",
+			ZipCode: "75002", Country: "FR",
+		},
+		ShippingDetails: payzen.ShippingDetails{
+			Category: "COMPANY", LegalName: "ACME SARL", IdentityCode: "12345678900011",
+			FirstName: "Bob", LastName: "DURAND", PhoneNumber: "+33600000000",
+			StreetNumber: "12", Address: "avenue des Champs", Address2: "batiment C",
+			District: "8e", ZipCode: "75008", City: "Paris", State: "IDF", Country: "FR",
+			DeliveryCompanyName: "TRANSPORTEUR X",
+			ShippingSpeed:       "EXPRESS",
+			ShippingMethod:      "RELAY_POINT",
+		},
+		ExtraDetails: payzen.ExtraDetails{
+			IPAddress: "203.0.113.7", FingerPrintID: "fp-abc123",
+			BrowserUserAgent: "Mozilla/5.0", BrowserAccept: "text/html",
+		},
+	}
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "CTX-1",
+		Customer: envoye,
+		Metadata: map[string]string{"plan": "pro"},
+	})
+	resp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	_ = resp.Body.Close()
+
+	detResp, err := http.Get(server.URL + "/paysim/api/v1/payments/" + out.UUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = detResp.Body.Close() }()
+	var det PaymentDetail
+	if err := json.NewDecoder(detResp.Body).Decode(&det); err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(det.Customer, envoye) {
+		t.Errorf("customer restitue different de l'envoye\n obtenu : %+v\n veut   : %+v",
+			det.Customer, envoye)
+	}
+	if det.Metadata["plan"] != "pro" {
+		t.Errorf("metadata = %v, veut plan=pro", det.Metadata)
+	}
+}
+
+// Même vérification en SQLite : le customer y transite par une colonne
+// JSON désérialisée en bloc, donc aucune migration n'est requise pour
+// de nouveaux champs. Ce test verrouille cette propriété — un décodage
+// champ par champ introduit plus tard les perdrait en silence.
+func TestCreatePaymentPropageCustomerCompletSQLite(t *testing.T) {
+	t.Parallel()
+	server := setupWithSQLite(t)
+
+	envoye := payzen.Customer{
+		Email:     "bob@example.com",
+		Reference: "org-42",
+		ShippingDetails: payzen.ShippingDetails{
+			Category: "PRIVATE", FirstName: "Bob", LastName: "DURAND",
+			StreetNumber: "5", Address: "rue Neuve", ZipCode: "69001",
+			City: "Lyon", Country: "FR",
+			ShippingSpeed: "PRIORITY", ShippingMethod: "DIGITAL_GOOD",
+		},
+		ExtraDetails: payzen.ExtraDetails{
+			IPAddress: "198.51.100.4", FingerPrintID: "fp-xyz",
+		},
+	}
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 2500, Currency: "EUR", OrderID: "CTX-SQL",
+		Customer: envoye,
+	})
+	resp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	_ = resp.Body.Close()
+
+	detResp, err := http.Get(server.URL + "/paysim/api/v1/payments/" + out.UUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = detResp.Body.Close() }()
+	var det PaymentDetail
+	if err := json.NewDecoder(detResp.Body).Decode(&det); err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(det.Customer, envoye) {
+		t.Errorf("customer restitue different apres aller-retour SQLite\n obtenu : %+v\n veut   : %+v",
+			det.Customer, envoye)
+	}
+}
+
+// Le filtre par token répond à « qu'a-t-on fait avec cet alias » : c'est
+// la lecture inverse de PaymentSummary.PaymentMethodToken, celle dont la
+// fiche d'un moyen a besoin.
+func TestListPaymentsFiltreParToken(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	enrol, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "ENROL",
+		FormAction: "REGISTER",
+		Card:       &payzen.Card{PAN: "5555555555554444", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	r1, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(enrol))
+	var enrolled CreatePaymentOutput
+	_ = json.NewDecoder(r1.Body).Decode(&enrolled)
+	_ = r1.Body.Close()
+	token := enrolled.PaymentMethodToken
+
+	// Un rejeu sur ce moyen, et un paiement sans rapport.
+	replay, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 1990, Currency: "EUR", OrderID: "REPLAY",
+		PaymentMethodToken: token,
+	})
+	r2, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(replay))
+	_ = r2.Body.Close()
+
+	autre, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 500, Currency: "EUR", OrderID: "SANS-LIEN",
+	})
+	r3, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(autre))
+	_ = r3.Body.Close()
+
+	resp, err := http.Get(server.URL + "/paysim/api/v1/payments?paymentMethodToken=" + token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var filtres []PaymentSummary
+	if err := json.NewDecoder(resp.Body).Decode(&filtres); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(filtres) != 2 {
+		t.Fatalf("%d paiements, veut 2 (enrolement + rejeu)", len(filtres))
+	}
+	for _, p := range filtres {
+		if p.PaymentMethodToken != token {
+			t.Errorf("%s : token = %q, veut %q", p.OrderID, p.PaymentMethodToken, token)
+		}
+		if p.OrderID == "SANS-LIEN" {
+			t.Error("un paiement sans rapport a franchi le filtre")
+		}
+	}
+}
+
+// Sans filtre, tout ressort : le paramètre est optionnel, il ne doit pas
+// changer le comportement par défaut.
+func TestListPaymentsSansFiltreRetourneTout(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	for _, ord := range []string{"A", "B"} {
+		body, _ := json.Marshal(CreatePaymentInput{
+			Provider: "payzen", Amount: 100, Currency: "EUR", OrderID: ord,
+		})
+		r, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+			"application/json", bytes.NewReader(body))
+		_ = r.Body.Close()
+	}
+
+	resp, _ := http.Get(server.URL + "/paysim/api/v1/payments")
+	defer func() { _ = resp.Body.Close() }()
+	var tous []PaymentSummary
+	_ = json.NewDecoder(resp.Body).Decode(&tous)
+	if len(tous) != 2 {
+		t.Errorf("%d paiements, veut 2", len(tous))
+	}
+}
+
+// Le token doit accompagner le paiement dès la liste : c'est lui qui
+// alimente la colonne et le lien vers la fiche du moyen.
+func TestPaymentSummaryPorteLeToken(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "ENROL-TOK",
+		FormAction: "REGISTER",
+		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	r, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(r.Body).Decode(&out)
+	_ = r.Body.Close()
+
+	resp, _ := http.Get(server.URL + "/paysim/api/v1/payments")
+	defer func() { _ = resp.Body.Close() }()
+	var liste []PaymentSummary
+	_ = json.NewDecoder(resp.Body).Decode(&liste)
+
+	if len(liste) != 1 || liste[0].PaymentMethodToken != out.PaymentMethodToken {
+		t.Errorf("token absent du resume : %+v", liste)
 	}
 }

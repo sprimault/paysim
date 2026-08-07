@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { create } from 'zustand';
-import type { EventEntry, PaymentDetail, PaymentSummary } from '@/shared/model';
+import type { Customer, EventEntry, PaymentDetail, PaymentSummary } from '@/shared/model';
 
 /**
  * Store de l'entité Payment. Un seul objet par UUID : le détail
@@ -17,7 +17,19 @@ import type { EventEntry, PaymentDetail, PaymentSummary } from '@/shared/model';
  * mutation retourne un nouveau Record via l'opérateur spread.
  */
 
-export type PaymentInStore = PaymentSummary & { events?: EventEntry[] };
+/**
+ * Ce que le store retient d'un paiement : le résumé de la liste,
+ * enrichi de ce que seule la page détail va chercher.
+ *
+ * Tout est optionnel après le résumé, parce qu'une entrée peut venir de
+ * la liste (sans détail) ou du détail (complète) — `setDetail` remplace
+ * l'objet entier, donc ces champs apparaissent d'un coup.
+ */
+export type PaymentInStore = PaymentSummary & {
+  events?: EventEntry[];
+  customer?: Customer;
+  metadata?: Record<string, string>;
+};
 
 interface PaymentState {
   /** Paiements indexés par uuid — un seul exemplaire par paiement. */
@@ -47,11 +59,15 @@ export const usePaymentStore = create<PaymentState>((set) => ({
     set((s) => {
       const next: Record<string, PaymentInStore> = {};
       for (const p of payments) {
-        // Préserve les events déjà chargés si le paiement était déjà
-        // en cache — évite un refetch inutile de la page détail juste
-        // parce qu'on a rafraîchi la liste.
+        // Le résumé rafraîchit ce qu'il porte et ne touche pas au reste :
+        // events, customer, metadata ne viennent que du détail, et une
+        // liste rechargée ne doit pas les effacer.
+        //
+        // Nommer les champs à préserver un par un s'est révélé fragile —
+        // customer et metadata, ajoutés plus tard, disparaissaient dès
+        // que le Header rafraîchissait la liste pour ses compteurs.
         const existing = s.payments[p.uuid];
-        next[p.uuid] = existing?.events ? { ...p, events: existing.events } : p;
+        next[p.uuid] = existing ? { ...existing, ...p } : p;
       }
       return { payments: next, listLoaded: true };
     }),
@@ -61,9 +77,8 @@ export const usePaymentStore = create<PaymentState>((set) => ({
       return {
         payments: {
           ...s.payments,
-          [payment.uuid]: existing?.events
-            ? { ...payment, events: existing.events }
-            : payment,
+          // Même règle que setList : le résumé complète, il n'efface pas.
+          [payment.uuid]: existing ? { ...existing, ...payment } : payment,
         },
       };
     }),

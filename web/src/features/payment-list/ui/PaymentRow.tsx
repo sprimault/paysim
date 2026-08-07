@@ -56,6 +56,22 @@ export function PaymentRow({ payment: p, onDelete, showProvider }: PaymentRowPro
           <CopyButton value={p.uuid} className="p-0.5" />
         </div>
       </td>
+      <td className="px-4 py-2.5">
+        {p.paymentMethodToken ? (
+          <div className="flex items-center gap-1">
+            <Link
+              to={`/payment-methods/${p.paymentMethodToken}`}
+              className="font-mono text-xs text-brand-600 hover:underline dark:text-brand-400"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {truncate(p.paymentMethodToken, 13)}
+            </Link>
+            <CopyButton value={p.paymentMethodToken} className="p-0.5" />
+          </div>
+        ) : (
+          <span className="text-xs text-zinc-300 dark:text-zinc-700">—</span>
+        )}
+      </td>
       <td
         className="px-4 py-2.5 text-xs text-zinc-500 dark:text-zinc-400"
         title={formatShort(p.createdAt)}

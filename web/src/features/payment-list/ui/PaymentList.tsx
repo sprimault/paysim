@@ -137,6 +137,7 @@ export function PaymentList() {
                 <th className="px-4 py-2 text-right tabular">{t('payment.list.column.amount')}</th>
                 <th className="px-4 py-2">{t('payment.list.column.order')}</th>
                 <th className="px-4 py-2">{t('payment.list.column.uuid')}</th>
+                <th className="px-4 py-2">{t('payment.list.column.paymentMethod')}</th>
                 <th className="px-4 py-2">{t('payment.list.column.created')}</th>
                 <th className="px-4 py-2">{t('payment.list.column.updated')}</th>
                 <th className="px-4 py-2 sr-only">{t('payment.list.column.actions')}</th>

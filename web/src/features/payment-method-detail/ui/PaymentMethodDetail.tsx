@@ -7,6 +7,7 @@ import { Link, useParams } from 'react-router';
 import { Badge } from '@/shared/ui/Badge';
 import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
+import { PaymentMethodUsage } from './PaymentMethodUsage';
 import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
 import { CopyButton } from '@/shared/ui/CopyButton';
 import { toast } from '@/shared/ui/toastStore';
@@ -119,6 +120,8 @@ export function PaymentMethodDetail() {
           <Field label={t('paymentMethod.detail.field.createdAt')} value={formatShort(method.createdAt)} wide />
         </dl>
       </Card>
+
+      <PaymentMethodUsage token={method.token} createdAt={method.createdAt} />
 
       <ConfirmDialog
         open={revokeOpen}

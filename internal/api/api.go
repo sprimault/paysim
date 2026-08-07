@@ -194,6 +194,16 @@ type PaymentSummary struct {
 	// transition ; sur un paiement jamais joué, les deux sont égales.
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+
+	// PaymentMethodToken relie le paiement au moyen enregistré : celui
+	// qu'il a enrôlé, ou celui qu'il a débité en rejeu. C'est la
+	// relation que PayZen porte sur la transaction, et la seule qui
+	// existe — un alias n'appartient jamais à une commande.
+	//
+	// Vide sur un paiement one-shot sans enrôlement. Présent ici et non
+	// sur le seul détail : la liste l'affiche en colonne, et c'est de là
+	// qu'on ouvre la fiche du moyen.
+	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
 }
 
 // PaymentDetail ajoute le journal d'événements.
@@ -205,6 +215,15 @@ type PaymentDetail struct {
 	// dernier mot — un remboursement partiel y laisse une trace même
 	// quand l'état ne change pas.
 	Events []EventEntry `json:"events"`
+
+	// Customer et Metadata sont le contexte marchand, restitué tel quel.
+	// Paysim ne les interprète jamais, mais il faut pouvoir les relire :
+	// jusqu'ici ils n'étaient visibles qu'en décodant le kr-answer brut,
+	// ce qui rendait invisible tout champ perdu en chemin — le défaut
+	// même qu'on a corrigé deux fois, sur customer.reference puis sur
+	// les blocs shipping et extra.
+	Customer payzen.Customer   `json:"customer,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // EventEntry est une entrée du journal d'événements du domaine.
@@ -697,8 +716,15 @@ func (h *Handler) listSubscriptions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "erreur de lecture", http.StatusInternalServerError)
 		return
 	}
+	// Même filtre que sur les paiements : « quels abonnements prélèvent
+	// ce moyen ». Un alias révoqué dont il reste un abonnement actif est
+	// précisément ce qu'on veut voir d'un coup d'œil.
+	token := r.URL.Query().Get("paymentMethodToken")
 	out := make([]SubscriptionOutput, 0, len(subs))
 	for _, s := range subs {
+		if token != "" && s.PaymentMethodToken != token {
+			continue
+		}
 		out = append(out, subscriptionToOutput(s, "payzen"))
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -902,8 +928,8 @@ func toPaymentMethodOutput(rec *store.PaymentMethodRecord) PaymentMethodOutput {
 	usable, reason := payzen.MethodUsability(
 		rec.PANFull, rec.ExpiryMonth, rec.ExpiryYear, rec.Revoked, time.Now().UTC())
 	return PaymentMethodOutput{
-		Usable:         usable,
-		UnusableReason: reason,
+		Usable:          usable,
+		UnusableReason:  reason,
 		Token:           rec.Token,
 		Provider:        rec.Provider,
 		PANMasked:       rec.PANMasked,
@@ -975,15 +1001,30 @@ func isDomainErr(err error) bool {
 		errors.Is(err, domain.ErrInvalidPayment)
 }
 
-func (h *Handler) listPayments(w http.ResponseWriter, _ *http.Request) {
+// listPayments traite GET /paysim/api/v1/payments.
+//
+// Filtre optionnel ?paymentMethodToken= : retourne les paiements liés à
+// un moyen enregistré — celui qui l'a enrôlé comme ceux qui l'ont
+// débité. C'est la lecture inverse de PaymentSummary.PaymentMethodToken,
+// celle qui répond à « qu'a-t-on fait avec cet alias ».
+//
+// Filtrage en mémoire plutôt qu'en base : le plafond de rétention borne
+// déjà le nombre de transactions, et un index par token n'existe pas
+// dans le contrat de store. Le jour où ça pèse, c'est le store qu'on
+// étend, pas ce handler.
+func (h *Handler) listPayments(w http.ResponseWriter, r *http.Request) {
 	txs, err := h.store.AllTransactions()
 	if err != nil {
 		h.logger.Error("api_store_failure", "op", "AllTransactions", "err", err)
 		http.Error(w, "store failure", http.StatusInternalServerError)
 		return
 	}
+	token := r.URL.Query().Get("paymentMethodToken")
 	out := make([]PaymentSummary, 0, len(txs))
 	for _, tx := range txs {
+		if token != "" && tx.PaymentMethodToken != token {
+			continue
+		}
 		out = append(out, toPaymentSummary(tx))
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -1404,14 +1445,15 @@ func writeEvent(w http.ResponseWriter, flusher http.Flusher, evt bus.Event, logg
 
 func toPaymentSummary(tx *payzen.Transaction) PaymentSummary {
 	return PaymentSummary{
-		UUID:      tx.UUID,
-		Provider:  "payzen",
-		OrderID:   tx.OrderID,
-		Amount:    int64(tx.Amount),
-		Currency:  tx.Currency,
-		State:     string(tx.Payment.State()),
-		CreatedAt: tx.CreatedAt,
-		UpdatedAt: tx.UpdatedAt,
+		UUID:               tx.UUID,
+		Provider:           "payzen",
+		OrderID:            tx.OrderID,
+		Amount:             int64(tx.Amount),
+		Currency:           tx.Currency,
+		PaymentMethodToken: tx.PaymentMethodToken,
+		State:              string(tx.Payment.State()),
+		CreatedAt:          tx.CreatedAt,
+		UpdatedAt:          tx.UpdatedAt,
 	}
 }
 
@@ -1420,6 +1462,8 @@ func toPaymentDetail(tx *payzen.Transaction) PaymentDetail {
 	dto := PaymentDetail{
 		PaymentSummary: toPaymentSummary(tx),
 		Events:         make([]EventEntry, 0, len(events)),
+		Customer:       tx.Customer,
+		Metadata:       tx.Metadata,
 	}
 	for _, e := range events {
 		dto.Events = append(dto.Events, EventEntry{

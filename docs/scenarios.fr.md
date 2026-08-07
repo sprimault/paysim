@@ -68,7 +68,7 @@ Douze actions qui couvrent les trois patterns de paiement.
 
 | Action           | Rôle                                                                    |
 | ---------------- | ----------------------------------------------------------------------- |
-| `create_payment` | Crée un paiement. `card`, `form_action`, `customer.email`, `customer.reference`, `metadata`, `notification_url` optionnels. `amount: 0` valide quand `form_action: REGISTER` (enrôlement pur, aucun débit). |
+| `create_payment` | Crée un paiement. `card`, `form_action`, `customer` (voir plus bas), `metadata`, `notification_url` optionnels. `amount: 0` valide quand `form_action: REGISTER` (enrôlement pur, aucun débit). |
 | `simulate`       | Fait avancer le paiement via l'endpoint de simulation navigateur.       |
 | `assert_state`   | Assert que le paiement courant est dans l'état demandé.                 |
 | `assert_webhook` | Compte les webhooks livrés depuis le début du scénario (`status`, `outcome`, `timeout` optionnels).|
@@ -185,6 +185,63 @@ carte de débit et le routage par émetteur — les quatre derniers champs
 
 **N'utilisez jamais un numéro de carte réel** : les PAN sont stockés en
 clair. Voir [testing-cards.fr.md](testing-cards.fr.md).
+
+## L'objet `customer`
+
+Le contexte marchand, restitué tel quel dans le webhook. Paysim ne
+l'interprète jamais — il doit seulement le rendre intact, ce que les
+scénarios sont précisément là pour prouver.
+
+```yaml
+customer:
+  email: alice@example.com
+  reference: demo-org          # identifiant client côté marchand
+  billing_details:
+    first_name: Alice
+    last_name: MARTIN
+    address: 1 rue de la Paix
+    zip_code: "75002"
+    city: Paris
+    country: FR
+    language: fr
+  shipping_details:
+    category: COMPANY          # PRIVATE | COMPANY
+    legal_name: ACME SARL      # COMPANY uniquement
+    identity_code: "12345678900011"
+    first_name: Bob            # on livre souvent à un autre que le payeur
+    last_name: DURAND
+    phone_number: "+33600000000"
+    street_number: "12"
+    address: avenue des Champs
+    address2: batiment C
+    district: 8e
+    zip_code: "75008"
+    city: Paris
+    state: IDF
+    country: FR
+    delivery_company_name: TRANSPORTEUR X
+    shipping_speed: EXPRESS    # STANDARD | EXPRESS | PRIORITY
+    shipping_method: RELAY_POINT
+  extra_details:
+    ip_address: 203.0.113.7
+    finger_print_id: fp-abc123
+    browser_user_agent: Mozilla/5.0
+    browser_accept: text/html
+```
+
+Tous les champs sont optionnels. Les noms reprennent ceux de PayZen —
+`shipping_details` est découpé plus finement que `billing_details` parce
+que les règles antifraude comparent ses éléments un à un.
+
+`category`, `shipping_speed` et `shipping_method` ne sont **pas
+validés** : un simulateur qui refuserait une valeur que le vrai accepte
+serait un piège. `shipping_method` compte à lui seul une quinzaine de
+valeurs en amont (`RELAY_POINT`, `DIGITAL_GOOD`, `PICKUP_POINT`,
+`ETICKET`…), et cette liste bouge.
+
+`extra_details` porte le contexte navigateur que PayZen transmet à ses
+règles antifraude et à 3DS — le bloc à renseigner pour scripter un refus
+pour risque.
 
 ## État implicite — un paiement / un token / une subscription à la fois
 

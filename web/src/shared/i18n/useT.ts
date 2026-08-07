@@ -11,8 +11,8 @@ import { useLangStore } from './store';
  *
  * Substitution : les placeholders `{param}` dans le message sont
  * remplacés par la valeur correspondante. Ex :
- *   messages.fr['payment.list.count'] = '{count} paiements en mémoire'
- *   t('payment.list.count', { count: 12 })  // → '12 paiements en mémoire'
+ *   messages.fr['payment.list.count'] = '{count} paiements'
+ *   t('payment.list.count', { count: 12 })  // → '12 paiements'
  *
  * La clé est typée : une clé absente du dictionnaire fait échouer
  * le build TypeScript, pas seulement le runtime.

@@ -3,10 +3,14 @@
 
 import { useState } from 'react';
 import { Play, RefreshCw } from 'lucide-react';
+import { Link } from 'react-router';
 import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
+import { CopyButton } from '@/shared/ui/CopyButton';
+import { PaymentCustomer } from './PaymentCustomer';
 import { formatAmount } from '@/shared/lib/numbers';
 import { formatShort } from '@/shared/lib/dates';
+import { truncate } from '@/shared/lib/strings';
 import { isTerminal } from '@/shared/model';
 import { toast } from '@/shared/ui/toastStore';
 import { useT } from '@/shared/i18n/useT';
@@ -55,6 +59,25 @@ export function PaymentOverview({ payment }: { payment: PaymentInStore }) {
           <Info label={t('payment.detail.overview.fieldOrder')} value={payment.orderId} />
           <Info label={t('payment.detail.overview.fieldCreatedAt')} value={formatShort(payment.createdAt)} />
           <Info label={t('payment.detail.overview.fieldUpdatedAt')} value={formatShort(payment.updatedAt)} />
+          {/* Le moyen enrôlé ou débité par ce paiement — la relation que
+              PayZen porte sur la transaction. Absent d'un one-shot sans
+              enrôlement, auquel cas la ligne ne s'affiche pas. */}
+          {payment.paymentMethodToken && (
+            <div className="contents">
+              <dt className="text-xs text-zinc-500 dark:text-zinc-400">
+                {t('payment.detail.overview.fieldPaymentMethod')}
+              </dt>
+              <dd className="flex items-center gap-1 text-sm">
+                <Link
+                  to={`/payment-methods/${payment.paymentMethodToken}`}
+                  className="font-mono text-xs text-brand-600 hover:underline dark:text-brand-400"
+                >
+                  {truncate(payment.paymentMethodToken, 20)}
+                </Link>
+                <CopyButton value={payment.paymentMethodToken} className="p-0.5" />
+              </dd>
+            </div>
+          )}
         </dl>
       </Card>
 
@@ -89,6 +112,9 @@ export function PaymentOverview({ payment }: { payment: PaymentInStore }) {
           </div>
         )}
       </Card>
+      <div className="lg:col-span-3">
+        <PaymentCustomer customer={payment.customer} metadata={payment.metadata} />
+      </div>
     </div>
   );
 }

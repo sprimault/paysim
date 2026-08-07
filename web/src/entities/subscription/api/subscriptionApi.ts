@@ -20,6 +20,20 @@ export function fetchSubscriptions(signal?: AbortSignal): Promise<SubscriptionOu
   return apiGetJson<SubscriptionOutput[]>(BASE, signal);
 }
 
+/**
+ * Abonnements prélevant un moyen donné. Un alias révoqué dont il reste
+ * un abonnement actif est exactement ce qu'on veut voir d'un coup d'œil.
+ */
+export function fetchSubscriptionsByToken(
+  token: string,
+  signal?: AbortSignal,
+): Promise<SubscriptionOutput[]> {
+  return apiGetJson<SubscriptionOutput[]>(
+    `${BASE}?paymentMethodToken=${encodeURIComponent(token)}`,
+    signal,
+  );
+}
+
 export function fetchSubscription(
   id: string,
   signal?: AbortSignal,

@@ -54,19 +54,11 @@ type createPaymentReq struct {
 	Currency           string            `json:"currency"`
 	OrderID            string            `json:"orderId"`
 	FormAction         string            `json:"formAction,omitempty"`
-	Customer           *customerReq      `json:"customer,omitempty"`
+	Customer           *Customer         `json:"customer,omitempty"`
 	Metadata           map[string]string `json:"metadata,omitempty"`
 	NotificationURL    string            `json:"notificationUrl,omitempty"`
 	Card               *Card             `json:"card,omitempty"`
 	PaymentMethodToken string            `json:"paymentMethodToken,omitempty"`
-}
-
-// customerReq est le miroir de payzen.Customer côté request scenario.
-// Les deux champs sont à la racine du bloc customer, comme dans le
-// contrat PayZen (voir loader.Customer).
-type customerReq struct {
-	Email     string `json:"email,omitempty"`
-	Reference string `json:"reference,omitempty"`
 }
 
 // CreatedPayment est la vue minimale d'un paiement fraîchement créé.
@@ -104,12 +96,10 @@ func (c *Client) CreatePayment(ctx context.Context, in *CreatePayment) (*Created
 		NotificationURL: in.NotificationURL,
 		Card:            in.Card,
 	}
-	if in.Customer != nil {
-		body.Customer = &customerReq{
-			Email:     in.Customer.Email,
-			Reference: in.Customer.Reference,
-		}
-	}
+	// Passé tel quel : la struct du scénario porte les tags JSON de
+	// l'API. Recopier champ par champ, c'était garantir qu'un ajout
+	// futur se perde en route sans erreur.
+	body.Customer = in.Customer
 	var out CreatedPayment
 	if err := c.do(ctx, http.MethodPost, "/paysim/api/v1/payments", body, &out); err != nil {
 		return nil, err
