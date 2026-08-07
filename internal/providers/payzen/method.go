@@ -78,40 +78,6 @@ func isExpired(expiryMonth, expiryYear int, now time.Time) bool {
 	return false
 }
 
-// Card est l'input pour enregistrer un moyen de paiement, tel que
-// fourni par les scénarios YAML ou les tests d'intégration. Reprend
-// la structure minimale que le SmartForm envoie au PSP en usage réel.
-// Le PAN entre en clair — aucun rejet, aucune validation Luhn,
-// aveugle sur le contenu.
-type Card struct {
-	// PAN est le numéro complet, en clair. Aucune validation Luhn : le
-	// simulateur est aveugle au contenu, hormis les quatre PAN de test
-	// réservés qui déclenchent un refus.
-	PAN string `json:"pan"`
-
-	// ExpiryMonth (1-12) et ExpiryYear (4 chiffres). Une date passée
-	// fait refuser tout débit, ce qui en fait un levier de test.
-	ExpiryMonth int `json:"expiryMonth"`
-	ExpiryYear  int `json:"expiryYear"`
-
-	// Brand est la marque. Optionnelle : déduite du BIN si absente.
-	Brand string `json:"brand,omitempty"`
-
-	// HolderName est le nom du porteur ("DUPONT JEAN"). Optionnel :
-	// un wallet n'en transmet pas. Conservé tel quel, sans
-	// normalisation de casse — le marchand le relit à l'identique.
-	HolderName string `json:"holderName,omitempty"`
-
-	// Country, ProductCategory et IssuerName décrivent la carte telle
-	// que l'émetteur la caractérise. Optionnels, mais ce sont eux qui
-	// rendent testables la carte étrangère, la carte de débit et le
-	// routage par banque — figés, ils interdisaient ces scénarios.
-	// Défauts appliqués au rendu : FR, CREDIT, PAYSIM.
-	Country         string `json:"country,omitempty"`         // ISO 3166-1 alpha-2
-	ProductCategory string `json:"productCategory,omitempty"` // CREDIT, DEBIT, PREPAID
-	IssuerName      string `json:"issuerName,omitempty"`
-}
-
 // NewPaymentMethod construit un PaymentMethod à partir d'une Card et
 // d'un token pré-généré. Le brand est déduit du BIN si l'input n'en
 // fournit pas — comportement identique à ce que fait PayZen en réel.
