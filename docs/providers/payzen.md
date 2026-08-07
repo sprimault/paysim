@@ -360,6 +360,36 @@ Values accepted in `browserReturn` / `ipn` `outcome` field:
 | `EXPIRED`    | `Expire()` — timeout                         | `UNPAID`       | `EXPIRED`              |
 | `ABANDONED`  | Mapped to `Expire()` (no domain state)       | `UNPAID`       | `ABANDONED`            |
 
+## The alias owns its customer
+
+A `paymentMethodToken` — an *alias*, in PayZen's own wording — belongs to a
+**customer**, never to an order. That relationship has a consequence Paysim now
+reproduces:
+
+> During a payment by alias, the `customer.reference`, `customer.email` and
+> `customer.billingDetails` attributes sent in the request are **ignored**, and the
+> values stored with the alias are used.
+
+```
+Enrolment   : token T, customer.reference = "client-A"
+Charge by T : customer.reference = "client-B"   ← merchant-side mistake
+
+PayZen answers : "client-A"    (the alias wins, the bug stays invisible)
+Paysim answers : "client-A"    (same — since v0.5.4)
+```
+
+Before v0.5.4 Paysim echoed back whatever the request contained. That made it *more
+logical* than the real gateway — and therefore misleading: a wrong customer reference
+passed validation against Paysim, then silently drifted in production. Reproducing the
+protocol as it is, quirks included, is invariant 3.
+
+**`shippingDetails` and `extraDetails` are not overridden.** A delivery address belongs
+to the order — the same card ships to different places — and the browser context belongs
+to the session. PayZen does not claim to replace them either.
+
+Aliases enrolled before v0.5.4 carry no customer: the charge then falls back to the
+request's, for lack of anything better.
+
 ## Chaos values (magic values)
 
 Paysim ships two categories of built-in behaviour tweaks — cf.
