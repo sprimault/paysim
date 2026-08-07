@@ -18,11 +18,10 @@ Cibles standard du projet.
 
 | Commande | Effet |
 |---|---|
-| `make dev` | Serveur en rechargement à chaud + front en HMR |
+| `make dev` | Backend + front en HMR sur http://127.0.0.1:5173 |
 | `make test` | `go test -race ./...` |
 | `make lint` | `golangci-lint run` |
 | `make build` | Binaire unique, front embarqué |
-| `make fixtures` | Régénère les fixtures depuis les captures de `testdata/raw/` |
 
 ## Architecture
 

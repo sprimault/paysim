@@ -1,7 +1,44 @@
-.PHONY: dev test lint vulncheck sec build fixtures web-types web-build web-test web-lint image image-push
+.PHONY: dev test lint vulncheck sec build web-types web-build web-test web-lint image image-push
 
-dev:
-	@echo "dev: pas encore implémenté (phase 3)" && exit 1
+# Variables de développement, toutes surchargeables à l'appel :
+#   make dev PAYSIM_DEV_CALLBACK_URL=http://127.0.0.1:4000
+#
+# PUBLIC_URL pointe sur Vite et non sur le backend : c'est l'URL que
+# voit le navigateur, et en dev c'est le serveur HMR qui l'accueille.
+PAYSIM_DEV_PUBLIC_URL   ?= http://127.0.0.1:5173
+PAYSIM_DEV_CALLBACK_URL ?= http://127.0.0.1:9099
+PAYSIM_DEV_HMAC_KEY     ?= dev-hmac-key
+
+# dev lance le backend Go et le serveur HMR de Vite côte à côte, puis
+# les arrête ensemble. On ouvre http://127.0.0.1:5173 : Vite sert le
+# front et relaie /paysim/* vers le backend sur :8080 (proxy déclaré
+# dans web/vite.config.ts).
+#
+# Dépend de web-build parce que internal/webui embarque dist/ via
+# //go:embed et refuse de compiler s'il est absent — un clone frais ne
+# l'a jamais. Le bundle produit ici ne sert qu'à satisfaire le
+# compilateur : c'est Vite qui sert le front pendant la session.
+#
+# Le rechargement à chaud du Go passe par wgo, mais son absence ne
+# bloque pas : sans lui on perd le rechargement, pas la commande. Sur
+# un dépôt public, `make dev` doit fonctionner sur un clone frais sans
+# installer quoi que ce soit d'abord.
+dev: web-build
+	@trap 'kill 0' EXIT INT TERM; \
+	(cd web && npm run dev) & \
+	if command -v wgo >/dev/null 2>&1; then \
+		PAYSIM_PUBLIC_URL=$(PAYSIM_DEV_PUBLIC_URL) \
+		PAYSIM_CALLBACK_URL=$(PAYSIM_DEV_CALLBACK_URL) \
+		PAYSIM_PAYZEN_HMAC_KEY=$(PAYSIM_DEV_HMAC_KEY) \
+		wgo run ./cmd/paysim; \
+	else \
+		echo "wgo absent : pas de rechargement automatique du backend"; \
+		echo "  go install github.com/bokwoon95/wgo@latest"; \
+		PAYSIM_PUBLIC_URL=$(PAYSIM_DEV_PUBLIC_URL) \
+		PAYSIM_CALLBACK_URL=$(PAYSIM_DEV_CALLBACK_URL) \
+		PAYSIM_PAYZEN_HMAC_KEY=$(PAYSIM_DEV_HMAC_KEY) \
+		go run ./cmd/paysim; \
+	fi
 
 # Les cibles Go dépendent de web-build : le paquet internal/webui
 # embarque le bundle via //go:embed all:dist et refuse de compiler si
@@ -30,9 +67,6 @@ sec: web-build
 
 build: web-build
 	CGO_ENABLED=0 go build -trimpath -o paysim ./cmd/paysim
-
-fixtures:
-	@echo "fixtures: pas encore implémenté (phase 2)" && exit 1
 
 # web-types régénère les types TypeScript de l'API à partir des DTOs
 # Go de internal/api via tygo. À relancer après tout changement de
