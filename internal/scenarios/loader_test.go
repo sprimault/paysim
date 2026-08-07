@@ -450,3 +450,66 @@ steps:
 		t.Fatal("Load a accepte une assertion sans aucun champ")
 	}
 }
+
+// Le contexte client complet doit se décoder depuis le YAML. Sans ces
+// blocs, un scénario qui les déclare les perdait en silence — le
+// défaut même qu'ils servent à traquer côté serveur.
+func TestLoad_customerBlocsComplets(t *testing.T) {
+	t.Parallel()
+	src := `
+name: ctx
+steps:
+  - action: create_payment
+    provider: payzen
+    amount: 1000
+    currency: EUR
+    order_id: CTX-1
+    customer:
+      email: alice@example.com
+      reference: demo-org
+      billing_details:
+        first_name: Alice
+        last_name: MARTIN
+        zip_code: "75002"
+        country: FR
+      shipping_details:
+        category: COMPANY
+        legal_name: ACME SARL
+        street_number: "12"
+        address2: batiment C
+        delivery_company_name: TRANSPORTEUR X
+        shipping_speed: EXPRESS
+        shipping_method: RELAY_POINT
+      extra_details:
+        ip_address: 203.0.113.7
+        finger_print_id: fp-abc123
+        browser_user_agent: Mozilla/5.0
+`
+	s, err := Load(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	c := s.Steps[0].CreatePayment.Customer
+	if c == nil {
+		t.Fatal("customer nil apres decodage")
+	}
+	if c.Reference != "demo-org" {
+		t.Errorf("reference = %q", c.Reference)
+	}
+	if c.BillingDetails == nil || c.BillingDetails.ZipCode != "75002" {
+		t.Errorf("billing_details = %+v", c.BillingDetails)
+	}
+	if c.ShippingDetails == nil {
+		t.Fatal("shipping_details nil")
+	}
+	if c.ShippingDetails.Category != "COMPANY" ||
+		c.ShippingDetails.Address2 != "batiment C" ||
+		c.ShippingDetails.ShippingMethod != "RELAY_POINT" ||
+		c.ShippingDetails.DeliveryCompanyName != "TRANSPORTEUR X" {
+		t.Errorf("shipping_details = %+v", c.ShippingDetails)
+	}
+	if c.ExtraDetails == nil || c.ExtraDetails.IPAddress != "203.0.113.7" ||
+		c.ExtraDetails.FingerPrintID != "fp-abc123" {
+		t.Errorf("extra_details = %+v", c.ExtraDetails)
+	}
+}

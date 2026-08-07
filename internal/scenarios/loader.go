@@ -158,12 +158,75 @@ type CreatePayment struct {
 type Customer struct {
 	// Email de l'acheteur, restitué tel quel dans le webhook — de quoi
 	// vérifier qu'un scénario retrouve ce qu'il a envoyé.
-	Email string `yaml:"email,omitempty"`
+	Email string `json:"email,omitempty" yaml:"email,omitempty"`
 
 	// Reference est l'identifiant du client côté marchand, à la racine
 	// du bloc customer comme email. Permet de rapprocher un paiement
 	// d'un compte sans passer par la metadata.
-	Reference string `yaml:"reference,omitempty"`
+	Reference string `json:"reference,omitempty" yaml:"reference,omitempty"`
+
+	// Les trois blocs du contexte client PayZen. Double jeu de tags
+	// comme Card : la même struct est lue depuis le YAML en snake_case
+	// et sérialisée vers l'API en camelCase.
+	//
+	// C'est ce qui évite la recopie champ par champ vers customerReq —
+	// recopie où un champ oublié disparaissait sans erreur, exactement
+	// le défaut que ces blocs servent à traquer.
+	BillingDetails  *BillingDetails  `json:"billingDetails,omitempty"  yaml:"billing_details,omitempty"`
+	ShippingDetails *ShippingDetails `json:"shippingDetails,omitempty" yaml:"shipping_details,omitempty"`
+	ExtraDetails    *ExtraDetails    `json:"extraDetails,omitempty"    yaml:"extra_details,omitempty"`
+}
+
+// BillingDetails est l'adresse de facturation, telle qu'un scénario la
+// déclare. Miroir de payzen.BillingDetails.
+type BillingDetails struct {
+	Language string `json:"language,omitempty"  yaml:"language,omitempty"`
+	Title    string `json:"title,omitempty"     yaml:"title,omitempty"`
+
+	FirstName string `json:"firstName,omitempty" yaml:"first_name,omitempty"`
+	LastName  string `json:"lastName,omitempty"  yaml:"last_name,omitempty"`
+
+	Address string `json:"address,omitempty"   yaml:"address,omitempty"`
+	City    string `json:"city,omitempty"      yaml:"city,omitempty"`
+	ZipCode string `json:"zipCode,omitempty"   yaml:"zip_code,omitempty"`
+	Country string `json:"country,omitempty"   yaml:"country,omitempty"`
+}
+
+// ShippingDetails est l'adresse de livraison. Miroir de
+// payzen.ShippingDetails — les énumérations y restent des chaînes
+// libres, un scénario doit pouvoir écrire une valeur exotique sans que
+// le loader la refuse.
+type ShippingDetails struct {
+	Category     string `json:"category,omitempty"     yaml:"category,omitempty"`
+	LegalName    string `json:"legalName,omitempty"    yaml:"legal_name,omitempty"`
+	IdentityCode string `json:"identityCode,omitempty" yaml:"identity_code,omitempty"`
+
+	FirstName   string `json:"firstName,omitempty"   yaml:"first_name,omitempty"`
+	LastName    string `json:"lastName,omitempty"    yaml:"last_name,omitempty"`
+	PhoneNumber string `json:"phoneNumber,omitempty" yaml:"phone_number,omitempty"`
+
+	StreetNumber string `json:"streetNumber,omitempty" yaml:"street_number,omitempty"`
+	Address      string `json:"address,omitempty"      yaml:"address,omitempty"`
+	Address2     string `json:"address2,omitempty"     yaml:"address2,omitempty"`
+	District     string `json:"district,omitempty"     yaml:"district,omitempty"`
+	ZipCode      string `json:"zipCode,omitempty"      yaml:"zip_code,omitempty"`
+	City         string `json:"city,omitempty"         yaml:"city,omitempty"`
+	State        string `json:"state,omitempty"        yaml:"state,omitempty"`
+	Country      string `json:"country,omitempty"      yaml:"country,omitempty"`
+
+	DeliveryCompanyName string `json:"deliveryCompanyName,omitempty" yaml:"delivery_company_name,omitempty"`
+	ShippingSpeed       string `json:"shippingSpeed,omitempty"       yaml:"shipping_speed,omitempty"`
+	ShippingMethod      string `json:"shippingMethod,omitempty"      yaml:"shipping_method,omitempty"`
+}
+
+// ExtraDetails est le contexte navigateur. Miroir de
+// payzen.ExtraDetails.
+type ExtraDetails struct {
+	IPAddress     string `json:"ipAddress,omitempty"     yaml:"ip_address,omitempty"`
+	FingerPrintID string `json:"fingerPrintId,omitempty" yaml:"finger_print_id,omitempty"`
+
+	BrowserUserAgent string `json:"browserUserAgent,omitempty" yaml:"browser_user_agent,omitempty"`
+	BrowserAccept    string `json:"browserAccept,omitempty"    yaml:"browser_accept,omitempty"`
 }
 
 // Card décrit un moyen de paiement fictif présenté à Paysim. Le double

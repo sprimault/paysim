@@ -67,7 +67,7 @@ Twelve actions covering the three payment patterns.
 
 | Action           | Purpose                                                                 |
 | ---------------- | ----------------------------------------------------------------------- |
-| `create_payment` | Create a payment. Optional `card`, `form_action`, `customer.email`, `customer.reference`, `metadata`, `notification_url`. `amount: 0` valid when `form_action: REGISTER` (register-only, no debit). |
+| `create_payment` | Create a payment. Optional `card`, `form_action`, `customer` (see below), `metadata`, `notification_url`. `amount: 0` valid when `form_action: REGISTER` (register-only, no debit). |
 | `simulate`       | Advance the payment via the browser-return simulation endpoint.         |
 | `assert_state`   | Assert the current payment is in the given state.                       |
 | `assert_webhook` | Count webhooks delivered since the scenario started (optional `status`, `outcome`, `timeout`).|
@@ -183,6 +183,62 @@ what makes a foreign card, a debit card, or issuer-based routing testable
 
 **Never use a real card number**: PANs are stored in clear text. See
 [testing-cards.md](testing-cards.md).
+
+## The `customer` object
+
+The merchant context, echoed back untouched in the webhook. Paysim never
+interprets it — it only has to give it back intact, which is precisely
+what scenarios are here to prove.
+
+```yaml
+customer:
+  email: alice@example.com
+  reference: demo-org          # merchant-side customer id
+  billing_details:
+    first_name: Alice
+    last_name: MARTIN
+    address: 1 rue de la Paix
+    zip_code: "75002"
+    city: Paris
+    country: FR
+    language: fr
+  shipping_details:
+    category: COMPANY          # PRIVATE | COMPANY
+    legal_name: ACME SARL      # COMPANY only
+    identity_code: "12345678900011"
+    first_name: Bob            # the recipient is often not the payer
+    last_name: DURAND
+    phone_number: "+33600000000"
+    street_number: "12"
+    address: avenue des Champs
+    address2: batiment C
+    district: 8e
+    zip_code: "75008"
+    city: Paris
+    state: IDF
+    country: FR
+    delivery_company_name: TRANSPORTEUR X
+    shipping_speed: EXPRESS    # STANDARD | EXPRESS | PRIORITY
+    shipping_method: RELAY_POINT
+  extra_details:
+    ip_address: 203.0.113.7
+    finger_print_id: fp-abc123
+    browser_user_agent: Mozilla/5.0
+    browser_accept: text/html
+```
+
+Every field is optional. Names mirror PayZen's own — `shipping_details`
+is split more finely than `billing_details` because PayZen's fraud rules
+compare its parts one by one.
+
+`category`, `shipping_speed` and `shipping_method` are **not validated**:
+a simulator that rejected a value the real gateway accepts would be a
+trap. `shipping_method` alone has some fifteen values upstream
+(`RELAY_POINT`, `DIGITAL_GOOD`, `PICKUP_POINT`, `ETICKET`…), and that
+list moves.
+
+`extra_details` carries the browser context PayZen feeds to its fraud
+rules and 3DS — the block to fill in when scripting a risk-based decline.
 
 ## Implicit state — one payment / one token / one subscription at a time
 
