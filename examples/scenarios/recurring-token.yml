@@ -3,6 +3,11 @@ description: |
   Token pattern — le marchand enregistre une CB au premier paiement et
   déclenche lui-même le rejeu récurrent, mois après mois. Réponse
   synchrone captured/declined, pas de scheduler côté Paysim.
+
+  Le rejeu envoie volontairement un client différent de celui de
+  l'enrôlement. Chez un vrai PSP, l'alias appartient au client et fait
+  foi : reference, email et billing_details de la requête sont ignorés.
+  L'adresse de livraison, elle, appartient à la commande et passe.
 steps:
   - action: create_payment
     provider: payzen
@@ -11,6 +16,12 @@ steps:
     order_id: SUB-INIT
     form_action: REGISTER_PAY
     notification_url: http://merchant.local/ipn
+    customer:
+      email: alice@example.com
+      reference: client-A
+      billing_details:
+        last_name: MARTIN
+        country: FR
     card:
       pan: "4111111111111111"
       expiry_month: 12
@@ -24,5 +35,25 @@ steps:
     currency: EUR
     order_id: SUB-M2
     notification_url: http://merchant.local/ipn
+    # Client volontairement divergent : c'est celui de l'alias qui doit
+    # ressortir, pas celui-ci.
+    customer:
+      email: bob@example.com
+      reference: client-B
+      billing_details:
+        last_name: DURAND
+      shipping_details:
+        city: Lyon
+        shipping_method: RELAY_POINT
   - action: assert_state
     state: captured
+  - action: assert_customer
+    expect:
+      email: alice@example.com
+      reference: client-A
+      billing_details:
+        last_name: MARTIN
+      # La livraison appartient à la commande : elle n'est pas ecrasée.
+      shipping_details:
+        city: Lyon
+        shipping_method: RELAY_POINT

@@ -304,3 +304,33 @@ func TestSQLiteStoreSurvivesReopen(t *testing.T) {
 		t.Errorf("events = %d apres reopen", len(tx.Payment.Events()))
 	}
 }
+
+// Le client de l'alias doit survivre à l'aller-retour SQLite : sans lui
+// en base, le rejeu perdrait son autorité au premier redémarrage.
+func TestSQLiteMethodPersisteLeClient(t *testing.T) {
+	t.Parallel()
+	chemin := filepath.Join(t.TempDir(), "pm.db")
+	s := openTestStore(t, chemin)
+
+	pm := NewPaymentMethod("tok-cli", Card{
+		PAN: "5555555555554444", ExpiryMonth: 12, ExpiryYear: 2030,
+	}, Customer{
+		Reference: "client-A", Email: "a@example.com",
+		BillingDetails: BillingDetails{LastName: "MARTIN", Country: "FR"},
+	}, time.Now().UTC())
+	if err := s.SaveMethod(pm); err != nil {
+		t.Fatal(err)
+	}
+
+	relu, err := s.MethodByToken("tok-cli")
+	if err != nil || relu == nil {
+		t.Fatalf("relecture : %v", err)
+	}
+	if relu.Customer.Reference != "client-A" || relu.Customer.Email != "a@example.com" {
+		t.Errorf("client relu = %+v", relu.Customer)
+	}
+	if relu.Customer.BillingDetails.LastName != "MARTIN" ||
+		relu.Customer.BillingDetails.Country != "FR" {
+		t.Errorf("billingDetails relus = %+v", relu.Customer.BillingDetails)
+	}
+}

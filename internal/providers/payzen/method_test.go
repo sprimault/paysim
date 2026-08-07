@@ -119,7 +119,7 @@ func TestNewPaymentMethod_brandDeduitDuBIN(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	m := NewPaymentMethod("tok-1", Card{
 		PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2027,
-	}, now)
+	}, Customer{}, now)
 	if m.Brand != "VISA" {
 		t.Errorf("Brand = %q, veut VISA (déduit du BIN 4)", m.Brand)
 	}
@@ -145,7 +145,7 @@ func TestNewPaymentMethod_brandExpliciteGardeLaMain(t *testing.T) {
 	m := NewPaymentMethod("tok-2", Card{
 		PAN: "4111111111111111", Brand: "CB",
 		ExpiryMonth: 6, ExpiryYear: 2027,
-	}, time.Now())
+	}, Customer{}, time.Now())
 	if m.Brand != "CB" {
 		t.Errorf("Brand = %q, veut CB (explicite)", m.Brand)
 	}
@@ -179,7 +179,7 @@ func TestNewPaymentMethod_attributsCarte(t *testing.T) {
 		Country:         "US",
 		ProductCategory: "DEBIT",
 		IssuerName:      "BANQUE DE TEST",
-	}, time.Now().UTC())
+	}, Customer{}, time.Now().UTC())
 
 	if pm.HolderName != "DUPONT JEAN" {
 		t.Errorf("HolderName = %q", pm.HolderName)
@@ -208,7 +208,7 @@ func TestPaymentMethodRecordRoundTrip(t *testing.T) {
 		Country:         "US",
 		ProductCategory: "DEBIT",
 		IssuerName:      "BANQUE DE TEST",
-	}, time.Now().UTC().Truncate(time.Second))
+	}, Customer{}, time.Now().UTC().Truncate(time.Second))
 
 	back := recordToPayzenMethod(payzenMethodToRecord(orig))
 

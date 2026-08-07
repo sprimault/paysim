@@ -28,7 +28,7 @@ Exit codes (CI-friendly):
 | Code | Meaning                                                 |
 | :--: | ------------------------------------------------------- |
 |  0   | All steps passed.                                       |
-|  1   | Assertion failed (`assert_state`, `assert_webhook`, `assert_subscription`, `assert_payment_method`). |
+|  1   | Assertion failed (`assert_state`, `assert_webhook`, `assert_subscription`, `assert_payment_method`, `assert_customer`). |
 |  2   | Execution error (file not found, YAML invalid, HTTP down, unknown action). |
 
 Optional flag `--verbose` prints each step as it completes.
@@ -61,7 +61,7 @@ Field names use `snake_case` in YAML, `camelCase` on the wire (JSON API).
 
 ## Actions reference
 
-Twelve actions covering the three payment patterns.
+Thirteen actions covering the three payment patterns.
 
 ### One-shot payments
 
@@ -71,6 +71,7 @@ Twelve actions covering the three payment patterns.
 | `simulate`       | Advance the payment via the browser-return simulation endpoint.         |
 | `assert_state`   | Assert the current payment is in the given state.                       |
 | `assert_webhook` | Count webhooks delivered since the scenario started (optional `status`, `outcome`, `timeout`).|
+| `assert_customer` | Assert the merchant context the current payment gives back, under `expect` — same shape as `customer` on `create_payment`. `uuid` optional (defaults to the last payment). Only the fields you set are compared. |
 
 ### Recurring token pattern
 

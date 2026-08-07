@@ -207,6 +207,12 @@ func TestPaymentMethods_migrateExistingTable(t *testing.T) {
 		t.Errorf("nouvelles colonnes non vides sur une ligne ancienne : %q %q %q %q",
 			got.HolderName, got.Country, got.ProductCategory, got.IssuerName)
 	}
+	// customer_json suit la même règle : vide sur un alias antérieur, et
+	// c'est ce vide qui fait retomber le rejeu sur le client de la
+	// requête au lieu d'échouer.
+	if got.CustomerJSON != "" {
+		t.Errorf("customer_json = %q sur une ligne ancienne, veut vide", got.CustomerJSON)
+	}
 
 	// La migration doit rester idempotente : un second passage ne
 	// casse pas (c'est ce qui arrive à chaque redémarrage).

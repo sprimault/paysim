@@ -360,6 +360,63 @@ Values accepted in `browserReturn` / `ipn` `outcome` field:
 | `EXPIRED`    | `Expire()` — timeout                         | `UNPAID`       | `EXPIRED`              |
 | `ABANDONED`  | Mapped to `Expire()` (no domain state)       | `UNPAID`       | `ABANDONED`            |
 
+### Empty customer fields serialise to `null`
+
+PayZen exposes the customer blocks **in full**, fields included, valued at `null` when
+empty — not as an empty object:
+
+```json
+"customer": {
+  "email": null,
+  "reference": null,
+  "billingDetails": { "address": null, "firstName": null, "city": null, … },
+  "shippingDetails": { "address": null, "category": null, … },
+  "extraDetails": { "ipAddress": null, … }
+}
+```
+
+Paysim matches this. Two gaps were closed at once:
+
+- **Missing key** — the structural one. `Object.keys()`, iteration, `in` and a
+  non-optional type all diverge when a key is absent. That is what produces a
+  "worked in test, broke in prod".
+- **`""` instead of `null`** — the quieter one, but real: `firstName ?? "N/A"` yields
+  `"N/A"` against PayZen and `""` here, since the empty string is not nullish.
+
+Fields stay plain strings in the model — no pointers, no dereferencing — and the
+conversion happens on the way out only. Decoding is unaffected: `null` maps to the zero
+value, as it always did.
+
+## The alias owns its customer
+
+A `paymentMethodToken` — an *alias*, in PayZen's own wording — belongs to a
+**customer**, never to an order. That relationship has a consequence Paysim now
+reproduces:
+
+> During a payment by alias, the `customer.reference`, `customer.email` and
+> `customer.billingDetails` attributes sent in the request are **ignored**, and the
+> values stored with the alias are used.
+
+```
+Enrolment   : token T, customer.reference = "client-A"
+Charge by T : customer.reference = "client-B"   ← merchant-side mistake
+
+PayZen answers : "client-A"    (the alias wins, the bug stays invisible)
+Paysim answers : "client-A"    (same — since v0.5.4)
+```
+
+Before v0.5.4 Paysim echoed back whatever the request contained. That made it *more
+logical* than the real gateway — and therefore misleading: a wrong customer reference
+passed validation against Paysim, then silently drifted in production. Reproducing the
+protocol as it is, quirks included, is invariant 3.
+
+**`shippingDetails` and `extraDetails` are not overridden.** A delivery address belongs
+to the order — the same card ships to different places — and the browser context belongs
+to the session. PayZen does not claim to replace them either.
+
+Aliases enrolled before v0.5.4 carry no customer: the charge then falls back to the
+request's, for lack of anything better.
+
 ## Chaos values (magic values)
 
 Paysim ships two categories of built-in behaviour tweaks — cf.

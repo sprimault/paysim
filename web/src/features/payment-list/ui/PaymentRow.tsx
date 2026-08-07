@@ -50,9 +50,13 @@ export function PaymentRow({ payment: p, onDelete, showProvider }: PaymentRowPro
       <td className="px-4 py-2.5 text-sm text-zinc-700 dark:text-zinc-300">{p.orderId}</td>
       <td className="px-4 py-2.5">
         <div className="flex items-center gap-1">
-          <code className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
+          <Link
+            to={`/payments/${p.uuid}`}
+            className="font-mono text-xs text-brand-600 hover:underline dark:text-brand-400"
+            onClick={(e) => e.stopPropagation()}
+          >
             {truncate(p.uuid, 13)}
-          </code>
+          </Link>
           <CopyButton value={p.uuid} className="p-0.5" />
         </div>
       </td>

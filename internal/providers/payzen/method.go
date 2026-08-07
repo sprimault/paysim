@@ -54,6 +54,21 @@ type PaymentMethod struct {
 	Country         string
 	ProductCategory string
 	IssuerName      string
+
+	// Customer est le client tel qu'il était à l'enrôlement. C'est lui
+	// qui fait autorité lors d'un rejeu : PayZen ignore les
+	// customer.reference, customer.email et customer.billingDetails
+	// transmis dans la requête et restitue ceux de l'alias.
+	//
+	// L'alias appartient au client, pas à la commande — de là découle
+	// tout le reste. Un marchand qui se trompe de référence au moment
+	// d'un prélèvement récurrent ne s'en apercevra pas chez PayZen, et
+	// ne doit pas s'en apercevoir ici non plus : un simulateur plus
+	// logique que le vrai masque le défaut au lieu de le révéler.
+	//
+	// Vide sur les alias enrôlés avant cette version — le rejeu retombe
+	// alors sur le client de la requête, faute de mieux.
+	Customer Customer
 }
 
 // IsExpired retourne true si le mois/année d'expiration sont
@@ -78,11 +93,16 @@ func isExpired(expiryMonth, expiryYear int, now time.Time) bool {
 	return false
 }
 
-// NewPaymentMethod construit un PaymentMethod à partir d'une Card et
-// d'un token pré-généré. Le brand est déduit du BIN si l'input n'en
-// fournit pas — comportement identique à ce que fait PayZen en réel.
-// La date CreatedAt vient de now (typiquement Clock.Now() de l'appelant).
-func NewPaymentMethod(token string, card Card, now time.Time) *PaymentMethod {
+// NewPaymentMethod construit un PaymentMethod à partir d'une Card, d'un
+// token pré-généré et du client de la transaction qui l'enrôle.
+//
+// Le client est capturé ici et nulle part ailleurs : c'est le seul
+// moment où l'alias apprend à qui il appartient.
+//
+// Le brand est déduit du BIN si l'input n'en fournit pas — comportement
+// identique à ce que fait PayZen en réel. La date CreatedAt vient de now
+// (typiquement Clock.Now() de l'appelant).
+func NewPaymentMethod(token string, card Card, customer Customer, now time.Time) *PaymentMethod {
 	brand := card.Brand
 	if brand == "" {
 		brand = BrandFromBIN(card.PAN)
@@ -100,6 +120,8 @@ func NewPaymentMethod(token string, card Card, now time.Time) *PaymentMethod {
 		Country:         card.Country,
 		ProductCategory: card.ProductCategory,
 		IssuerName:      card.IssuerName,
+
+		Customer: customer,
 	}
 }
 

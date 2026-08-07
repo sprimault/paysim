@@ -7,7 +7,6 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { Badge } from '@/shared/ui/Badge';
 import { Button } from '@/shared/ui/Button';
 import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
-import { CopyButton } from '@/shared/ui/CopyButton';
 import { Skeleton } from '@/shared/ui/Skeleton';
 import { Tabs } from '@/shared/ui/Tabs';
 import { toast } from '@/shared/ui/toastStore';
@@ -104,10 +103,6 @@ export function PaymentDetail() {
       </Link>
 
       <div className="mb-6 flex flex-wrap items-baseline gap-x-4 gap-y-2">
-        <div className="flex items-center gap-2 font-mono text-sm text-zinc-500 dark:text-zinc-400">
-          <span className="truncate">{payment.uuid}</span>
-          <CopyButton value={payment.uuid} />
-        </div>
         <div className="ml-auto flex items-center gap-3">
           <Badge tone={meta.tone} icon={<StateIcon size={12} />}>
             {t(meta.labelKey)}

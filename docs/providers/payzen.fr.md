@@ -362,6 +362,63 @@ Valeurs acceptées dans le champ `outcome` de `browserReturn` / `ipn` :
 | `EXPIRED`    | `Expire()` — timeout                         | `UNPAID`       | `EXPIRED`              |
 | `ABANDONED`  | Mappé vers `Expire()` (pas d'état domain)    | `UNPAID`       | `ABANDONED`            |
 
+### Les champs client vides sortent en `null`
+
+PayZen expose les blocs du contexte client **en entier**, champs compris, valorisés à
+`null` quand ils sont vides — et non sous forme d'objet vide :
+
+```json
+"customer": {
+  "email": null,
+  "reference": null,
+  "billingDetails": { "address": null, "firstName": null, "city": null, … },
+  "shippingDetails": { "address": null, "category": null, … },
+  "extraDetails": { "ipAddress": null, … }
+}
+```
+
+Paysim s'y aligne. Deux écarts sont comblés d'un coup :
+
+- **La clé absente** — l'écart structurel. `Object.keys()`, l'itération, un `in` et un
+  typage non optionnel divergent tous quand une clé manque. C'est ce qui produit un
+  « ça marchait en test ».
+- **`""` au lieu de `null`** — plus discret, mais réel : `firstName ?? "N/A"` rend
+  `"N/A"` chez PayZen et `""` ici, puisque la chaîne vide n'est pas *nullish*.
+
+Les champs restent de simples chaînes dans le modèle — aucun pointeur, aucun
+déréférencement — et la conversion se fait à la sortie seulement. Le décodage est
+inchangé : `null` donne la valeur zéro, comme toujours.
+
+## L'alias porte son client
+
+Un `paymentMethodToken` — un *alias*, dans le vocabulaire de PayZen — appartient à un
+**client**, jamais à une commande. Cette relation a une conséquence que Paysim reproduit
+désormais :
+
+> Lors d'un paiement par alias, les attributs `customer.reference`, `customer.email` et
+> `customer.billingDetails` transmis dans la requête sont **ignorés**, et les valeurs
+> associées à l'alias sont utilisées.
+
+```
+Enrôlement    : token T, customer.reference = "client-A"
+Débit par T   : customer.reference = "client-B"   ← erreur côté marchand
+
+PayZen répond : "client-A"    (l'alias gagne, le bug reste invisible)
+Paysim répond : "client-A"    (idem — depuis la v0.5.4)
+```
+
+Avant la v0.5.4, Paysim restituait ce que contenait la requête. Il était donc *plus
+logique* que le vrai — et par là trompeur : une référence client erronée passait la
+validation contre Paysim, puis dérivait silencieusement en production. Reproduire le
+protocole tel qu'il est, défauts compris, c'est l'invariant 3.
+
+**`shippingDetails` et `extraDetails` ne sont pas écrasés.** Une adresse de livraison
+appartient à la commande — on livre à des endroits différents avec la même carte — et le
+contexte navigateur à la session. PayZen ne prétend pas les remplacer non plus.
+
+Les alias enrôlés avant la v0.5.4 ne portent aucun client : le débit retombe alors sur
+celui de la requête, faute de mieux.
+
 ## Valeurs magiques (chaos)
 
 Paysim embarque deux catégories de tweaks — cf.

@@ -326,6 +326,10 @@ func recordToPayzenSub(rec *store.SubscriptionRecord) *Subscription {
 // les informations 3DS d'enrôlement peuvent enrichir ProviderDataJSON quand
 // on modélisera l'authentification initiale.
 func payzenMethodToRecord(m *PaymentMethod) *store.PaymentMethodRecord {
+	// Customer n'est fait que de chaînes : json.Marshal ne peut pas
+	// échouer dessus. On ignore l'erreur plutôt que de teinter la
+	// signature d'un cas qui ne se produit pas.
+	custJSON, _ := json.Marshal(m.Customer)
 	return &store.PaymentMethodRecord{
 		Token:            m.Token,
 		Provider:         providerName,
@@ -339,6 +343,7 @@ func payzenMethodToRecord(m *PaymentMethod) *store.PaymentMethodRecord {
 		ExpiryMonth:      m.ExpiryMonth,
 		ExpiryYear:       m.ExpiryYear,
 		Revoked:          m.Revoked,
+		CustomerJSON:     string(custJSON),
 		MetadataJSON:     "{}",
 		ProviderDataJSON: "{}",
 		CreatedAt:        m.CreatedAt,
@@ -347,6 +352,14 @@ func payzenMethodToRecord(m *PaymentMethod) *store.PaymentMethodRecord {
 
 // recordToPayzenMethod désérialise.
 func recordToPayzenMethod(rec *store.PaymentMethodRecord) *PaymentMethod {
+	// Les alias enrôlés avant l'ajout de la colonne n'ont pas de client :
+	// on laisse la struct à zéro et le rejeu retombe sur celui de la
+	// requête. Un JSON corrompu produit le même résultat — dégrader vaut
+	// mieux qu'échouer une lecture pour un champ d'affichage.
+	var customer Customer
+	if rec.CustomerJSON != "" {
+		_ = json.Unmarshal([]byte(rec.CustomerJSON), &customer)
+	}
 	return &PaymentMethod{
 		Token:           rec.Token,
 		PANFull:         rec.PANFull,
@@ -360,6 +373,7 @@ func recordToPayzenMethod(rec *store.PaymentMethodRecord) *PaymentMethod {
 		ExpiryYear:      rec.ExpiryYear,
 		CreatedAt:       rec.CreatedAt,
 		Revoked:         rec.Revoked,
+		Customer:        customer,
 	}
 }
 

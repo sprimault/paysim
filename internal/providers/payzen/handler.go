@@ -409,7 +409,7 @@ func (h *Handler) enrollCard(tx *Transaction, card *Card) (*PaymentMethod, error
 	if err != nil {
 		return nil, fmt.Errorf("generation payment method token: %w", err)
 	}
-	pm := NewPaymentMethod(token, *card, h.clock().Now())
+	pm := NewPaymentMethod(token, *card, tx.Customer, h.clock().Now())
 	if err := h.store.SaveMethod(pm); err != nil {
 		return nil, fmt.Errorf("store SaveMethod: %w", err)
 	}
@@ -424,6 +424,39 @@ func (h *Handler) enrollCard(tx *Transaction, card *Card) (*PaymentMethod, error
 // paiement, vérifie ses conditions d'usage, applique l'outcome décidé
 // et émet le webhook si une NotificationURL est fournie. Retourne la
 // Transaction résultante — son state reflète l'outcome.
+// customerFromAlias applique la règle PayZen du paiement par alias :
+// reference, email et billingDetails viennent de l'alias, pas de la
+// requête.
+//
+// L'alias appartient au client, et c'est lui qui fait autorité. Un
+// marchand qui se tromperait de référence sur un prélèvement récurrent
+// ne le verrait pas chez PayZen ; Paysim ne doit pas le lui montrer
+// davantage, sous peine de valider en test une intégration qui dérive
+// en production.
+//
+// shippingDetails et extraDetails restent ceux de la requête : une
+// adresse de livraison appartient à la commande — on livre à des
+// endroits différents avec la même carte — et le contexte navigateur à
+// la session. PayZen ne prétend pas les écraser.
+//
+// Un alias enrôlé avant que le client soit capturé n'en porte aucun :
+// on garde alors celui de la requête, faute de mieux. Le champ à champ
+// plutôt qu'un test sur la struct entière évite qu'un alias au client
+// partiel efface ce que la requête savait.
+func customerFromAlias(alias, requete Customer) Customer {
+	out := requete
+	if alias.Reference != "" {
+		out.Reference = alias.Reference
+	}
+	if alias.Email != "" {
+		out.Email = alias.Email
+	}
+	if alias.BillingDetails != (BillingDetails{}) {
+		out.BillingDetails = alias.BillingDetails
+	}
+	return out
+}
+
 func (h *Handler) createFromToken(in CreateInput) (*Transaction, error) {
 	pm, err := h.store.MethodByToken(in.PaymentMethodToken)
 	if err != nil {
@@ -453,7 +486,7 @@ func (h *Handler) createFromToken(in CreateInput) (*Transaction, error) {
 		Amount:             in.Amount,
 		Currency:           in.Currency,
 		FormAction:         in.FormAction,
-		Customer:           in.Customer,
+		Customer:           customerFromAlias(pm.Customer, in.Customer),
 		Metadata:           in.Metadata,
 		Payment:            payment,
 		NotificationURL:    in.NotificationURL,

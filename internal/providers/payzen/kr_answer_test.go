@@ -272,7 +272,7 @@ func TestBuildKrAnswerCardDetailsFromPaymentMethod(t *testing.T) {
 		ExpiryYear:  2029,
 		Brand:       "VISA",
 		HolderName:  "DUPONT JEAN",
-	}, time.Now().UTC())
+	}, Customer{}, time.Now().UTC())
 
 	answer := buildKrAnswer(tx, pm, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
 
@@ -328,7 +328,7 @@ func TestBuildKrAnswerBrandFromPaymentMethodOverridesDefault(t *testing.T) {
 		ExpiryMonth: 1,
 		ExpiryYear:  2030,
 		Brand:       "MASTERCARD",
-	}, time.Now().UTC())
+	}, Customer{}, time.Now().UTC())
 
 	answer := buildKrAnswer(tx, pm, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
 

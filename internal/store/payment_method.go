@@ -51,6 +51,14 @@ type PaymentMethodRecord struct {
 	// laisse simplement l'état true.
 	Revoked bool
 
+	// CustomerJSON : le client auquel l'alias appartient, capturé à
+	// l'enrôlement et sérialisé tel quel.
+	//
+	// C'est lui qui fait autorité au rejeu : un PSP ignore la référence
+	// client transmise dans la requête et restitue celle de l'alias.
+	// Vide sur les entrées créées avant l'ajout de cette colonne.
+	CustomerJSON string
+
 	// MetadataJSON : map[string]string libre du marchand.
 	MetadataJSON string
 

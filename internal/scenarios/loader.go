@@ -42,6 +42,7 @@ const (
 	ActionAssertSubscription = "assert_subscription"
 	ActionCancelSubscription = "cancel_subscription"
 	ActionAssertPaymentMethod = "assert_payment_method"
+	ActionAssertCustomer      = "assert_customer"
 )
 
 // Scenario est un scénario complet chargé depuis un fichier YAML. Une fois
@@ -114,6 +115,10 @@ type Step struct {
 	// AssertPaymentMethod vérifie ce qui a réellement été enregistré à
 	// l'enrôlement — marque, porteur, émetteur, exploitabilité.
 	AssertPaymentMethod *AssertPaymentMethod
+
+	// AssertCustomer vérifie le contexte marchand restitué par le
+	// paiement courant.
+	AssertCustomer *AssertCustomer
 }
 
 // CreatePayment demande à Paysim de créer un paiement via un provider.
@@ -291,6 +296,12 @@ type ChargeToken struct {
 	// NotificationURL cible l'IPN. Absente, le serveur retombe sur sa
 	// configuration globale — un rejeu notifie toujours.
 	NotificationURL string `yaml:"notification_url,omitempty"`
+
+	// Customer permet d'envoyer un contexte client sur le rejeu. Chez
+	// un vrai PSP, reference, email et billingDetails y sont ignorés au
+	// profit de ceux de l'alias : le renseigner sert justement à
+	// vérifier que Paysim fait de même.
+	Customer *Customer `yaml:"customer,omitempty"`
 }
 
 // CreateSubscription crée un abonnement PSP-driven — Paysim retient la
@@ -390,6 +401,25 @@ type AssertPaymentMethod struct {
 	// UnusableReason est le motif attendu quand le moyen ne l'est pas
 	// ("moyen de paiement revoque", "carte de test refusee"…).
 	UnusableReason string `yaml:"unusable_reason,omitempty"`
+}
+
+// AssertCustomer vérifie le contexte marchand tel que le paiement
+// courant le restitue. Réutilise la struct Customer des scénarios : les
+// champs renseignés sont comparés, les autres ignorés.
+//
+// Deux usages, tous deux nés de défauts trouvés en intégration :
+// contrôler qu'un champ envoyé revient intact — reference, livraison,
+// contexte navigateur ont chacun disparu en silence à un moment — et
+// contrôler qu'un rejeu par alias restitue le client de l'alias, pas
+// celui de la requête.
+type AssertCustomer struct {
+	// UUID désigne le paiement à vérifier. Vide, le runner reprend le
+	// dernier créé.
+	UUID string `yaml:"uuid,omitempty"`
+
+	// Expect porte les valeurs attendues, dans la même forme que le
+	// bloc customer d'un create_payment.
+	Expect Customer `yaml:"expect"`
 }
 
 // CancelSubscription annule un abonnement. Idempotent côté serveur.
@@ -541,6 +571,9 @@ func (s *Step) UnmarshalYAML(node *yaml.Node) error {
 	case ActionAssertPaymentMethod:
 		s.AssertPaymentMethod = &AssertPaymentMethod{}
 		return node.Decode(s.AssertPaymentMethod)
+	case ActionAssertCustomer:
+		s.AssertCustomer = &AssertCustomer{}
+		return node.Decode(s.AssertCustomer)
 	default:
 		return fmt.Errorf("action inconnue: %q", head.Action)
 	}

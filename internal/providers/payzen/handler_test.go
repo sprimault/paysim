@@ -1280,7 +1280,7 @@ func TestReplayFallbackDefaultCallbackURL(t *testing.T) {
 
 	pm := NewPaymentMethod("tok-replay", Card{
 		PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030, Brand: "VISA",
-	}, time.Now().UTC())
+	}, Customer{}, time.Now().UTC())
 	if err := store.SaveMethod(pm); err != nil {
 		t.Fatal(err)
 	}
@@ -1313,7 +1313,7 @@ func TestTriggerBillingNotifie(t *testing.T) {
 
 	pm := NewPaymentMethod("tok-sub", Card{
 		PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030, Brand: "VISA",
-	}, time.Now().UTC())
+	}, Customer{}, time.Now().UTC())
 	if err := store.SaveMethod(pm); err != nil {
 		t.Fatal(err)
 	}
@@ -1466,5 +1466,125 @@ func TestCustomerReferenceRemonteDansKrAnswer(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("aucune livraison au marchand")
+	}
+}
+
+// L'alias doit porter le client de l'enrôlement : c'est le préalable à
+// tout le reste, puisque c'est lui qui fera autorité au rejeu.
+func TestEnrolementCaptureLeClient(t *testing.T) {
+	t.Parallel()
+	cfg := HandlerConfig{HMACKey: "k"}
+	_, store, queue := newTestServerFull(t, cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+
+	tx, err := h.Create(CreateInput{
+		Amount: 0, Currency: "EUR", OrderID: "ENROL", FormAction: "REGISTER",
+		Customer: Customer{
+			Reference: "client-A", Email: "a@example.com",
+			BillingDetails: BillingDetails{LastName: "MARTIN", Country: "FR"},
+		},
+		Card: &Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pm, err := store.MethodByToken(tx.PaymentMethodToken)
+	if err != nil || pm == nil {
+		t.Fatalf("moyen introuvable : %v", err)
+	}
+	if pm.Customer.Reference != "client-A" || pm.Customer.Email != "a@example.com" {
+		t.Errorf("client de l'alias = %+v, veut client-A/a@example.com", pm.Customer)
+	}
+	if pm.Customer.BillingDetails.LastName != "MARTIN" {
+		t.Errorf("billingDetails non capture : %+v", pm.Customer.BillingDetails)
+	}
+}
+
+// Le comportement que corrige ce changement : au rejeu, un customer
+// divergent est ignoré au profit de celui de l'alias. Un marchand qui se
+// trompe de référence ne le verrait pas chez PayZen ; Paysim ne doit pas
+// le lui montrer davantage, sous peine de valider en test une
+// intégration qui dérive en production.
+func TestRejeuIgnoreLeClientDeLaRequete(t *testing.T) {
+	t.Parallel()
+	cfg := HandlerConfig{HMACKey: "k"}
+	_, store, queue := newTestServerFull(t, cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+
+	enrol, err := h.Create(CreateInput{
+		Amount: 0, Currency: "EUR", OrderID: "ENROL", FormAction: "REGISTER",
+		Customer: Customer{
+			Reference: "client-A", Email: "a@example.com",
+			BillingDetails: BillingDetails{LastName: "MARTIN"},
+		},
+		Card: &Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Rejeu avec un tout autre client, et une livraison propre à cette
+	// commande.
+	rejeu, err := h.Create(CreateInput{
+		Amount: 1990, Currency: "EUR", OrderID: "REPLAY",
+		PaymentMethodToken: enrol.PaymentMethodToken,
+		Customer: Customer{
+			Reference: "client-B", Email: "b@example.com",
+			BillingDetails:  BillingDetails{LastName: "DURAND"},
+			ShippingDetails: ShippingDetails{City: "Lyon", ShippingMethod: "RELAY_POINT"},
+			ExtraDetails:    ExtraDetails{IPAddress: "203.0.113.9"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// L'alias fait foi sur l'identité.
+	if rejeu.Customer.Reference != "client-A" {
+		t.Errorf("reference = %q, veut client-A (celle de l'alias)", rejeu.Customer.Reference)
+	}
+	if rejeu.Customer.Email != "a@example.com" {
+		t.Errorf("email = %q, veut celui de l'alias", rejeu.Customer.Email)
+	}
+	if rejeu.Customer.BillingDetails.LastName != "MARTIN" {
+		t.Errorf("billingDetails = %+v, veut celui de l'alias", rejeu.Customer.BillingDetails)
+	}
+
+	// Mais la livraison et le contexte navigateur appartiennent à cette
+	// commande-ci : PayZen ne prétend pas les écraser.
+	if rejeu.Customer.ShippingDetails.City != "Lyon" {
+		t.Errorf("shippingDetails ecrase a tort : %+v", rejeu.Customer.ShippingDetails)
+	}
+	if rejeu.Customer.ExtraDetails.IPAddress != "203.0.113.9" {
+		t.Errorf("extraDetails ecrase a tort : %+v", rejeu.Customer.ExtraDetails)
+	}
+}
+
+// Un alias enrôlé avant que le client soit capturé n'en porte aucun : le
+// rejeu retombe alors sur celui de la requête, faute de mieux.
+func TestRejeuSurAliasSansClientGardeLaRequete(t *testing.T) {
+	t.Parallel()
+	cfg := HandlerConfig{HMACKey: "k"}
+	_, store, queue := newTestServerFull(t, cfg)
+
+	pm := NewPaymentMethod("tok-ancien", Card{
+		PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030,
+	}, Customer{}, time.Now().UTC())
+	if err := store.SaveMethod(pm); err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	tx, err := h.Create(CreateInput{
+		Amount: 1000, Currency: "EUR", OrderID: "REPLAY-OLD",
+		PaymentMethodToken: "tok-ancien",
+		Customer:           Customer{Reference: "client-B"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tx.Customer.Reference != "client-B" {
+		t.Errorf("reference = %q, veut client-B (l'alias n'en porte pas)", tx.Customer.Reference)
 	}
 }
