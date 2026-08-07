@@ -187,6 +187,8 @@ func (r *Runner) exec(ctx context.Context, st *state, step Step) error {
 		return r.doCancelSubscription(ctx, st, step.CancelSubscription)
 	case ActionAssertPaymentMethod:
 		return r.doAssertPaymentMethod(ctx, st, step.AssertPaymentMethod)
+	case ActionAssertCustomer:
+		return r.doAssertCustomer(ctx, st, step.AssertCustomer)
 	default:
 		return fmt.Errorf("action inconnue: %q", step.Action)
 	}
@@ -225,8 +227,7 @@ func (r *Runner) doChargeToken(ctx context.Context, st *state, in *ChargeToken) 
 	if provider == "" {
 		provider = "payzen"
 	}
-	got, err := r.client.ChargeToken(ctx, provider, token,
-		in.Amount, in.Currency, in.OrderID, in.NotificationURL)
+	got, err := r.client.ChargeToken(ctx, provider, token, in)
 	if err != nil {
 		return err
 	}
@@ -509,6 +510,77 @@ func (r *Runner) doAssertPaymentMethod(ctx context.Context, st *state, in *Asser
 	champ("unusable_reason", in.UnusableReason, got.UnusableReason)
 	if in.Usable != nil && got.Usable != *in.Usable {
 		ecarts = append(ecarts, fmt.Sprintf("usable: obtenu %v, veut %v", got.Usable, *in.Usable))
+	}
+
+	if len(ecarts) > 0 {
+		return fmt.Errorf("%w: %s", ErrAssertion, strings.Join(ecarts, " ; "))
+	}
+	return nil
+}
+
+// doAssertCustomer vérifie le contexte marchand restitué par le
+// paiement courant.
+//
+// Les écarts sont cumulés avant d'échouer, comme pour
+// assert_payment_method : quand un bloc entier ne revient pas, les voir
+// d'un coup dit bien plus qu'une découverte champ par champ.
+func (r *Runner) doAssertCustomer(ctx context.Context, st *state, in *AssertCustomer) error {
+	uuid := in.UUID
+	if uuid == "" {
+		uuid = st.currentUUID
+	}
+	if uuid == "" {
+		return errors.New("assert_customer sans uuid : place un create_payment avant")
+	}
+	got, err := r.client.GetPayment(ctx, uuid)
+	if err != nil {
+		return err
+	}
+	obtenu := got.Customer
+	if obtenu == nil {
+		obtenu = &Customer{}
+	}
+
+	var ecarts []string
+	champ := func(nom, veut, obt string) {
+		if veut != "" && obt != veut {
+			ecarts = append(ecarts, fmt.Sprintf("%s: obtenu %q, veut %q", nom, obt, veut))
+		}
+	}
+	e := in.Expect
+	champ("email", e.Email, obtenu.Email)
+	champ("reference", e.Reference, obtenu.Reference)
+
+	if e.BillingDetails != nil {
+		b := obtenu.BillingDetails
+		if b == nil {
+			b = &BillingDetails{}
+		}
+		champ("billing_details.first_name", e.BillingDetails.FirstName, b.FirstName)
+		champ("billing_details.last_name", e.BillingDetails.LastName, b.LastName)
+		champ("billing_details.address", e.BillingDetails.Address, b.Address)
+		champ("billing_details.city", e.BillingDetails.City, b.City)
+		champ("billing_details.zip_code", e.BillingDetails.ZipCode, b.ZipCode)
+		champ("billing_details.country", e.BillingDetails.Country, b.Country)
+	}
+	if e.ShippingDetails != nil {
+		s := obtenu.ShippingDetails
+		if s == nil {
+			s = &ShippingDetails{}
+		}
+		champ("shipping_details.city", e.ShippingDetails.City, s.City)
+		champ("shipping_details.country", e.ShippingDetails.Country, s.Country)
+		champ("shipping_details.shipping_method", e.ShippingDetails.ShippingMethod, s.ShippingMethod)
+		champ("shipping_details.shipping_speed", e.ShippingDetails.ShippingSpeed, s.ShippingSpeed)
+		champ("shipping_details.legal_name", e.ShippingDetails.LegalName, s.LegalName)
+	}
+	if e.ExtraDetails != nil {
+		x := obtenu.ExtraDetails
+		if x == nil {
+			x = &ExtraDetails{}
+		}
+		champ("extra_details.ip_address", e.ExtraDetails.IPAddress, x.IPAddress)
+		champ("extra_details.finger_print_id", e.ExtraDetails.FingerPrintID, x.FingerPrintID)
 	}
 
 	if len(ecarts) > 0 {

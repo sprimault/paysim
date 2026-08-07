@@ -96,6 +96,11 @@ func (s Step) Validate() error {
 			return errors.New("payload assert_payment_method manquant")
 		}
 		return s.AssertPaymentMethod.Validate()
+	case ActionAssertCustomer:
+		if s.AssertCustomer == nil {
+			return errors.New("payload assert_customer manquant")
+		}
+		return s.AssertCustomer.Validate()
 	default:
 		return fmt.Errorf("action inconnue: %q", s.Action)
 	}
@@ -188,6 +193,18 @@ func (t *TriggerBilling) Validate() error { return nil }
 
 // Validate contrôle un AssertSubscription. Aucun champ requis.
 func (a *AssertSubscription) Validate() error { return nil }
+
+// Validate contrôle un AssertCustomer. Comme assert_payment_method, on
+// rejette l'assertion entièrement vide : elle passerait toujours et
+// donnerait l'illusion d'une vérification.
+func (a *AssertCustomer) Validate() error {
+	e := a.Expect
+	if e.Email == "" && e.Reference == "" &&
+		e.BillingDetails == nil && e.ShippingDetails == nil && e.ExtraDetails == nil {
+		return errors.New("assert_customer sans aucun champ a verifier")
+	}
+	return nil
+}
 
 // Validate contrôle un CancelSubscription. Aucun champ requis.
 func (c *CancelSubscription) Validate() error { return nil }

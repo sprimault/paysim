@@ -29,7 +29,7 @@ Codes de retour (adaptés à la CI) :
 | Code | Sens                                                              |
 | :--: | ----------------------------------------------------------------- |
 |  0   | Toutes les étapes ont passé.                                      |
-|  1   | Assertion échouée (`assert_state`, `assert_webhook`, `assert_subscription`, `assert_payment_method`). |
+|  1   | Assertion échouée (`assert_state`, `assert_webhook`, `assert_subscription`, `assert_payment_method`, `assert_customer`). |
 |  2   | Erreur d'exécution (fichier absent, YAML invalide, HTTP down, action inconnue). |
 
 Flag optionnel `--verbose` imprime chaque étape dès qu'elle finit.
@@ -62,7 +62,7 @@ Noms de champs en `snake_case` en YAML, `camelCase` sur le fil (API JSON).
 
 ## Référence des actions
 
-Douze actions qui couvrent les trois patterns de paiement.
+Treize actions qui couvrent les trois patterns de paiement.
 
 ### Paiements one-shot
 
@@ -72,6 +72,7 @@ Douze actions qui couvrent les trois patterns de paiement.
 | `simulate`       | Fait avancer le paiement via l'endpoint de simulation navigateur.       |
 | `assert_state`   | Assert que le paiement courant est dans l'état demandé.                 |
 | `assert_webhook` | Compte les webhooks livrés depuis le début du scénario (`status`, `outcome`, `timeout` optionnels).|
+| `assert_customer` | Vérifie le contexte marchand restitué par le paiement courant, sous `expect` — même forme que `customer` sur `create_payment`. `uuid` optionnel (défaut : dernier paiement). Seuls les champs renseignés sont comparés. |
 
 ### Récurrence par token
 

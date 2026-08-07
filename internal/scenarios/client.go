@@ -115,15 +115,15 @@ func (c *Client) CreatePayment(ctx context.Context, in *CreatePayment) (*Created
 func (c *Client) ChargeToken(
 	ctx context.Context,
 	provider, token string,
-	amount int64,
-	currency, orderID, notificationURL string,
+	in *ChargeToken,
 ) (*CreatedPayment, error) {
 	body := createPaymentReq{
 		Provider:           provider,
-		Amount:             amount,
-		Currency:           currency,
-		OrderID:            orderID,
-		NotificationURL:    notificationURL,
+		Amount:             in.Amount,
+		Currency:           in.Currency,
+		OrderID:            in.OrderID,
+		Customer:           in.Customer,
+		NotificationURL:    in.NotificationURL,
 		PaymentMethodToken: token,
 	}
 	var out CreatedPayment
@@ -310,6 +310,11 @@ type PaymentDetail struct {
 	// évolutions de l'API qui ne le concernent pas.
 	UUID  string `json:"uuid"`
 	State string `json:"state"`
+
+	// Customer est le contexte marchand restitué. Même forme que celui
+	// envoyé, ce qui permet à assert_customer de comparer les deux sans
+	// traduction.
+	Customer *Customer `json:"customer,omitempty"`
 }
 
 // GetPayment appelle GET /paysim/api/v1/payments/{uuid}.

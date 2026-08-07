@@ -513,3 +513,52 @@ steps:
 		t.Errorf("extra_details = %+v", c.ExtraDetails)
 	}
 }
+
+// assert_customer se décode avec la même forme que le bloc customer
+// d'un create_payment — c'est ce qui permet d'écrire l'attendu comme on
+// a écrit l'envoyé.
+func TestLoad_assertCustomer(t *testing.T) {
+	t.Parallel()
+	src := `
+name: ctx
+steps:
+  - action: assert_customer
+    expect:
+      reference: client-A
+      billing_details:
+        last_name: MARTIN
+      shipping_details:
+        city: Lyon
+`
+	s, err := Load(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	a := s.Steps[0].AssertCustomer
+	if a == nil {
+		t.Fatal("AssertCustomer nil apres decodage")
+	}
+	if a.Expect.Reference != "client-A" {
+		t.Errorf("reference = %q", a.Expect.Reference)
+	}
+	if a.Expect.BillingDetails == nil || a.Expect.BillingDetails.LastName != "MARTIN" {
+		t.Errorf("billing_details = %+v", a.Expect.BillingDetails)
+	}
+	if a.Expect.ShippingDetails == nil || a.Expect.ShippingDetails.City != "Lyon" {
+		t.Errorf("shipping_details = %+v", a.Expect.ShippingDetails)
+	}
+}
+
+// Une assertion sans aucun champ passerait toujours.
+func TestLoad_assertCustomerVideRejetee(t *testing.T) {
+	t.Parallel()
+	src := `
+name: vide
+steps:
+  - action: assert_customer
+    expect: {}
+`
+	if _, err := Load(strings.NewReader(src)); err == nil {
+		t.Fatal("Load a accepte une assertion sans aucun champ")
+	}
+}
