@@ -208,6 +208,18 @@ type Customer struct {
 	// même vide : c'est une struct, et omitempty n'a aucun effet
 	// dessus en Go.
 	BillingDetails BillingDetails `json:"billingDetails,omitempty"`
+
+	// ShippingDetails porte l'adresse de livraison, ExtraDetails le
+	// contexte navigateur exploité par l'antifraude. Comme
+	// BillingDetails, ce sont des structs : toujours sérialisées, même
+	// vides.
+	//
+	// Ces deux blocs existent chez PayZen depuis toujours. Paysim ne
+	// les modélisait pas, donc un marchand qui les envoyait les voyait
+	// disparaître au décodage, sans erreur ni trace — le même défaut
+	// silencieux que customer.reference avant la v0.4.10.
+	ShippingDetails ShippingDetails `json:"shippingDetails,omitempty"`
+	ExtraDetails    ExtraDetails    `json:"extraDetails,omitempty"`
 }
 
 // BillingDetails represente l'adresse de facturation. Aucun champ
@@ -230,6 +242,78 @@ type BillingDetails struct {
 	City    string `json:"city,omitempty"`
 	ZipCode string `json:"zipCode,omitempty"`
 	Country string `json:"country,omitempty"`
+}
+
+// ShippingDetails represente l'adresse de livraison. Aucun champ n'est
+// obligatoire — le simulateur les propage tels quels.
+//
+// Category, ShippingSpeed et ShippingMethod sont des énumérations chez
+// PayZen. Elles restent des chaînes libres ici, sans validation : un
+// simulateur qui refuserait une valeur que le vrai accepte serait un
+// piège, et Paysim ne les interprète jamais. Même arbitrage que le PAN,
+// accepté sans contrôle de Luhn.
+type ShippingDetails struct {
+	// Category distingue un particulier d'une entreprise : PRIVATE ou
+	// COMPANY. LegalName et IdentityCode ne valent que pour la seconde.
+	Category  string `json:"category,omitempty"`
+	LegalName string `json:"legalName,omitempty"`
+
+	// IdentityCode est le numéro d'identification légale du
+	// destinataire (SIRET et équivalents).
+	IdentityCode string `json:"identityCode,omitempty"`
+
+	// Identité et contact du destinataire. Distincts de ceux de
+	// BillingDetails : on livre couramment à quelqu'un d'autre que le
+	// payeur.
+	FirstName   string `json:"firstName,omitempty"`
+	LastName    string `json:"lastName,omitempty"`
+	PhoneNumber string `json:"phoneNumber,omitempty"`
+
+	// Adresse postale. PayZen la découpe plus finement que l'adresse de
+	// facturation — numéro, complément et arrondissement séparés — parce
+	// que les règles antifraude comparent ces éléments un à un.
+	// Country en ISO 3166-1 alpha-2.
+	StreetNumber string `json:"streetNumber,omitempty"`
+	Address      string `json:"address,omitempty"`
+	Address2     string `json:"address2,omitempty"`
+	District     string `json:"district,omitempty"`
+	ZipCode      string `json:"zipCode,omitempty"`
+	City         string `json:"city,omitempty"`
+	State        string `json:"state,omitempty"`
+	Country      string `json:"country,omitempty"`
+
+	// DeliveryCompanyName nomme le transporteur.
+	DeliveryCompanyName string `json:"deliveryCompanyName,omitempty"`
+
+	// ShippingSpeed vaut STANDARD, EXPRESS ou PRIORITY.
+	ShippingSpeed string `json:"shippingSpeed,omitempty"`
+
+	// ShippingMethod décrit le mode de remise : RELAY_POINT,
+	// PACKAGE_DELIVERY_COMPANY, DIGITAL_GOOD, ETICKET, PICKUP_POINT,
+	// RECLAIM_IN_SHOP… La liste PayZen en compte une quinzaine, et
+	// elle bouge — raison de plus pour ne pas la figer ici.
+	ShippingMethod string `json:"shippingMethod,omitempty"`
+}
+
+// ExtraDetails porte le contexte navigateur de l'acheteur. PayZen le
+// transmet à ses règles antifraude et à l'authentification 3DS ; Paysim
+// le conserve et le restitue sans l'employer.
+//
+// C'est le bloc à renseigner pour rejouer un scénario de refus pour
+// risque : sans lui, rien ne distingue deux tentatives.
+type ExtraDetails struct {
+	// IPAddress est l'adresse de l'acheteur, FingerPrintID l'empreinte
+	// calculée par le script de collecte de PayZen.
+	//
+	// Le nom du champ JSON est bien "ipAddress" — vocabulaire du
+	// protocole, recopié tel quel.
+	IPAddress     string `json:"ipAddress,omitempty"`
+	FingerPrintID string `json:"fingerPrintId,omitempty"`
+
+	// BrowserUserAgent et BrowserAccept reprennent les en-têtes HTTP du
+	// navigateur, que 3DS2 exige dans la demande d'authentification.
+	BrowserUserAgent string `json:"browserUserAgent,omitempty"`
+	BrowserAccept    string `json:"browserAccept,omitempty"`
 }
 
 // Transaction est le contexte complet d'un paiement PayZen simule.
