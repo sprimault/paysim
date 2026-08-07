@@ -109,5 +109,7 @@ gênant, la réponse est de sortir l'état dans `internal/store`, pas d'ajouter 
 - `docs/states.md` — la machine à états du paiement.
 - `docs/install.md` — installation et configuration, tous modes de déploiement.
 - `.claude/rules/preferences.md` — posture, langue, style de code. Chargé à chaque session.
+- `.claude/rules/git.md` — cycle de livraison : vérifier avant de publier, choisir une
+  version corrective, quand une release se justifie. Chargé à chaque session.
 - `.claude/rules/{go,providers,web}.md` — conventions techniques, chargées automatiquement
   quand Claude touche les fichiers concernés.
