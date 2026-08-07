@@ -716,8 +716,15 @@ func (h *Handler) listSubscriptions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "erreur de lecture", http.StatusInternalServerError)
 		return
 	}
+	// Même filtre que sur les paiements : « quels abonnements prélèvent
+	// ce moyen ». Un alias révoqué dont il reste un abonnement actif est
+	// précisément ce qu'on veut voir d'un coup d'œil.
+	token := r.URL.Query().Get("paymentMethodToken")
 	out := make([]SubscriptionOutput, 0, len(subs))
 	for _, s := range subs {
+		if token != "" && s.PaymentMethodToken != token {
+			continue
+		}
 		out = append(out, subscriptionToOutput(s, "payzen"))
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -994,15 +1001,30 @@ func isDomainErr(err error) bool {
 		errors.Is(err, domain.ErrInvalidPayment)
 }
 
-func (h *Handler) listPayments(w http.ResponseWriter, _ *http.Request) {
+// listPayments traite GET /paysim/api/v1/payments.
+//
+// Filtre optionnel ?paymentMethodToken= : retourne les paiements liés à
+// un moyen enregistré — celui qui l'a enrôlé comme ceux qui l'ont
+// débité. C'est la lecture inverse de PaymentSummary.PaymentMethodToken,
+// celle qui répond à « qu'a-t-on fait avec cet alias ».
+//
+// Filtrage en mémoire plutôt qu'en base : le plafond de rétention borne
+// déjà le nombre de transactions, et un index par token n'existe pas
+// dans le contrat de store. Le jour où ça pèse, c'est le store qu'on
+// étend, pas ce handler.
+func (h *Handler) listPayments(w http.ResponseWriter, r *http.Request) {
 	txs, err := h.store.AllTransactions()
 	if err != nil {
 		h.logger.Error("api_store_failure", "op", "AllTransactions", "err", err)
 		http.Error(w, "store failure", http.StatusInternalServerError)
 		return
 	}
+	token := r.URL.Query().Get("paymentMethodToken")
 	out := make([]PaymentSummary, 0, len(txs))
 	for _, tx := range txs {
+		if token != "" && tx.PaymentMethodToken != token {
+			continue
+		}
 		out = append(out, toPaymentSummary(tx))
 	}
 	writeJSON(w, http.StatusOK, out)

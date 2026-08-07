@@ -1889,6 +1889,88 @@ func TestCreatePaymentPropageCustomerCompletSQLite(t *testing.T) {
 	}
 }
 
+// Le filtre par token répond à « qu'a-t-on fait avec cet alias » : c'est
+// la lecture inverse de PaymentSummary.PaymentMethodToken, celle dont la
+// fiche d'un moyen a besoin.
+func TestListPaymentsFiltreParToken(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	enrol, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "ENROL",
+		FormAction: "REGISTER",
+		Card:       &payzen.Card{PAN: "5555555555554444", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	r1, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(enrol))
+	var enrolled CreatePaymentOutput
+	_ = json.NewDecoder(r1.Body).Decode(&enrolled)
+	_ = r1.Body.Close()
+	token := enrolled.PaymentMethodToken
+
+	// Un rejeu sur ce moyen, et un paiement sans rapport.
+	replay, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 1990, Currency: "EUR", OrderID: "REPLAY",
+		PaymentMethodToken: token,
+	})
+	r2, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(replay))
+	_ = r2.Body.Close()
+
+	autre, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 500, Currency: "EUR", OrderID: "SANS-LIEN",
+	})
+	r3, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(autre))
+	_ = r3.Body.Close()
+
+	resp, err := http.Get(server.URL + "/paysim/api/v1/payments?paymentMethodToken=" + token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var filtres []PaymentSummary
+	if err := json.NewDecoder(resp.Body).Decode(&filtres); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(filtres) != 2 {
+		t.Fatalf("%d paiements, veut 2 (enrolement + rejeu)", len(filtres))
+	}
+	for _, p := range filtres {
+		if p.PaymentMethodToken != token {
+			t.Errorf("%s : token = %q, veut %q", p.OrderID, p.PaymentMethodToken, token)
+		}
+		if p.OrderID == "SANS-LIEN" {
+			t.Error("un paiement sans rapport a franchi le filtre")
+		}
+	}
+}
+
+// Sans filtre, tout ressort : le paramètre est optionnel, il ne doit pas
+// changer le comportement par défaut.
+func TestListPaymentsSansFiltreRetourneTout(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	for _, ord := range []string{"A", "B"} {
+		body, _ := json.Marshal(CreatePaymentInput{
+			Provider: "payzen", Amount: 100, Currency: "EUR", OrderID: ord,
+		})
+		r, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+			"application/json", bytes.NewReader(body))
+		_ = r.Body.Close()
+	}
+
+	resp, _ := http.Get(server.URL + "/paysim/api/v1/payments")
+	defer func() { _ = resp.Body.Close() }()
+	var tous []PaymentSummary
+	_ = json.NewDecoder(resp.Body).Decode(&tous)
+	if len(tous) != 2 {
+		t.Errorf("%d paiements, veut 2", len(tous))
+	}
+}
+
 // Le token doit accompagner le paiement dès la liste : c'est lui qui
 // alimente la colonne et le lien vers la fiche du moyen.
 func TestPaymentSummaryPorteLeToken(t *testing.T) {
