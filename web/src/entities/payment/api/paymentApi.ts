@@ -21,6 +21,21 @@ export function fetchPayments(signal?: AbortSignal): Promise<PaymentSummary[]> {
   return apiGetJson<PaymentSummary[]>(BASE, signal);
 }
 
+/**
+ * Paiements liés à un moyen enregistré : celui qui l'a enrôlé comme ceux
+ * qui l'ont débité. Alimente le bloc « Utilisations » de la fiche du
+ * moyen — la lecture inverse de PaymentSummary.paymentMethodToken.
+ */
+export function fetchPaymentsByToken(
+  token: string,
+  signal?: AbortSignal,
+): Promise<PaymentSummary[]> {
+  return apiGetJson<PaymentSummary[]>(
+    `${BASE}?paymentMethodToken=${encodeURIComponent(token)}`,
+    signal,
+  );
+}
+
 export function fetchPayment(uuid: string, signal?: AbortSignal): Promise<PaymentDetail> {
   return apiGetJson<PaymentDetail>(`${BASE}/${encodeURIComponent(uuid)}`, signal);
 }
