@@ -14,6 +14,7 @@
  *   DTOs — le front n'a rien à en faire.
  */
 
+import type { Customer } from './payzen';
 import type {
   PaymentSummary as PaymentSummaryRaw,
   EventEntry as EventEntryRaw,
@@ -44,7 +45,22 @@ export type EventEntry = Omit<EventEntryRaw, 'kind'> & {
 
 export type PaymentDetail = PaymentSummary & {
   events: EventEntry[];
+
+  // Contexte marchand, restitué tel quel par le serveur. Optionnels :
+  // un paiement peut être créé sans client ni metadata.
+  customer?: Customer;
+  metadata?: Record<string, string>;
 };
+
+// Types du contexte client, générés depuis le paquet payzen. Réexportés
+// ici pour que les composants n'aient qu'un seul point d'entrée au
+// modèle, comme pour le reste des DTOs.
+export type {
+  Customer,
+  BillingDetails,
+  ShippingDetails,
+  ExtraDetails,
+} from './payzen';
 
 export type WebhookEntry = Omit<WebhookEntryRaw, 'status'> & {
   status: WebhookStatus;

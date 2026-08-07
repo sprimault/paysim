@@ -5,6 +5,8 @@
 // Types générés depuis internal/api via `make web-types` (tygo).
 // Ne pas modifier à la main.
 
+import type { Customer } from './payzen';
+
 //////////
 // source: api.go
 /*
@@ -117,6 +119,16 @@ export interface PaymentSummary {
    */
   createdAt: string /* RFC 3339 */;
   updatedAt: string /* RFC 3339 */;
+  /**
+   * PaymentMethodToken relie le paiement au moyen enregistré : celui
+   * qu'il a enrôlé, ou celui qu'il a débité en rejeu. C'est la
+   * relation que PayZen porte sur la transaction, et la seule qui
+   * existe — un alias n'appartient jamais à une commande.
+   * Vide sur un paiement one-shot sans enrôlement. Présent ici et non
+   * sur le seul détail : la liste l'affiche en colonne, et c'est de là
+   * qu'on ouvre la fiche du moyen.
+   */
+  paymentMethodToken?: string;
 }
 /**
  * PaymentDetail ajoute le journal d'événements.
@@ -130,6 +142,16 @@ export interface PaymentDetail {
    * quand l'état ne change pas.
    */
   events: EventEntry[];
+  /**
+   * Customer et Metadata sont le contexte marchand, restitué tel quel.
+   * Paysim ne les interprète jamais, mais il faut pouvoir les relire :
+   * jusqu'ici ils n'étaient visibles qu'en décodant le kr-answer brut,
+   * ce qui rendait invisible tout champ perdu en chemin — le défaut
+   * même qu'on a corrigé deux fois, sur customer.reference puis sur
+   * les blocs shipping et extra.
+   */
+  customer?: Customer;
+  metadata?: { [key: string]: string};
 }
 /**
  * EventEntry est une entrée du journal d'événements du domaine.
@@ -231,7 +253,7 @@ export interface CreatePaymentInput {
    * et désigne l'enrôlement pur : on enregistre une carte sans rien
    * débiter.
    */
-  amount: any /* format.Amount */;
+  amount: number;
   /**
    * Currency en ISO 4217, OrderID libre côté marchand.
    */
@@ -248,7 +270,7 @@ export interface CreatePaymentInput {
    * Metadata est le canal prévu pour rattacher un paiement à un objet
    * métier sans dépendre de l'orderId.
    */
-  customer?: any /* payzen.Customer */;
+  customer?: Customer;
   metadata?: { [key: string]: string};
   /**
    * NotificationURL est la cible de l'IPN. Absente, le serveur
@@ -419,7 +441,7 @@ export interface CreateSubscriptionInput {
    * Amount est le montant d'une échéance en centimes, Currency sa
    * devise ISO 4217.
    */
-  amount: any /* format.Amount */;
+  amount: number;
   currency: string;
   /**
    * OrderID est la référence marchand de l'abonnement.
@@ -461,7 +483,7 @@ export interface SubscriptionOutput {
   /**
    * Amount est le montant d'une échéance, en centimes entiers.
    */
-  amount: any /* format.Amount */;
+  amount: number;
   /**
    * Currency au format ISO 4217.
    */

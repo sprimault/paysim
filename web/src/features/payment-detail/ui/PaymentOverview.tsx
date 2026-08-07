@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Play, RefreshCw } from 'lucide-react';
 import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
+import { PaymentCustomer } from './PaymentCustomer';
 import { formatAmount } from '@/shared/lib/numbers';
 import { formatShort } from '@/shared/lib/dates';
 import { isTerminal } from '@/shared/model';
@@ -89,6 +90,9 @@ export function PaymentOverview({ payment }: { payment: PaymentInStore }) {
           </div>
         )}
       </Card>
+      <div className="lg:col-span-3">
+        <PaymentCustomer customer={payment.customer} metadata={payment.metadata} />
+      </div>
     </div>
   );
 }
