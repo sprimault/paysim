@@ -103,7 +103,10 @@ curl -X POST http://paysim:8080/paysim/api/v1/payments \
       "issuerName": "BANQUE DE TEST"
     }
   }'
-# → {"uuid":"...","paymentMethodToken":"..."}
+# → {"uuid":"...","paymentMethodToken":"...","brand":"VISA"}
+#   brand accompagne le token pour que le marchand enregistre le vrai
+#   réseau du premier coup, au lieu de retomber sur une valeur par
+#   défaut jusqu'au paiement récurrent suivant.
 
 # Premier paiement : refusé aussi — le PAN magique est vérifié au
 # simulate, pas seulement sur les rejeux récurrents

@@ -1686,3 +1686,95 @@ func TestReset_baseVideNEchouePas(t *testing.T) {
 		}
 	}
 }
+
+// La réponse de création doit porter la marque à côté du token : sans
+// elle, le marchand enregistre le moyen avec sa valeur par défaut, et
+// l'IPN suivant ne la corrige pas — il tombe dans la branche « déjà
+// enregistré » et n'écrit rien. La marque erronée survivrait donc
+// jusqu'au paiement récurrent suivant.
+func TestCreatePaymentRetourneLaMarqueAvecLeToken(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "BRAND-MC",
+		FormAction: "REGISTER_PAY",
+		Card:       &payzen.Card{PAN: "5555555555554444", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	resp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	defer func() { _ = resp.Body.Close() }()
+
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if out.PaymentMethodToken == "" {
+		t.Fatal("PaymentMethodToken vide, veut renseigne")
+	}
+	if out.Brand != "MASTERCARD" {
+		t.Errorf("Brand = %q, veut MASTERCARD", out.Brand)
+	}
+}
+
+// Sans enrôlement, pas de token, donc rien à qualifier : annoncer une
+// marque seule laisserait croire qu'un moyen a été enregistré.
+func TestCreatePaymentSansEnrolementNAnnoncePasDeMarque(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "NO-CARD",
+	})
+	resp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	defer func() { _ = resp.Body.Close() }()
+
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	if out.Brand != "" {
+		t.Errorf("Brand = %q, veut vide (aucun moyen enrole)", out.Brand)
+	}
+}
+
+// Sur un refus, le token est retiré de la réponse — la marque doit
+// suivre. En laisser une sans alias décrirait un moyen que la réponse
+// se refuse justement à annoncer.
+func TestCreatePaymentRefuseNAnnonceNiTokenNiMarque(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithPayzen(t, "")
+
+	// Enrôlement d'un PAN de test réservé au refus systématique.
+	enrol, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "ENROL-KO",
+		FormAction: "REGISTER_PAY",
+		Card:       &payzen.Card{PAN: "5105105105105100", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	r1, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(enrol))
+	var enrolled CreatePaymentOutput
+	_ = json.NewDecoder(r1.Body).Decode(&enrolled)
+	_ = r1.Body.Close()
+	if enrolled.PaymentMethodToken == "" {
+		t.Fatal("enrolement sans token")
+	}
+
+	// Rejeu one-click sur ce moyen : refus immédiat.
+	replay, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 2000, Currency: "EUR", OrderID: "REPLAY-KO",
+		PaymentMethodToken: enrolled.PaymentMethodToken,
+	})
+	r2, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(replay))
+	defer func() { _ = r2.Body.Close() }()
+
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(r2.Body).Decode(&out)
+	if out.State != "declined" {
+		t.Fatalf("state = %q, veut declined", out.State)
+	}
+	if out.PaymentMethodToken != "" {
+		t.Errorf("PaymentMethodToken = %q, veut vide sur un refus", out.PaymentMethodToken)
+	}
+	if out.Brand != "" {
+		t.Errorf("Brand = %q, veut vide sur un refus", out.Brand)
+	}
+}
