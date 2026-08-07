@@ -41,7 +41,9 @@ describe('<SubscriptionList />', () => {
       </MemoryRouter>,
     );
     await waitFor(() => {
-      expect(screen.getByText('Aucun abonnement')).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: 'Aucun abonnement' }),
+      ).toBeInTheDocument();
     });
   });
 
