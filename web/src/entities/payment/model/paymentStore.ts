@@ -47,11 +47,15 @@ export const usePaymentStore = create<PaymentState>((set) => ({
     set((s) => {
       const next: Record<string, PaymentInStore> = {};
       for (const p of payments) {
-        // Préserve les events déjà chargés si le paiement était déjà
-        // en cache — évite un refetch inutile de la page détail juste
-        // parce qu'on a rafraîchi la liste.
+        // Le résumé rafraîchit ce qu'il porte et ne touche pas au reste :
+        // events, customer, metadata ne viennent que du détail, et une
+        // liste rechargée ne doit pas les effacer.
+        //
+        // Nommer les champs à préserver un par un s'est révélé fragile —
+        // customer et metadata, ajoutés plus tard, disparaissaient dès
+        // que le Header rafraîchissait la liste pour ses compteurs.
         const existing = s.payments[p.uuid];
-        next[p.uuid] = existing?.events ? { ...p, events: existing.events } : p;
+        next[p.uuid] = existing ? { ...existing, ...p } : p;
       }
       return { payments: next, listLoaded: true };
     }),
@@ -61,9 +65,8 @@ export const usePaymentStore = create<PaymentState>((set) => ({
       return {
         payments: {
           ...s.payments,
-          [payment.uuid]: existing?.events
-            ? { ...payment, events: existing.events }
-            : payment,
+          // Même règle que setList : le résumé complète, il n'efface pas.
+          [payment.uuid]: existing ? { ...existing, ...payment } : payment,
         },
       };
     }),

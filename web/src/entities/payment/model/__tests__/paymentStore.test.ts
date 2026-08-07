@@ -62,3 +62,44 @@ describe('paymentStore', () => {
     expect(list.map((p) => p.uuid)).toEqual(['new', 'mid', 'old']);
   });
 });
+
+// Régression : le Header recharge la liste pour ses compteurs, sur
+// toutes les pages. Si setList écrase ce que seul le détail apporte, le
+// bloc Client se vide dès que la liste répond après le détail — ce qui
+// arrive à chaque ouverture directe d'une URL de détail.
+describe('paymentStore — le résumé ne doit pas effacer le détail', () => {
+  beforeEach(() => {
+    usePaymentStore.getState().clear();
+  });
+
+  it('setList préserve customer et metadata déjà chargés', () => {
+    usePaymentStore.getState().setDetail({
+      ...summary('a', '2026-08-01T10:00:00Z'),
+      events: [],
+      customer: { reference: 'client-4821', email: 'alice@example.com' },
+      metadata: { plan: 'pro' },
+    } as PaymentDetail);
+
+    usePaymentStore.getState().setList([summary('a', '2026-08-01T11:00:00Z')]);
+
+    const got = usePaymentStore.getState().payments.a;
+    expect(got.customer?.reference).toBe('client-4821');
+    expect(got.metadata?.plan).toBe('pro');
+    // Le résumé rafraîchit quand même ce qu'il porte.
+    expect(got.updatedAt).toBe('2026-08-01T11:00:00Z');
+  });
+
+  it('upsert préserve customer et metadata déjà chargés', () => {
+    usePaymentStore.getState().setDetail({
+      ...summary('b', '2026-08-01T10:00:00Z'),
+      events: [],
+      customer: { reference: 'client-99' },
+    } as PaymentDetail);
+
+    usePaymentStore.getState().upsert(summary('b', '2026-08-01T12:00:00Z'));
+
+    const got = usePaymentStore.getState().payments.b;
+    expect(got.customer?.reference).toBe('client-99');
+    expect(got.updatedAt).toBe('2026-08-01T12:00:00Z');
+  });
+});
