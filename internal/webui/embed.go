@@ -60,6 +60,7 @@ func Handler(basePath string) (http.Handler, error) {
 	// guillemets, caractères de contrôle, etc.) — évite un
 	// PAYSIM_BASE_PATH exotique de casser le parsing JS.
 	indexBody := strings.ReplaceAll(string(indexRaw), placeholder, strconv.Quote(basePath))
+	indexBody = absolutiseAssets(indexBody, basePath)
 
 	fileServer := http.FileServer(http.FS(sub))
 
@@ -86,6 +87,24 @@ func Handler(basePath string) (http.Handler, error) {
 		r2.URL.Path = path
 		fileServer.ServeHTTP(w, r2)
 	}), nil
+}
+
+// absolutiseAssets réécrit les références d'assets relatives de
+// index.html en chemins absolus préfixés du base path.
+//
+// Vite construit avec `base: './'`, ce qui laisse dans le HTML des
+// `src="./assets/index-XXX.js"`. C'est ce qui permet à la même image de
+// servir sous n'importe quel préfixe d'ingress sans rebuild — mais un
+// chemin relatif se résout contre l'URL courante, pas contre la racine
+// de l'application. Depuis /payments/<uuid>, le navigateur demande donc
+// /payments/assets/index-XXX.js : le fallback SPA ne s'applique pas
+// (le dernier segment contient un point), le serveur répond 404, aucun
+// script ne se charge et la page reste blanche.
+//
+// Le bug ne touchait que les routes à deux segments — toutes les vues
+// de détail — car à un seul segment `./` désigne déjà la racine.
+func absolutiseAssets(body, basePath string) string {
+	return strings.ReplaceAll(body, `"./`, `"`+basePath+`/`)
 }
 
 func serveIndex(w http.ResponseWriter, body string) {
