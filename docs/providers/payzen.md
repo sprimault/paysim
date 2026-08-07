@@ -360,6 +360,33 @@ Values accepted in `browserReturn` / `ipn` `outcome` field:
 | `EXPIRED`    | `Expire()` — timeout                         | `UNPAID`       | `EXPIRED`              |
 | `ABANDONED`  | Mapped to `Expire()` (no domain state)       | `UNPAID`       | `ABANDONED`            |
 
+### Empty customer fields serialise to `null`
+
+PayZen exposes the customer blocks **in full**, fields included, valued at `null` when
+empty — not as an empty object:
+
+```json
+"customer": {
+  "email": null,
+  "reference": null,
+  "billingDetails": { "address": null, "firstName": null, "city": null, … },
+  "shippingDetails": { "address": null, "category": null, … },
+  "extraDetails": { "ipAddress": null, … }
+}
+```
+
+Paysim matches this. Two gaps were closed at once:
+
+- **Missing key** — the structural one. `Object.keys()`, iteration, `in` and a
+  non-optional type all diverge when a key is absent. That is what produces a
+  "worked in test, broke in prod".
+- **`""` instead of `null`** — the quieter one, but real: `firstName ?? "N/A"` yields
+  `"N/A"` against PayZen and `""` here, since the empty string is not nullish.
+
+Fields stay plain strings in the model — no pointers, no dereferencing — and the
+conversion happens on the way out only. Decoding is unaffected: `null` maps to the zero
+value, as it always did.
+
 ## The alias owns its customer
 
 A `paymentMethodToken` — an *alias*, in PayZen's own wording — belongs to a

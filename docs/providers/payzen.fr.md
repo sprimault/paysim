@@ -362,6 +362,33 @@ Valeurs acceptées dans le champ `outcome` de `browserReturn` / `ipn` :
 | `EXPIRED`    | `Expire()` — timeout                         | `UNPAID`       | `EXPIRED`              |
 | `ABANDONED`  | Mappé vers `Expire()` (pas d'état domain)    | `UNPAID`       | `ABANDONED`            |
 
+### Les champs client vides sortent en `null`
+
+PayZen expose les blocs du contexte client **en entier**, champs compris, valorisés à
+`null` quand ils sont vides — et non sous forme d'objet vide :
+
+```json
+"customer": {
+  "email": null,
+  "reference": null,
+  "billingDetails": { "address": null, "firstName": null, "city": null, … },
+  "shippingDetails": { "address": null, "category": null, … },
+  "extraDetails": { "ipAddress": null, … }
+}
+```
+
+Paysim s'y aligne. Deux écarts sont comblés d'un coup :
+
+- **La clé absente** — l'écart structurel. `Object.keys()`, l'itération, un `in` et un
+  typage non optionnel divergent tous quand une clé manque. C'est ce qui produit un
+  « ça marchait en test ».
+- **`""` au lieu de `null`** — plus discret, mais réel : `firstName ?? "N/A"` rend
+  `"N/A"` chez PayZen et `""` ici, puisque la chaîne vide n'est pas *nullish*.
+
+Les champs restent de simples chaînes dans le modèle — aucun pointeur, aucun
+déréférencement — et la conversion se fait à la sortie seulement. Le décodage est
+inchangé : `null` donne la valeur zéro, comme toujours.
+
 ## L'alias porte son client
 
 Un `paymentMethodToken` — un *alias*, dans le vocabulaire de PayZen — appartient à un
