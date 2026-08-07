@@ -200,7 +200,7 @@ using HTTP errors for business failures.
 | Field                | Type   | Required | Notes                                     |
 | -------------------- | ------ | :------: | ----------------------------------------- |
 | `subscriptionId`     | string |    yes   |                                           |
-| `paymentMethodToken` | string |    no    | PayZen requires it in real world; Paysim ignores it (id alone is unique). |
+| `paymentMethodToken` | string |   yes    | Must match the subscription's payment method. A mismatched pair answers like an unknown subscription. |
 
 **Response** — `SubscriptionGetAnswer`:
 
