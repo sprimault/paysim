@@ -6,10 +6,15 @@ package payzen
 // Store est le contrat de persistance des transactions et abonnements
 // PayZen. Deux implémentations sont fournies dans ce paquet :
 //
-//   - MemoryStore (NewMemoryStore) : maps protégées par mutex, sans état
-//     entre redémarrages. Par défaut si aucune persistance n'est configurée.
-//   - SQLiteStore (NewSQLiteStore) : persistance sur disque via
-//     internal/store/sqlite. Activée quand PAYSIM_STORE=sqlite.
+//   - RepoStore (NewRepoStore) : wrapper sur les trois repositories
+//     cross-provider de internal/store. Ne dépend d'aucun backend —
+//     c'est lui qu'emploie cmd/paysim dans les deux modes, adossé à
+//     internal/store/sqlite ou à internal/store/inmem selon
+//     PAYSIM_STORE.
+//   - MemoryStore (NewMemoryStore) : maps protégées par mutex, sans
+//     état entre redémarrages. Plus employé en production depuis que
+//     le mode mémoire passe par RepoStore ; conservé pour les tests,
+//     qui s'en servent comme d'un double sans dépendance.
 //
 // Les deux impls partagent le même contrat testé dans
 // store_contract_test.go — un ajout de méthode ici doit être suivi
@@ -74,7 +79,7 @@ type Store interface {
 	// token n'est plus utilisable » est atteint).
 	RevokeMethod(token string) error
 
-	// Close libère les ressources (utile pour SQLiteStore ; no-op
+	// Close libère les ressources (utile pour RepoStore ; no-op
 	// pour MemoryStore). L'appelant doit toujours l'appeler à
 	// l'arrêt propre.
 	Close() error
