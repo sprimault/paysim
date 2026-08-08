@@ -43,3 +43,9 @@ CLAUDE.md
 
 # Scratchpad et outputs de tâches
 .tasks/
+
+# Répertoire de travail local : sert de GOTMPDIR, donc plein de binaires
+# temporaires. Gitignoré depuis le début, mais pas exclu du contexte de
+# build — ils partaient donc au démon Docker à chaque `docker build`
+# local, pour finir dans une couche intermédiaire.
+/.tmp/
