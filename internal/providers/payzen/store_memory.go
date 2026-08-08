@@ -14,7 +14,12 @@ import "sync"
 //
 // Aucune erreur possible : toutes les méthodes retournent nil pour
 // l'error du contrat Store. Signature conservée pour la symétrie
-// avec SQLiteStore.
+// avec RepoStore.
+//
+// N'est plus câblé par cmd/paysim : le mode mémoire passe désormais par
+// RepoStore adossé à internal/store/inmem, ce qui garantit que les deux
+// modes traversent le même code. Ce type reste utile aux tests, où il
+// évite d'avoir à monter trois repositories pour vérifier autre chose.
 type MemoryStore struct {
 	mu             sync.RWMutex
 	byToken        map[string]*Transaction

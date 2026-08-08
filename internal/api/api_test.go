@@ -763,7 +763,7 @@ func TestSSELastEventIDReplay(t *testing.T) {
 }
 
 // setupWithSQLite construit un handler API avec un PayzenHandler câblé
-// sur SQLiteStore (avec les 3 repos réels : payments, subscriptions,
+// sur RepoStore (avec les 3 repos réels : payments, subscriptions,
 // payment methods). Utile pour tester les endpoints listing qui
 // interrogent directement les repos — le mode mémoire retourne
 // toujours vide sur ces endpoints.
@@ -787,7 +787,7 @@ func setupWithSQLite(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatalf("methods repo: %v", err)
 	}
-	pzStore := payzen.NewSQLiteStore(payRepo, subsRepo, methodsRepo)
+	pzStore := payzen.NewRepoStore(payRepo, subsRepo, methodsRepo)
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
 	b := bus.New()
 	queue.SetPublisher(b)

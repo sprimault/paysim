@@ -77,7 +77,7 @@ func newParityEnv(t *testing.T, backend string) *parityEnv {
 			t.Fatalf("repo payment methods : %v", err)
 		}
 		paymentRepo, subsRepo, methodsRepo = pr, sr, mr
-		payzenStore = payzen.NewSQLiteStore(pr, sr, mr)
+		payzenStore = payzen.NewRepoStore(pr, sr, mr)
 		t.Cleanup(func() { _ = db.Close() })
 	default:
 		// Même montage que la branche mémoire de main.go : trois dépôts
@@ -87,7 +87,7 @@ func newParityEnv(t *testing.T, backend string) *parityEnv {
 		paymentRepo = inmem.NewPaymentsRepository()
 		subsRepo = inmem.NewSubscriptionsRepository()
 		methodsRepo = inmem.NewPaymentMethodsRepository()
-		payzenStore = payzen.NewSQLiteStore(paymentRepo, subsRepo, methodsRepo)
+		payzenStore = payzen.NewRepoStore(paymentRepo, subsRepo, methodsRepo)
 	}
 
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)

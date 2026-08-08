@@ -12,8 +12,18 @@ import (
 	"github.com/sprimault/paysim/internal/store"
 )
 
-// SQLiteStore est l'impl PayZen du contrat Store — wrapper sur trois
-// repositories génériques cross-provider :
+// RepoStore est l'impl PayZen du contrat Store — wrapper sur trois
+// repositories génériques cross-provider.
+//
+// Il s'appelait SQLiteStore, ce qui était trompeur : il ne dépend
+// d'aucun backend, seulement des trois interfaces ci-dessous. Les deux
+// modes de stockage l'emploient donc à l'identique, mémoire comprise —
+// une seule traduction payzen ↔ store, et aucune divergence possible
+// entre les deux. Le nom disait le contraire, et c'est en partie ce qui
+// a fait construire un MemoryStore séparé plutôt que réutiliser
+// celui-ci.
+//
+// Les trois repositories :
 //   - store.PaymentRepository pour les transactions et leur journal
 //   - store.SubscriptionRepository pour les abonnements récurrents
 //   - store.PaymentMethodRepository pour les moyens de paiement enregistrés
@@ -28,8 +38,8 @@ import (
 // cmd/paysim/main.go) — ils peuvent être partagés avec d'autres
 // providers et avec l'API UI cross-provider. L'appelant garde la
 // propriété et la responsabilité de leur fermeture — un
-// SQLiteStore.Close() ne les ferme pas.
-type SQLiteStore struct {
+// RepoStore.Close() ne les ferme pas.
+type RepoStore struct {
 	repo    store.PaymentRepository
 	subRepo store.SubscriptionRepository
 	pmRepo  store.PaymentMethodRepository
@@ -38,13 +48,13 @@ type SQLiteStore struct {
 // providerName identifie PayZen dans la colonne payments.provider.
 const providerName = "payzen"
 
-// NewSQLiteStore construit un SQLiteStore autour des trois repositories.
-func NewSQLiteStore(
+// NewRepoStore construit un RepoStore autour des trois repositories.
+func NewRepoStore(
 	payments store.PaymentRepository,
 	subs store.SubscriptionRepository,
 	methods store.PaymentMethodRepository,
-) *SQLiteStore {
-	return &SQLiteStore{
+) *RepoStore {
+	return &RepoStore{
 		repo:    payments,
 		subRepo: subs,
 		pmRepo:  methods,
@@ -53,7 +63,7 @@ func NewSQLiteStore(
 
 // Close est un no-op — le PaymentRepository sous-jacent est possédé
 // par l'appelant (main.go) qui le ferme à shutdown.
-func (s *SQLiteStore) Close() error {
+func (s *RepoStore) Close() error {
 	return nil
 }
 
@@ -63,7 +73,7 @@ func (s *SQLiteStore) Close() error {
 
 // Save sérialise la Transaction PayZen vers un PaymentRecord
 // générique et délègue au repository.
-func (s *SQLiteStore) Save(tx *Transaction) error {
+func (s *RepoStore) Save(tx *Transaction) error {
 	rec, err := payzenToRecord(tx)
 	if err != nil {
 		return err
@@ -72,7 +82,7 @@ func (s *SQLiteStore) Save(tx *Transaction) error {
 }
 
 // ByToken cherche par (provider=payzen, provider_ref=FormToken).
-func (s *SQLiteStore) ByToken(token string) (*Transaction, error) {
+func (s *RepoStore) ByToken(token string) (*Transaction, error) {
 	rec, err := s.repo.ByProviderRef(providerName, token)
 	if err != nil {
 		return nil, err
@@ -84,7 +94,7 @@ func (s *SQLiteStore) ByToken(token string) (*Transaction, error) {
 }
 
 // ByUUID cherche via l'UUID (indépendant du provider).
-func (s *SQLiteStore) ByUUID(uuid string) (*Transaction, error) {
+func (s *RepoStore) ByUUID(uuid string) (*Transaction, error) {
 	rec, err := s.repo.ByUUID(uuid)
 	if err != nil {
 		return nil, err
@@ -93,7 +103,7 @@ func (s *SQLiteStore) ByUUID(uuid string) (*Transaction, error) {
 		return nil, nil
 	}
 	// Filtre défensif : un UUID lookup pourrait matcher un autre
-	// provider. Cross-provider lookup non voulu depuis un SQLiteStore
+	// provider. Cross-provider lookup non voulu depuis un RepoStore
 	// PayZen — on renvoie nil, cohérent avec l'API.
 	if rec.Provider != providerName {
 		return nil, nil
@@ -102,7 +112,7 @@ func (s *SQLiteStore) ByUUID(uuid string) (*Transaction, error) {
 }
 
 // Len compte les paiements PayZen uniquement.
-func (s *SQLiteStore) Len() (int, error) {
+func (s *RepoStore) Len() (int, error) {
 	recs, err := s.repo.ByProvider(providerName)
 	if err != nil {
 		return 0, err
@@ -112,7 +122,7 @@ func (s *SQLiteStore) Len() (int, error) {
 
 // AllTransactions retourne toutes les transactions PayZen. Ordre :
 // updated_at décroissant.
-func (s *SQLiteStore) AllTransactions() ([]*Transaction, error) {
+func (s *RepoStore) AllTransactions() ([]*Transaction, error) {
 	recs, err := s.repo.ByProvider(providerName)
 	if err != nil {
 		return nil, err
@@ -133,7 +143,7 @@ func (s *SQLiteStore) AllTransactions() ([]*Transaction, error) {
 // -----------------------------------------------------------------------------
 
 // SaveSubscription sérialise et délègue au repo générique.
-func (s *SQLiteStore) SaveSubscription(sub *Subscription) error {
+func (s *RepoStore) SaveSubscription(sub *Subscription) error {
 	if sub == nil || sub.ID == "" {
 		return nil
 	}
@@ -145,7 +155,7 @@ func (s *SQLiteStore) SaveSubscription(sub *Subscription) error {
 }
 
 // SubscriptionByID lit via le repo générique et désérialise.
-func (s *SQLiteStore) SubscriptionByID(id string) (*Subscription, error) {
+func (s *RepoStore) SubscriptionByID(id string) (*Subscription, error) {
 	rec, err := s.subRepo.ByID(id)
 	if err != nil {
 		return nil, err
@@ -157,7 +167,7 @@ func (s *SQLiteStore) SubscriptionByID(id string) (*Subscription, error) {
 }
 
 // LenSubscriptions compte les abonnements PayZen uniquement.
-func (s *SQLiteStore) LenSubscriptions() (int, error) {
+func (s *RepoStore) LenSubscriptions() (int, error) {
 	recs, err := s.subRepo.ByProvider(providerName)
 	if err != nil {
 		return 0, err
@@ -170,7 +180,7 @@ func (s *SQLiteStore) LenSubscriptions() (int, error) {
 // -----------------------------------------------------------------------------
 
 // SaveMethod sérialise et délègue au repo générique.
-func (s *SQLiteStore) SaveMethod(m *PaymentMethod) error {
+func (s *RepoStore) SaveMethod(m *PaymentMethod) error {
 	if m == nil || m.Token == "" {
 		return nil
 	}
@@ -180,7 +190,7 @@ func (s *SQLiteStore) SaveMethod(m *PaymentMethod) error {
 // MethodByToken lit via le repo et désérialise. Filtre défensif sur
 // provider — un token de la table cross-provider pourrait appartenir
 // à Stripe ; on renvoie nil pour rester scoped PayZen.
-func (s *SQLiteStore) MethodByToken(token string) (*PaymentMethod, error) {
+func (s *RepoStore) MethodByToken(token string) (*PaymentMethod, error) {
 	rec, err := s.pmRepo.ByToken(token)
 	if err != nil {
 		return nil, err
@@ -192,19 +202,19 @@ func (s *SQLiteStore) MethodByToken(token string) (*PaymentMethod, error) {
 }
 
 // RevokeMethod délègue au repo. Idempotent, cf. contrat.
-func (s *SQLiteStore) RevokeMethod(token string) error {
+func (s *RepoStore) RevokeMethod(token string) error {
 	return s.pmRepo.Revoke(token)
 }
 
 // Delete supprime une transaction PayZen. Le repo cross-provider est
 // scoped par UUID unique, aucune ambiguïté possible.
-func (s *SQLiteStore) Delete(uuid string) error {
+func (s *RepoStore) Delete(uuid string) error {
 	return s.repo.DeleteByUUID(uuid)
 }
 
 // DeleteAllTransactions supprime toutes les transactions PayZen —
 // délègue au repo générique avec le filtre provider.
-func (s *SQLiteStore) DeleteAllTransactions() (int, error) {
+func (s *RepoStore) DeleteAllTransactions() (int, error) {
 	return s.repo.DeleteByProvider(providerName)
 }
 

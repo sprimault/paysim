@@ -12,10 +12,10 @@ import (
 	sqlitepkg "github.com/sprimault/paysim/internal/store/sqlite"
 )
 
-// openTestStore construit un SQLiteStore end-to-end : ouvre la base
+// openTestStore construit un RepoStore end-to-end : ouvre la base
 // SQLite, prépare les trois repositories (payments, subscriptions,
-// payment methods), wrappe dans un SQLiteStore. Cleanup automatique.
-func openTestStore(t *testing.T, path string) *SQLiteStore {
+// payment methods), wrappe dans un RepoStore. Cleanup automatique.
+func openTestStore(t *testing.T, path string) *RepoStore {
 	t.Helper()
 	db, err := sqlitepkg.Open(path)
 	if err != nil {
@@ -37,11 +37,11 @@ func openTestStore(t *testing.T, path string) *SQLiteStore {
 		t.Fatalf("NewPaymentMethodsRepository: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return NewSQLiteStore(repo, subsRepo, methodsRepo)
+	return NewRepoStore(repo, subsRepo, methodsRepo)
 }
 
 // runContract lance le même scénario sur une Store — vérifie que
-// MemoryStore et SQLiteStore respectent tous deux le contrat au bit
+// MemoryStore et RepoStore respectent tous deux le contrat au bit
 // près (même comportement pour un même input).
 func runContract(t *testing.T, s Store) {
 	t.Helper()
@@ -124,7 +124,7 @@ func buildSampleTx(t *testing.T) *Transaction {
 	}
 }
 
-func TestSQLiteStoreContract(t *testing.T) {
+func TestRepoStoreContract(t *testing.T) {
 	t.Parallel()
 	s := openTestStore(t, filepath.Join(t.TempDir(), "test.db"))
 	runContract(t, s)
@@ -136,7 +136,7 @@ func TestMemoryStoreContract(t *testing.T) {
 }
 
 // runMethodContract vérifie les 3 méthodes de PaymentMethod du contrat
-// Store. Passé sur MemoryStore et SQLiteStore pour garantir la parité.
+// Store. Passé sur MemoryStore et RepoStore pour garantir la parité.
 func runMethodContract(t *testing.T, s Store) {
 	t.Helper()
 	m := &PaymentMethod{
@@ -184,7 +184,7 @@ func runMethodContract(t *testing.T, s Store) {
 }
 
 // runSubscriptionContract vérifie les 3 méthodes de Subscription du
-// contrat Store. Passé sur MemoryStore et SQLiteStore.
+// contrat Store. Passé sur MemoryStore et RepoStore.
 func runSubscriptionContract(t *testing.T, s Store) {
 	t.Helper()
 	sub := &Subscription{
@@ -239,7 +239,7 @@ func runSubscriptionContract(t *testing.T, s Store) {
 	}
 }
 
-func TestSQLiteStoreMethodContract(t *testing.T) {
+func TestRepoStoreMethodContract(t *testing.T) {
 	t.Parallel()
 	runMethodContract(t, openTestStore(t, filepath.Join(t.TempDir(), "methods.db")))
 }
@@ -249,7 +249,7 @@ func TestMemoryStoreMethodContract(t *testing.T) {
 	runMethodContract(t, NewMemoryStore())
 }
 
-func TestSQLiteStoreSubscriptionContract(t *testing.T) {
+func TestRepoStoreSubscriptionContract(t *testing.T) {
 	t.Parallel()
 	runSubscriptionContract(t, openTestStore(t, filepath.Join(t.TempDir(), "subs.db")))
 }
@@ -259,7 +259,7 @@ func TestMemoryStoreSubscriptionContract(t *testing.T) {
 	runSubscriptionContract(t, NewMemoryStore())
 }
 
-func TestSQLiteStoreSurvivesReopen(t *testing.T) {
+func TestRepoStoreSurvivesReopen(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "persist.db")
 
@@ -282,7 +282,7 @@ func TestSQLiteStoreSurvivesReopen(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		s1 := NewSQLiteStore(repo, subsRepo, methodsRepo)
+		s1 := NewRepoStore(repo, subsRepo, methodsRepo)
 		if err := s1.Save(buildSampleTx(t)); err != nil {
 			t.Fatal(err)
 		}

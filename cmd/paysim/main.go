@@ -114,7 +114,7 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 	// utilisable. Comme c'est le mode par défaut de l'image, tout
 	// `docker run` sans configuration donnait cette vue mensongère.
 	//
-	// NewSQLiteStore ne dépend d'aucun backend malgré son nom : il
+	// NewRepoStore ne dépend d'aucun backend malgré son nom : il
 	// n'enveloppe que les trois interfaces, d'où son emploi identique
 	// de part et d'autre. Une seule traduction payzen ↔ store, donc
 	// aucune divergence possible entre les deux modes. Le nom mérite
@@ -148,7 +148,7 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		}
 		subscriptionRepo = subsRepo
 		paymentMethodRepo = methodsRepo
-		payzenStore = payzen.NewSQLiteStore(repo, subsRepo, methodsRepo)
+		payzenStore = payzen.NewRepoStore(repo, subsRepo, methodsRepo)
 
 		webhookRepo, err := sqlitepkg.NewWebhooksRepository(db)
 		if err != nil {
@@ -167,7 +167,7 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		paymentRepo = inmem.NewPaymentsRepository()
 		subscriptionRepo = inmem.NewSubscriptionsRepository()
 		paymentMethodRepo = inmem.NewPaymentMethodsRepository()
-		payzenStore = payzen.NewSQLiteStore(paymentRepo, subscriptionRepo, paymentMethodRepo)
+		payzenStore = payzen.NewRepoStore(paymentRepo, subscriptionRepo, paymentMethodRepo)
 		logger.Info("store_backend", "backend", "memory")
 	}
 	queue.SetPublisher(eventBus)
