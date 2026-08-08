@@ -17,16 +17,21 @@ import (
 func runHistoryContract(t *testing.T, h HistoryStore) {
 	t.Helper()
 	base := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+	// Deux paiements se partagent les trois livraisons : c'est ce qui
+	// permet de verifier que ByPayment separe, plutot que de retourner
+	// tout ce qu'il trouve.
+	paymentOf := map[string]string{"wh-1": "pay-a", "wh-2": "pay-b", "wh-3": "pay-a"}
 	// Ajout de 3 records dans l'ordre chronologique.
 	for i, id := range []string{"wh-1", "wh-2", "wh-3"} {
 		rec := WebhookRecord{
 			Webhook: Webhook{
-				ID:        id,
-				URL:       "http://x",
-				Headers:   map[string]string{"h": "v"},
-				Body:      []byte("payload-" + id),
-				Attempts:  1,
-				CreatedAt: base.Add(time.Duration(i) * time.Second),
+				ID:          id,
+				URL:         "http://x",
+				Headers:     map[string]string{"h": "v"},
+				Body:        []byte("payload-" + id),
+				PaymentUUID: paymentOf[id],
+				Attempts:    1,
+				CreatedAt:   base.Add(time.Duration(i) * time.Second),
 			},
 			Status:      "delivered",
 			StatusCode:  200,
@@ -60,6 +65,30 @@ func runHistoryContract(t *testing.T, h HistoryStore) {
 	_, ok = h.ByID("inconnu")
 	if ok {
 		t.Error("ByID inconnu = ok true, veut false")
+	}
+
+	// ByPayment ne remonte que les livraisons du paiement demande, plus
+	// recente d'abord. C'est le comportement dont l'UI depend pour
+	// afficher le kr-answer du paiement ouvert et non celui du dernier
+	// webhook de l'instance.
+	ofA := h.ByPayment("pay-a", 10)
+	if len(ofA) != 2 {
+		t.Fatalf("ByPayment(pay-a) len = %d, veut 2", len(ofA))
+	}
+	if ofA[0].Webhook.ID != "wh-3" || ofA[1].Webhook.ID != "wh-1" {
+		t.Errorf("ByPayment(pay-a) = %s,%s, veut wh-3,wh-1",
+			ofA[0].Webhook.ID, ofA[1].Webhook.ID)
+	}
+	if ofB := h.ByPayment("pay-b", 10); len(ofB) != 1 || ofB[0].Webhook.ID != "wh-2" {
+		t.Errorf("ByPayment(pay-b) = %+v, veut wh-2 seul", ofB)
+	}
+	if none := h.ByPayment("pay-inconnu", 10); len(none) != 0 {
+		t.Errorf("ByPayment(inconnu) = %d, veut 0", len(none))
+	}
+	// Un uuid vide ne vaut pas « pas de filtre » : sinon un appelant qui
+	// oublie de le passer croirait avoir filtre.
+	if empty := h.ByPayment("", 10); len(empty) != 0 {
+		t.Errorf("ByPayment(vide) = %d, veut 0", len(empty))
 	}
 
 	// DeleteAll purge tout.

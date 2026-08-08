@@ -41,6 +41,11 @@ type WebhookRecord struct {
 	// de résultat de paiement.
 	Outcome string
 
+	// PaymentUUID rattache la livraison au paiement qui l'a provoquée,
+	// vide si elle n'en concerne aucun. C'est ce qui permet à l'UI de
+	// n'afficher que les webhooks du paiement ouvert.
+	PaymentUUID string
+
 	// StatusCode est le code HTTP reçu. Vaut 0 si l'erreur s'est
 	// produite avant la réception d'une réponse (timeout, DNS…).
 	StatusCode int
@@ -72,6 +77,13 @@ type WebhookRepository interface {
 	// ByID retourne un enregistrement par son ID, ou nil, nil si
 	// inconnu.
 	ByID(id string) (*WebhookRecord, error)
+
+	// ByPayment retourne les `limit` dernières livraisons rattachées à
+	// un paiement, plus récente d'abord. Interroger la base plutôt que
+	// filtrer les N dernières entrées : sur un paiement un peu ancien,
+	// ses webhooks sont sortis de la fenêtre de Recent alors qu'ils
+	// existent toujours.
+	ByPayment(paymentUUID string, limit int) ([]*WebhookRecord, error)
 
 	// DeleteAll purge l'historique. Retourne le nombre supprimé.
 	DeleteAll() (int, error)

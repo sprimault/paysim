@@ -327,6 +327,75 @@ func TestListWebhooksAfterDelivery(t *testing.T) {
 	}
 }
 
+// TestListWebhooksFiltreParPaiement couvre le defaut qui faisait
+// afficher, dans le detail d'un paiement, le kr-answer d'un autre :
+// sans rattachement en base, l'UI prenait la tete de la liste globale.
+func TestListWebhooksFiltreParPaiement(t *testing.T) {
+	t.Parallel()
+	aval := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer aval.Close()
+
+	server, _, queue, _ := setup(t, "")
+	for _, w := range []struct{ id, payment string }{
+		{"wh-a", "pay-a"},
+		{"wh-b", "pay-b"},
+	} {
+		_ = queue.Enqueue(delivery.Webhook{
+			ID:          w.id,
+			URL:         aval.URL,
+			Body:        []byte(`{"x":1}`),
+			Headers:     map[string]string{"Content-Type": "application/json"},
+			PaymentUUID: w.payment,
+		})
+	}
+
+	list := func(query string) []WebhookEntry {
+		t.Helper()
+		resp, err := http.Get(server.URL + "/paysim/api/v1/webhooks" + query)
+		if err != nil {
+			t.Fatalf("GET %s: %v", query, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var out []WebhookEntry
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return out
+	}
+
+	// Attendre que les deux livraisons soient historisees.
+	deadline := time.Now().Add(2 * time.Second)
+	var all []WebhookEntry
+	for time.Now().Before(deadline) {
+		all = list("")
+		if len(all) == 2 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(all) != 2 {
+		t.Fatalf("sans filtre = %d entrees, veut 2", len(all))
+	}
+
+	ofA := list("?paymentUuid=pay-a")
+	if len(ofA) != 1 {
+		t.Fatalf("filtre pay-a = %d entrees, veut 1", len(ofA))
+	}
+	if ofA[0].ID != "wh-a" {
+		t.Errorf("filtre pay-a = %s, veut wh-a", ofA[0].ID)
+	}
+	if ofA[0].PaymentUUID != "pay-a" {
+		t.Errorf("PaymentUUID = %q, veut pay-a — le champ n'est pas expose", ofA[0].PaymentUUID)
+	}
+
+	// Un uuid sans livraison doit rendre une liste vide, pas retomber
+	// sur la liste complete : c'est cette confusion qui produisait le
+	// mauvais payload.
+	if none := list("?paymentUuid=pay-inconnu"); len(none) != 0 {
+		t.Errorf("uuid inconnu = %d entrees, veut 0 — le filtre est ignore", len(none))
+	}
+}
+
 func TestBearerRequiredWhenTokenConfigured(t *testing.T) {
 	t.Parallel()
 	server, _, _, _ := setup(t, "secret-bearer")

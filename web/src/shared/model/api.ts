@@ -202,6 +202,13 @@ export interface WebhookEntry {
   status: string;
   outcome?: string;
   /**
+   * PaymentUUID rattache la livraison à son paiement. Vide sur les
+   * entrées historisées avant l'existence du champ : elles ne sont
+   * rattachables à rien rétroactivement, le corps ne portant pas
+   * toujours l'identifiant.
+   */
+  paymentUuid?: string;
+  /**
    * StatusCode est le code HTTP reçu, zéro quand l'erreur est
    * survenue avant toute réponse — DNS, timeout, connexion refusée.
    * ErrorMsg porte alors le détail.

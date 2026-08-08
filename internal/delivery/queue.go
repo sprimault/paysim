@@ -238,6 +238,15 @@ func (q *Queue) WebhookByID(id string) (WebhookRecord, bool) {
 	return q.history.ByID(id)
 }
 
+// WebhooksByPayment retourne les livraisons rattachées à un paiement,
+// plus récente d'abord. Délégué au HistoryStore.
+func (q *Queue) WebhooksByPayment(paymentUUID string, limit int) []WebhookRecord {
+	if q.history == nil {
+		return nil
+	}
+	return q.history.ByPayment(paymentUUID, limit)
+}
+
 // PurgeWebhooks vide l'historique et retourne le nombre supprimé.
 func (q *Queue) PurgeWebhooks() (int, error) {
 	if q.history == nil {

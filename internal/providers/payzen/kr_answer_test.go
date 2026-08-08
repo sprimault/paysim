@@ -194,6 +194,51 @@ func TestBuildKrAnswerNonCardsMethodOmitsCardDetails(t *testing.T) {
 	}
 }
 
+// TestBuildDeliveryWebhookRattacheLePaiement verifie que le webhook
+// sort rattache au paiement qu'il annonce. Sans ce rattachement, l'UI
+// ne pouvait afficher que le dernier webhook de l'instance : deux
+// paiements distincts montraient le meme kr-answer, celui d'un
+// troisieme.
+func TestBuildDeliveryWebhookRattacheLePaiement(t *testing.T) {
+	t.Parallel()
+	tx := makeTx(t, 4990)
+	_ = applyOutcome(tx, OutcomePaid, "")
+
+	opts := BrowserReturnOpts{Outcome: OutcomePaid}
+	answer := buildKrAnswer(tx, nil, opts, "", "TEST")
+
+	wh, _, err := buildDeliveryWebhook("delivery-1", "http://marchand", answer, "k", "V4/Payment", false, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wh.PaymentUUID != tx.UUID {
+		t.Errorf("PaymentUUID = %q, veut %q", wh.PaymentUUID, tx.UUID)
+	}
+	// Le rattachement doit valoir l'uuid annonce dans le corps, pas un
+	// identifiant passe a cote : c'est ce qui garantit que le payload
+	// affiche appartient bien au paiement ouvert.
+	if wh.PaymentUUID != answer.Transactions[0].UUID {
+		t.Errorf("PaymentUUID = %q, divergent de la transaction annoncee %q",
+			wh.PaymentUUID, answer.Transactions[0].UUID)
+	}
+}
+
+// TestBuildDeliveryWebhookSansTransaction couvre le cas d'une reponse
+// sans transaction : le webhook sort sans rattachement plutot que de
+// paniquer sur un index absent.
+func TestBuildDeliveryWebhookSansTransaction(t *testing.T) {
+	t.Parallel()
+	answer := &KrAnswer{OrderStatus: "UNPAID"}
+
+	wh, _, err := buildDeliveryWebhook("delivery-2", "http://marchand", answer, "k", "V4/Payment", false, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wh.PaymentUUID != "" {
+		t.Errorf("PaymentUUID = %q, veut vide", wh.PaymentUUID)
+	}
+}
+
 func TestBuildDeliveryWebhookSignsCorrectly(t *testing.T) {
 	t.Parallel()
 	tx := makeTx(t, 1500)

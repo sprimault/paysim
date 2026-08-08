@@ -183,8 +183,81 @@ func TestWebhooks_outcomeRoundTrip(t *testing.T) {
 	}
 }
 
+// TestWebhooks_byPayment est le test que l'absence de rattachement
+// rendait impossible : avant la colonne payment_uuid, rien ne
+// distinguait les livraisons d'un paiement de celles d'un autre, et
+// l'UI affichait le kr-answer du dernier webhook de l'instance.
+func TestWebhooks_byPayment(t *testing.T) {
+	t.Parallel()
+	repo := buildWebhookRepo(t)
+	base := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+
+	for _, tc := range []struct {
+		id      string
+		payment string
+		at      time.Time
+	}{
+		{"wh-a1", "pay-a", base},
+		{"wh-b1", "pay-b", base.Add(time.Second)},
+		{"wh-a2", "pay-a", base.Add(2 * time.Second)},
+		{"wh-orphan", "", base.Add(3 * time.Second)},
+	} {
+		rec := sampleWebhook(tc.id, tc.at)
+		rec.PaymentUUID = tc.payment
+		if err := repo.Save(rec); err != nil {
+			t.Fatalf("Save %s: %v", tc.id, err)
+		}
+	}
+
+	got, err := repo.ByPayment("pay-a", 10)
+	if err != nil {
+		t.Fatalf("ByPayment: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, veut 2 — les livraisons d'un autre paiement ont fuite", len(got))
+	}
+	// Plus recente d'abord : c'est celle-la que l'onglet Payload affiche.
+	if got[0].ID != "wh-a2" || got[1].ID != "wh-a1" {
+		t.Errorf("ordre = %s,%s, veut wh-a2,wh-a1", got[0].ID, got[1].ID)
+	}
+
+	// Un uuid vide ne doit pas ramener les orphelins : les livraisons
+	// sans paiement rattache ne forment pas un ensemble consultable.
+	empty, err := repo.ByPayment("", 10)
+	if err != nil {
+		t.Fatalf("ByPayment(vide): %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("ByPayment(vide) = %d entrees, veut 0", len(empty))
+	}
+
+	// Un paiement sans livraison ne remonte rien, plutot que tout.
+	none, _ := repo.ByPayment("pay-inconnu", 10)
+	if len(none) != 0 {
+		t.Errorf("paiement inconnu = %d entrees, veut 0", len(none))
+	}
+}
+
+func TestWebhooks_paymentUUIDRoundTrip(t *testing.T) {
+	t.Parallel()
+	repo := buildWebhookRepo(t)
+
+	rec := sampleWebhook("wh-uuid", time.Now().UTC())
+	rec.PaymentUUID = "7917f17b-db5e-4b21-9d20-295a3f0c422b"
+	if err := repo.Save(rec); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := repo.ByID("wh-uuid")
+	if err != nil || got == nil {
+		t.Fatalf("ByID: %v / %v", got, err)
+	}
+	if got.PaymentUUID != rec.PaymentUUID {
+		t.Errorf("PaymentUUID = %q, veut %q", got.PaymentUUID, rec.PaymentUUID)
+	}
+}
+
 // TestWebhooks_migrateExistingTable exerce le chemin ALTER TABLE sur une
-// base creee avant l'ajout de la colonne outcome.
+// base creee avant l'ajout des colonnes outcome et payment_uuid.
 func TestWebhooks_migrateExistingTable(t *testing.T) {
 	t.Parallel()
 	db, err := Open(filepath.Join(t.TempDir(), "legacy-wh.db"))

@@ -263,6 +263,12 @@ type WebhookEntry struct {
 	Status  string `json:"status"`
 	Outcome string `json:"outcome,omitempty"`
 
+	// PaymentUUID rattache la livraison à son paiement. Vide sur les
+	// entrées historisées avant l'existence du champ : elles ne sont
+	// rattachables à rien rétroactivement, le corps ne portant pas
+	// toujours l'identifiant.
+	PaymentUUID string `json:"paymentUuid,omitempty"`
+
 	// StatusCode est le code HTTP reçu, zéro quand l'erreur est
 	// survenue avant toute réponse — DNS, timeout, connexion refusée.
 	// ErrorMsg porte alors le détail.
@@ -1206,8 +1212,20 @@ func (h *Handler) deletePayments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"deleted": deleted})
 }
 
-func (h *Handler) listWebhooks(w http.ResponseWriter, _ *http.Request) {
-	records := h.queue.Recent(200)
+// listWebhooks retourne l'historique de livraison, restreint à un
+// paiement quand paymentUuid est fourni.
+//
+// Le filtre interroge l'historique plutôt que de trier les 200
+// dernières entrées : les webhooks d'un paiement un peu ancien en sont
+// déjà sortis, et un filtre local afficherait « aucun » là où la base
+// en contient — un vide trompeur plutôt qu'une donnée manquante.
+func (h *Handler) listWebhooks(w http.ResponseWriter, r *http.Request) {
+	var records []delivery.WebhookRecord
+	if uuid := r.URL.Query().Get("paymentUuid"); uuid != "" {
+		records = h.queue.WebhooksByPayment(uuid, 200)
+	} else {
+		records = h.queue.Recent(200)
+	}
 	out := make([]WebhookEntry, 0, len(records))
 	for _, r := range records {
 		out = append(out, toWebhookEntry(r))
@@ -1482,6 +1500,7 @@ func toWebhookEntry(r delivery.WebhookRecord) WebhookEntry {
 		URL:         r.Webhook.URL,
 		Status:      r.Status,
 		Outcome:     r.Webhook.Outcome,
+		PaymentUUID: r.Webhook.PaymentUUID,
 		StatusCode:  r.StatusCode,
 		ErrorMsg:    r.ErrorMsg,
 		Attempts:    r.Webhook.Attempts,

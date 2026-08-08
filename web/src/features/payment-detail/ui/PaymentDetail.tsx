@@ -17,7 +17,7 @@ import { useT } from '@/shared/i18n/useT';
 import { deletePayment } from '@/entities/payment/api/paymentApi';
 import { usePayment } from '@/entities/payment/model/usePayments';
 import { usePaymentStore } from '@/entities/payment/model/paymentStore';
-import { useWebhooksList } from '@/entities/webhook/model/useWebhooks';
+import { useWebhooksOfPayment } from '@/entities/webhook/model/useWebhooks';
 import { TAB_IDS, TAB_LABEL_KEYS, TAB_WITH_COUNTER, type TabId } from '@/features/payment-detail/model/tabs';
 import { PaymentOverview } from './PaymentOverview';
 import { PaymentTimeline } from './PaymentTimeline';
@@ -30,9 +30,11 @@ export function PaymentDetail() {
   const navigate = useNavigate();
   const { payment, loading, error } = usePayment(uuid);
   const removeFromStore = usePaymentStore((s) => s.remove);
-  // Toute la liste des webhooks — pas de filtre par uuid côté API v1.
-  // Le tab Webhooks affiche l'ensemble avec une note explicite.
-  const { webhooks } = useWebhooksList();
+  // Les livraisons de ce paiement uniquement. Auparavant la liste
+  // globale, faute de rattachement en base : l'onglet Payload affichait
+  // alors le kr-answer du dernier webhook de l'instance, donc celui
+  // d'un autre paiement.
+  const { webhooks } = useWebhooksOfPayment(uuid);
   const [tab, setTab] = useState<TabId>('overview');
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);

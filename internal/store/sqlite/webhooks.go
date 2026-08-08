@@ -37,6 +37,7 @@ func (r *WebhooksRepository) migrate(ctx context.Context) error {
 			body BLOB NOT NULL DEFAULT '',
 			status TEXT NOT NULL,
 			outcome TEXT NOT NULL DEFAULT '',
+			payment_uuid TEXT NOT NULL DEFAULT '',
 			status_code INTEGER NOT NULL DEFAULT 0,
 			error_msg TEXT NOT NULL DEFAULT '',
 			attempts INTEGER NOT NULL DEFAULT 0,
@@ -51,15 +52,28 @@ func (r *WebhooksRepository) migrate(ctx context.Context) error {
 			return fmt.Errorf("stmt %q: %w", firstLine(stmt), err)
 		}
 	}
-	// Bases antérieures à l'ajout de l'outcome : on tente l'ALTER et on
-	// ignore le "duplicate column", qui signale que l'état voulu est
-	// déjà atteint. Les livraisons déjà historisées gardent un outcome
-	// vide — on ne peut pas le reconstituer sans relire chaque body.
-	if _, err := r.db.ExecContext(ctx,
-		`ALTER TABLE webhooks ADD COLUMN outcome TEXT NOT NULL DEFAULT ''`); err != nil {
-		if !isDuplicateColumnErr(err) {
-			return fmt.Errorf("add outcome column: %w", err)
+	// Bases antérieures à ces colonnes : on tente l'ALTER et on ignore
+	// le "duplicate column", qui signale que l'état voulu est déjà
+	// atteint. Les livraisons déjà historisées gardent une valeur vide
+	// — ni l'outcome ni le paiement ne se reconstituent sans relire
+	// chaque body, et le second n'y figure même pas toujours.
+	alters := []string{
+		`ALTER TABLE webhooks ADD COLUMN outcome TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE webhooks ADD COLUMN payment_uuid TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, stmt := range alters {
+		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
+			if !isDuplicateColumnErr(err) {
+				return fmt.Errorf("stmt %q: %w", firstLine(stmt), err)
+			}
 		}
+	}
+	// Index créé après l'ALTER : sur une base ancienne, la colonne
+	// n'existe pas encore au moment où le bloc stmts s'exécute.
+	if _, err := r.db.ExecContext(ctx,
+		`CREATE INDEX IF NOT EXISTS idx_webhooks_payment_uuid
+			ON webhooks(payment_uuid, completed_at DESC)`); err != nil {
+		return fmt.Errorf("index payment_uuid: %w", err)
 	}
 	return nil
 }
@@ -74,15 +88,16 @@ func (r *WebhooksRepository) Save(rec *store.WebhookRecord) error {
 	}
 	const upsert = `
 		INSERT INTO webhooks (
-			id, url, headers_json, body, status, outcome, status_code, error_msg,
-			attempts, created_at, completed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			id, url, headers_json, body, status, outcome, payment_uuid,
+			status_code, error_msg, attempts, created_at, completed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			url = excluded.url,
 			headers_json = excluded.headers_json,
 			body = excluded.body,
 			status = excluded.status,
 			outcome = excluded.outcome,
+			payment_uuid = excluded.payment_uuid,
 			status_code = excluded.status_code,
 			error_msg = excluded.error_msg,
 			attempts = excluded.attempts,
@@ -90,12 +105,20 @@ func (r *WebhooksRepository) Save(rec *store.WebhookRecord) error {
 	`
 	_, err := r.db.Exec(upsert,
 		rec.ID, rec.URL, nonEmpty(rec.HeadersJSON), rec.Body,
-		rec.Status, rec.Outcome, rec.StatusCode, rec.ErrorMsg, rec.Attempts,
+		rec.Status, rec.Outcome, rec.PaymentUUID,
+		rec.StatusCode, rec.ErrorMsg, rec.Attempts,
 		rec.CreatedAt.UTC().Format(time.RFC3339Nano),
 		rec.CompletedAt.UTC().Format(time.RFC3339Nano),
 	)
 	return err
 }
+
+// webhookColumns fixe l'ordre de lecture, que scanWebhook suit à la
+// lettre. Les trois requêtes de lecture le partagent : une colonne
+// ajoutée ici sans l'être dans scanWebhook casse les trois d'un coup,
+// ce qui vaut mieux qu'une seule silencieusement décalée.
+const webhookColumns = `id, url, headers_json, body, status, outcome, payment_uuid,
+	status_code, error_msg, attempts, created_at, completed_at`
 
 // Recent retourne les `limit` dernières entrées, plus récente d'abord.
 func (r *WebhooksRepository) Recent(limit int) ([]*store.WebhookRecord, error) {
@@ -103,8 +126,7 @@ func (r *WebhooksRepository) Recent(limit int) ([]*store.WebhookRecord, error) {
 		return nil, nil
 	}
 	rows, err := r.db.Query(`
-		SELECT id, url, headers_json, body, status, outcome, status_code, error_msg,
-			attempts, created_at, completed_at
+		SELECT `+webhookColumns+`
 		FROM webhooks
 		ORDER BY completed_at DESC
 		LIMIT ?
@@ -112,8 +134,33 @@ func (r *WebhooksRepository) Recent(limit int) ([]*store.WebhookRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
+	return collectWebhooks(rows)
+}
 
+// ByPayment retourne les livraisons d'un paiement, plus récente
+// d'abord. Un uuid vide ne retourne rien plutôt que tout : les
+// webhooks sans paiement rattaché ne forment pas un ensemble qu'on
+// voudrait consulter, et le contraire ferait passer un filtre absent
+// pour un filtre satisfait.
+func (r *WebhooksRepository) ByPayment(paymentUUID string, limit int) ([]*store.WebhookRecord, error) {
+	if paymentUUID == "" || limit <= 0 {
+		return nil, nil
+	}
+	rows, err := r.db.Query(`
+		SELECT `+webhookColumns+`
+		FROM webhooks
+		WHERE payment_uuid = ?
+		ORDER BY completed_at DESC
+		LIMIT ?
+	`, paymentUUID, limit)
+	if err != nil {
+		return nil, err
+	}
+	return collectWebhooks(rows)
+}
+
+func collectWebhooks(rows *sql.Rows) ([]*store.WebhookRecord, error) {
+	defer func() { _ = rows.Close() }()
 	var out []*store.WebhookRecord
 	for rows.Next() {
 		rec, err := scanWebhook(rows)
@@ -131,8 +178,7 @@ func (r *WebhooksRepository) ByID(id string) (*store.WebhookRecord, error) {
 		return nil, nil
 	}
 	row := r.db.QueryRow(`
-		SELECT id, url, headers_json, body, status, outcome, status_code, error_msg,
-			attempts, created_at, completed_at
+		SELECT `+webhookColumns+`
 		FROM webhooks WHERE id = ?
 	`, id)
 	return scanWebhook(row)
@@ -158,7 +204,8 @@ func scanWebhook(sc paymentScanner) (*store.WebhookRecord, error) {
 	var createdAtStr, completedAtStr string
 	err := sc.Scan(
 		&rec.ID, &rec.URL, &rec.HeadersJSON, &rec.Body,
-		&rec.Status, &rec.Outcome, &rec.StatusCode, &rec.ErrorMsg, &rec.Attempts,
+		&rec.Status, &rec.Outcome, &rec.PaymentUUID,
+		&rec.StatusCode, &rec.ErrorMsg, &rec.Attempts,
 		&createdAtStr, &completedAtStr,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
