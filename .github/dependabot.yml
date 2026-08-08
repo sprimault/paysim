@@ -1,0 +1,45 @@
+# Montée de version des actions, en contrepartie de leur épinglage au
+# SHA dans ci.yml : un SHA ne bouge pas, donc plus rien ne remonte les
+# correctifs de sécurité tout seul. Sans ce fichier, l'épinglage échange
+# un risque de compromission contre une obsolescence silencieuse.
+#
+# Dependabot réécrit le SHA et le commentaire de version ensemble, ce qui
+# préserve l'épinglage au lieu de le défaire.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+
+    # Traduction de la règle d'âge minimum : ne pas adopter une version
+    # publiée dans la foulée, même corrective. Une version parue dans
+    # l'heure est le profil type d'une compromission de compte
+    # mainteneur, et une action s'exécute avec nos droits — dont
+    # packages:write sur le job edge. Deux semaines pour une majeure,
+    # dont les ruptures se découvrent souvent après coup.
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+
+    # Une PR par semaine plutôt qu'une par action : six PR hebdomadaires
+    # pour des montées mécaniques noieraient les contributions réelles.
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+    # La norme des commits conventionnels s'applique aussi à ce que
+    # Dependabot écrit. Le corps reste en anglais, l'outil ne sait pas
+    # faire autrement.
+    commit-message:
+      prefix: ci
+
+    open-pull-requests-limit: 3
+
+# npm et gomod ne sont volontairement pas déclarés. Les dépendances du
+# front se choisissent à la main, en mesurant l'exposition réelle avant
+# de bouger — cf. l'épinglage de nanoid dans web/package.json. Une PR
+# automatique par version publiée irait contre cette instruction.
