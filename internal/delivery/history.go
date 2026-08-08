@@ -24,6 +24,7 @@ type HistoryStore interface {
 	Add(rec WebhookRecord) error
 	Recent(limit int) []WebhookRecord
 	ByID(id string) (WebhookRecord, bool)
+	ByPayment(paymentUUID string, limit int) []WebhookRecord
 	DeleteAll() (int, error)
 }
 
@@ -104,6 +105,35 @@ func (m *MemoryHistory) ByID(id string) (WebhookRecord, bool) {
 	return WebhookRecord{}, false
 }
 
+// ByPayment retourne les livraisons rattachées à un paiement, plus
+// récente d'abord. Même parcours linéaire que ByID, et pour la même
+// raison : N vaut 200 au plus, et l'appel vient d'un endpoint REST de
+// détail, pas du chemin de livraison.
+//
+// Un uuid vide ne retourne rien : les webhooks sans paiement rattaché
+// — ceux d'avant ce champ, notamment — ne forment pas un ensemble
+// qu'on voudrait afficher comme s'il en formait un.
+func (m *MemoryHistory) ByPayment(paymentUUID string, limit int) []WebhookRecord {
+	if paymentUUID == "" || limit <= 0 {
+		return nil
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	total := m.idx
+	if m.full {
+		total = historyCap
+	}
+	var out []WebhookRecord
+	for i := 0; i < total && len(out) < limit; i++ {
+		pos := (m.idx - 1 - i + historyCap) % historyCap
+		if m.buffer[pos].Webhook.PaymentUUID == paymentUUID {
+			out = append(out, m.buffer[pos])
+		}
+	}
+	return out
+}
+
 // DeleteAll purge le ring buffer. Retourne le nombre d'entrées
 // supprimées avant reset.
 func (m *MemoryHistory) DeleteAll() (int, error) {
@@ -156,6 +186,22 @@ func (s *SQLiteHistory) Recent(limit int) []WebhookRecord {
 		// diagnostic passe par les logs slog du repo.
 		return nil
 	}
+	return convertAll(recs)
+}
+
+// ByPayment récupère les livraisons d'un paiement via le repository.
+func (s *SQLiteHistory) ByPayment(paymentUUID string, limit int) []WebhookRecord {
+	recs, err := s.repo.ByPayment(paymentUUID, limit)
+	if err != nil {
+		return nil
+	}
+	return convertAll(recs)
+}
+
+// convertAll traduit un lot d'enregistrements, en sautant ceux dont la
+// conversion échoue : une entrée aux headers illisibles ne doit pas
+// escamoter tout l'historique.
+func convertAll(recs []*store.WebhookRecord) []WebhookRecord {
 	out := make([]WebhookRecord, 0, len(recs))
 	for _, sr := range recs {
 		wr, err := recordToDelivery(sr)
@@ -201,6 +247,7 @@ func deliveryToRecord(w WebhookRecord) (*store.WebhookRecord, error) {
 		Body:        w.Webhook.Body,
 		Status:      w.Status,
 		Outcome:     w.Webhook.Outcome,
+		PaymentUUID: w.Webhook.PaymentUUID,
 		StatusCode:  w.StatusCode,
 		ErrorMsg:    w.ErrorMsg,
 		Attempts:    w.Webhook.Attempts,
@@ -221,10 +268,11 @@ func recordToDelivery(sr *store.WebhookRecord) (WebhookRecord, error) {
 			ID:        sr.ID,
 			URL:       sr.URL,
 			Headers:   headers,
-			Body:      sr.Body,
-			Outcome:   sr.Outcome,
-			Attempts:  sr.Attempts,
-			CreatedAt: sr.CreatedAt,
+			Body:        sr.Body,
+			Outcome:     sr.Outcome,
+			PaymentUUID: sr.PaymentUUID,
+			Attempts:    sr.Attempts,
+			CreatedAt:   sr.CreatedAt,
 		},
 		Status:      sr.Status,
 		StatusCode:  sr.StatusCode,

@@ -48,6 +48,16 @@ type Webhook struct {
 	// (Outcome) — deux questions que le champ Status seul confondait.
 	Outcome string
 
+	// PaymentUUID rattache la livraison au paiement qui l'a provoquée.
+	// Déclaré par l'adaptateur comme Outcome, et pour la même raison :
+	// delivery ne sait pas lire un kr-answer pour l'en extraire.
+	//
+	// Sans ce champ, rien ne relie un webhook à son paiement : l'UI ne
+	// pouvait afficher que le premier de la liste globale, donc le
+	// payload d'un autre paiement. Vide pour un webhook qui n'en
+	// concerne aucun.
+	PaymentUUID string
+
 	// Attempts compte les tentatives. Incrémenté par le worker avant
 	// chaque envoi. En phase 1 le worker ne tente qu'une fois ; la
 	// logique de retry arrive avec le chaos en phase 2.

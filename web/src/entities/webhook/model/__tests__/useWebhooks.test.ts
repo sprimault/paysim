@@ -3,7 +3,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
-import { useWebhook, useWebhooksList } from '@/entities/webhook/model/useWebhooks';
+import {
+  useWebhook,
+  useWebhooksList,
+  useWebhooksOfPayment,
+} from '@/entities/webhook/model/useWebhooks';
 import { useWebhookStore } from '@/entities/webhook/model/webhookStore';
 import type { WebhookDetail, WebhookEntry } from '@/shared/model';
 
@@ -56,6 +60,46 @@ describe('useWebhooks', () => {
       new Response('null', { status: 200 }),
     );
     renderHook(() => useWebhook('wh-1'));
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  // Le détail d'un paiement affichait le kr-answer du dernier webhook de
+  // l'instance, faute de filtre. Ces trois tests verrouillent le
+  // comportement qui le corrige.
+  it('useWebhooksOfPayment filtre côté serveur', async () => {
+    const ofA: WebhookEntry = { ...entry, id: 'wh-a', paymentUuid: 'pay-a' };
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Response(JSON.stringify([ofA]), { status: 200 }),
+    );
+    const { result } = renderHook(() => useWebhooksOfPayment('pay-a'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    const url = String(vi.mocked(globalThis.fetch).mock.calls[0][0]);
+    expect(url).toContain('paymentUuid=pay-a');
+    expect(result.current.webhooks.map((w) => w.id)).toEqual(['wh-a']);
+  });
+
+  // setList remplace tout le store : l'employer ici effacerait les
+  // livraisons des autres paiements déjà chargées.
+  it('useWebhooksOfPayment ne vide pas le store des autres paiements', async () => {
+    const other: WebhookEntry = { ...entry, id: 'wh-autre', paymentUuid: 'pay-b' };
+    useWebhookStore.getState().upsert(other);
+
+    const ofA: WebhookEntry = { ...entry, id: 'wh-a', paymentUuid: 'pay-a' };
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Response(JSON.stringify([ofA]), { status: 200 }),
+    );
+    const { result } = renderHook(() => useWebhooksOfPayment('pay-a'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    // Le hook ne remonte que pay-a…
+    expect(result.current.webhooks.map((w) => w.id)).toEqual(['wh-a']);
+    // …mais l'entrée de l'autre paiement est toujours en store.
+    expect(useWebhookStore.getState().webhooks['wh-autre']).toBeDefined();
+  });
+
+  it('useWebhooksOfPayment ne fetch pas sans uuid', () => {
+    renderHook(() => useWebhooksOfPayment(''));
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

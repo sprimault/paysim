@@ -355,15 +355,28 @@ func buildDeliveryWebhook(id, targetURL string, answer *KrAnswer, hmacKey, answe
 	form.Set("kr-hash-key", "sha256_hmac")
 	form.Set("kr-answer-type", answerType)
 
+	// Le paiement rattaché se lit dans la réponse que cet adaptateur
+	// vient de construire : buildKrAnswer pose KrTransaction.UUID à
+	// partir du paiement du domaine, les deux identifiants sont donc le
+	// même. Le déduire ici évite de faire descendre un paramètre de plus
+	// dans les quatre appelants, et garantit que le webhook est rattaché
+	// au paiement qu'il annonce — pas à celui qu'un appelant croyait
+	// passer.
+	var paymentUUID string
+	if len(answer.Transactions) > 0 {
+		paymentUUID = answer.Transactions[0].UUID
+	}
+
 	wh := delivery.Webhook{
 		ID:  id,
 		URL: targetURL,
 		Headers: map[string]string{
 			"Content-Type": "application/x-www-form-urlencoded",
 		},
-		Body:    []byte(form.Encode()),
-		Outcome: answer.OrderStatus,
-		Delay:   delay,
+		Body:        []byte(form.Encode()),
+		Outcome:     answer.OrderStatus,
+		PaymentUUID: paymentUUID,
+		Delay:       delay,
 	}
 	return wh, hash, nil
 }
