@@ -93,11 +93,16 @@ web-lint:
 # `make image-push` → build + push vers ghcr.io (nécessite `docker login ghcr.io`)
 IMAGE_TAG ?= ghcr.io/sprimault/paysim:latest
 PLATFORMS ?= linux/amd64,linux/arm64
+# Le contexte de build n'embarque pas .git/ : la révision se lit ici et
+# se passe au Dockerfile. Le repli couvre le build depuis une archive.
+REVISION ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 
 image:
 	docker buildx build --platform $(PLATFORMS) \
+		--build-arg REVISION=$(REVISION) \
 		-t $(IMAGE_TAG) -f deploy/Dockerfile .
 
 image-push:
 	docker buildx build --platform $(PLATFORMS) --push \
+		--build-arg REVISION=$(REVISION) \
 		-t $(IMAGE_TAG) -f deploy/Dockerfile .
