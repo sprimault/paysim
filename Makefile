@@ -70,9 +70,17 @@ build: web-build
 
 # web-types régénère les types TypeScript de l'API à partir des DTOs
 # Go de internal/api via tygo. À relancer après tout changement de
-# signature JSON exposée à l'UI.
+# signature JSON exposée à l'UI — le job « Types générés » de la CI
+# refuse la fusion si on l'oublie, parce qu'on l'a oublié trois fois.
+#
+# Version épinglée, et la CI installe la même : deux versions de tygo
+# qui ne mettent pas les commentaires au même endroit feraient échouer
+# ce contrôle sans qu'aucun type Go n'ait bougé. En changer ici oblige
+# à changer TYGO_VERSION dans .github/workflows/ci.yml.
+TYGO_VERSION ?= v0.2.21
+
 web-types:
-	@command -v tygo >/dev/null 2>&1 || { echo "tygo absent : go install github.com/gzuidhof/tygo@latest"; exit 1; }
+	@command -v tygo >/dev/null 2>&1 || { echo "tygo absent : go install github.com/gzuidhof/tygo@$(TYGO_VERSION)"; exit 1; }
 	tygo generate --config tools/tygo/tygo.yaml
 
 web-build:

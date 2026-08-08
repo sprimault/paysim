@@ -44,6 +44,10 @@ concurrency:
 
 env:
   NODE_VERSION: '22'
+  # Doit rester égal à TYGO_VERSION dans le Makefile : le contrôle de
+  # dérive compare une génération locale à une génération CI, deux
+  # versions différentes le feraient échouer à tort.
+  TYGO_VERSION: 'v0.2.21'
 
 jobs:
   go:
@@ -218,6 +222,41 @@ jobs:
         env:
           PAYSIM_URL: http://127.0.0.1:8080
 
+  # Les types TypeScript de l'API sont générés depuis les DTOs Go, mais
+  # rien ne lançait la génération : `make web-types` n'est appelé par
+  # aucune autre cible, et la brancher sur `web-build` casserait l'image
+  # (le stage Node du Dockerfile n'a ni Go ni tygo).
+  #
+  # Résultat : trois livraisons d'affilée ont modifié des types Go sans
+  # régénérer, et le front ignorait jusqu'au type de `detailedErrorCode`
+  # qu'on venait de livrer. Ce job ne corrige rien, il refuse de laisser
+  # passer — comme `gofmt -l`.
+  types:
+    name: Types générés à jour
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Installer tygo
+        run: go install github.com/gzuidhof/tygo@${{ env.TYGO_VERSION }}
+
+      - name: Régénérer les types
+        run: make web-types
+
+      - name: Vérifier l'absence de dérive
+        run: |
+          if ! git diff --exit-code -- web/src/shared/model/; then
+            echo "::error::Les types generes ont derive des DTOs Go."
+            echo "Lance 'make web-types' et commite le resultat."
+            exit 1
+          fi
+          echo "Types generes conformes aux DTOs Go"
+
   # Image `edge` : l'état de master, publié à chaque fusion.
   #
   # Elle existe pour qu'un correctif soit installable sans passer par une
@@ -239,7 +278,7 @@ jobs:
     # Seulement sur master : une PR ne doit jamais publier d'image.
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     # Rien ne part au registre tant que la validation n'est pas verte.
-    needs: [go, web, audit, scenarios]
+    needs: [go, web, audit, scenarios, types]
     permissions:
       contents: read
       packages: write
