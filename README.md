@@ -258,12 +258,13 @@ stability between two merges.
 
 ## Status
 
-Preview release, tag `v0.5.5`. Stripe support and a demo GIF are planned.
+Preview release, tag `v0.6.0`. Stripe support and a demo GIF are planned.
 
 **How it is validated.** Every pull request runs the linter, the unit tests
-with the race detector, a dependency audit, and the seven canonical
-scenarios against a real binary in SQLite mode. The workflow is public and
-its runs are in the Actions tab. The `kr-hash` signature is checked against
+with the race detector, a dependency audit, a drift check on the TypeScript
+types generated from the Go structs, and the seven canonical scenarios
+against a real binary in SQLite mode. The workflow is public and its runs
+are in the Actions tab. The `kr-hash` signature is checked against
 the IETF RFC 4231 vectors and against a vector from Lyra's official Java
 SDK — neither is produced by our own code.
 

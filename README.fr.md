@@ -264,13 +264,14 @@ d'une interface entre deux fusions.
 
 ## Statut
 
-Préversion, tag `v0.5.5`. Le support Stripe et un GIF de démonstration
+Préversion, tag `v0.6.0`. Le support Stripe et un GIF de démonstration
 sont prévus.
 
 **Comment c'est validé.** Chaque pull request exécute le linter, les tests
-unitaires avec le détecteur de concurrence, un audit des dépendances et les
-sept scénarios canoniques contre un vrai binaire en mode SQLite. Le workflow
-est public, ses exécutions sont dans l'onglet Actions. La signature
+unitaires avec le détecteur de concurrence, un audit des dépendances, un
+contrôle de dérive des types TypeScript générés depuis les structures Go, et
+les sept scénarios canoniques contre un vrai binaire en mode SQLite. Le
+workflow est public, ses exécutions sont dans l'onglet Actions. La signature
 `kr-hash` est vérifiée contre les vecteurs de la RFC 4231 et contre un
 vecteur du SDK Java officiel de Lyra — aucun des deux n'est produit par
 notre propre code.
