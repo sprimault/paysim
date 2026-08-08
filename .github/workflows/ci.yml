@@ -250,6 +250,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/${{ github.repository }}:edge
+          # Sans ça, l'image ne dit pas de quel commit elle sort — le
+          # défaut du Dockerfile (`unknown`) resterait en place.
+          build-args: |
+            REVISION=${{ github.sha }}
           # Le cache du registre évite de tout reconstruire à chaque
           # fusion — le front et les dépendances Go bougent rarement.
           cache-from: type=gha

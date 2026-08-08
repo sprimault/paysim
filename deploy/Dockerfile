@@ -56,6 +56,16 @@ RUN mkdir -p /data-init && chown 65532:65532 /data-init
 # la cible, pour que BuildKit tire la base de chaque architecture.
 FROM gcr.io/distroless/static-debian12:nonroot
 
+# Commit d'où sort l'image, à passer par --build-arg : `.dockerignore`
+# exclut `.git/`, le Dockerfile ne peut donc pas le déduire lui-même.
+#
+# C'est l'information qui manque le plus sur `edge`, reconstruite à
+# chaque fusion : sans elle, deux images tirées à deux jours d'écart ne
+# se distinguent que par leur digest, qui ne renvoie à rien. Reste
+# `unknown` pour un build local, ce qui est le cas honnête — la valeur
+# n'est fiable que si la chaîne de build la fournit.
+ARG REVISION=unknown
+
 # Rattache l'image au dépôt. GHCR lit ce label au push : sans lui, le
 # package reste orphelin, et un workflow ne peut pas y écrire même avec
 # packages:write — les droits d'un package sont distincts de ceux du
@@ -67,6 +77,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 LABEL org.opencontainers.image.source="https://github.com/sprimault/paysim"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.description="Faux prestataire de paiement pour tests d'integration : provoque a la demande les echecs qu'une sandbox refuse de produire."
+LABEL org.opencontainers.image.revision="${REVISION}"
 
 COPY --from=gobuild /paysim /paysim
 COPY --from=gobuild --chown=nonroot:nonroot /data-init /data
