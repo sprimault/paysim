@@ -114,6 +114,12 @@ export const ErrCodeExpiredCard = "PAYSIM_EXPIRED_CARD";
  */
 export const ErrCodeRevokedCard = "PAYSIM_REVOKED_CARD";
 /**
+ * ErrCodeRefused habille un paiement refusé au niveau PSP. Le motif
+ * bancaire, lui, vit dans detailedErrorCode : c'est un code ISO 8583
+ * non préfixé, parce qu'il vient de l'acquéreur et non de nous.
+ */
+export const ErrCodeRefused = "PAYSIM_REFUSED";
+/**
  * CreatePaymentRequest est le corps JSON attendu par POST
  * /api-payment/V4/Charge/CreatePayment. Les noms de champs sont ceux
  * utilises par PayZen — on les recopie tels quels (regle providers.md).
@@ -580,11 +586,13 @@ export interface SubscriptionGetRequest {
    */
   subscriptionId: string;
   /**
-   * PaymentMethodToken est accepté par le contrat PayZen mais ignoré
-   * par Paysim : l'identifiant d'abonnement suffit à retrouver
-   * l'enregistrement.
+   * PaymentMethodToken est requis, comme chez PayZen, et doit
+   * correspondre au moyen prélevé par l'abonnement. L'identifiant
+   * suffirait techniquement à retrouver l'enregistrement — c'est
+   * justement pour ça que Paysim l'exige : accepter ce que le vrai
+   * refuse laisse passer une intégration qui échouera en production.
    */
-  paymentMethodToken?: string;
+  paymentMethodToken: string;
 }
 /**
  * SubscriptionGetAnswer est le resume d'un abonnement retourne au marchand.
@@ -1053,10 +1061,25 @@ export interface KrTransaction {
    */
   creationDate: string;
   /**
-   * ErrorCode et ErrorMessage détaillent un refus. Vides sur succès.
+   * ErrorCode et ErrorMessage détaillent un refus côté PSP. Vides sur
+   * succès. Préfixe PAYSIM_ pour ne pas se faire passer pour un code
+   * PayZen réel.
    */
   errorCode?: string;
   errorMessage?: string;
+  /**
+   * DetailedErrorCode porte le motif bancaire : le code de retour
+   * d'autorisation ISO 8583 que l'acquéreur remonte — 51 pour une
+   * provision insuffisante, 43 pour une opposition, 91 pour un
+   * émetteur injoignable.
+   * Contrairement à ErrorCode, celui-ci n'est pas préfixé : ce n'est
+   * pas une valeur Paysim, c'est la norme, et c'est sur elle qu'un
+   * marchand écrit sa logique de reconduction. La reproduire à
+   * l'identique est le seul moyen qu'un mapping écrit contre Paysim
+   * reste valable en production.
+   */
+  detailedErrorCode?: string;
+  detailedErrorMessage?: string;
   /**
    * Metadata restitue la map libre envoyée à la création. C'est le
    * canal prévu pour rattacher un paiement à un objet métier sans
