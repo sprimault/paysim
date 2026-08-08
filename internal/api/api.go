@@ -705,11 +705,31 @@ func (h *Handler) getSubscription(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, subscriptionToOutput(sub, "payzen"))
 }
 
+// repoManquant répond quand un dépôt n'est pas câblé.
+//
+// Un 200 avec une liste vide était la réponse d'avant : elle affirmait
+// qu'aucun objet n'existait là où le serveur ne savait simplement pas
+// répondre. C'est ce mensonge qui a rendu le mode mémoire inexploitable
+// sans que rien ne le signale — ni log, ni code d'erreur, ni test.
+//
+// 501 dit la vérité : la fonctionnalité n'est pas disponible dans cette
+// configuration. Le cas ne devrait plus survenir, les deux backends
+// câblant leurs dépôts ; s'il revient, il sera bruyant.
+func (h *Handler) repoManquant(w http.ResponseWriter, quoi string) {
+	h.logger.Error("api_repo_absent", "collection", quoi)
+	http.Error(w, "collection indisponible : depot "+quoi+" non configure",
+		http.StatusNotImplemented)
+}
+
 // listSubscriptions traite GET /paysim/api/v1/subscriptions.
 // Cross-provider par défaut ; ?provider=payzen filtre.
 func (h *Handler) listSubscriptions(w http.ResponseWriter, r *http.Request) {
 	if h.payzenHandler == nil {
 		writeJSON(w, http.StatusOK, []SubscriptionOutput{})
+		return
+	}
+	if h.subscriptionRepo == nil {
+		h.repoManquant(w, "subscriptions")
 		return
 	}
 	// L'accès direct au store passe par le handler payzen — pas d'API
@@ -905,7 +925,7 @@ type PaymentMethodOutput struct {
 // listing global n'est possible côté payzen.Store — on renvoie vide.
 func (h *Handler) listPaymentMethods(w http.ResponseWriter, _ *http.Request) {
 	if h.paymentMethodRepo == nil {
-		writeJSON(w, http.StatusOK, []PaymentMethodOutput{})
+		h.repoManquant(w, "payment methods")
 		return
 	}
 	// Aujourd'hui un seul provider (payzen) — quand Stripe arrive en
@@ -958,7 +978,7 @@ func toPaymentMethodOutput(rec *store.PaymentMethodRecord) PaymentMethodOutput {
 // listing global côté payzen.Store, l'accès unitaire n'est pas exposé.
 func (h *Handler) getPaymentMethod(w http.ResponseWriter, r *http.Request) {
 	if h.paymentMethodRepo == nil {
-		http.Error(w, "moyen de paiement inconnu", http.StatusNotFound)
+		h.repoManquant(w, "payment methods")
 		return
 	}
 	token := r.PathValue("token")

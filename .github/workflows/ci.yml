@@ -138,8 +138,15 @@ jobs:
         run: npm run audit:high
         working-directory: web
 
+  # Les scénarios tournent dans les deux modes de stockage.
+  #
+  # Ils ne couvraient que SQLite, alors que le mode mémoire est le défaut
+  # de l'image : un `docker run` sans configuration n'était donc exercé
+  # nulle part. C'est ainsi qu'a survécu un défaut où l'API répondait
+  # « liste vide » sur des alias existants et « 404 » sur un token
+  # pourtant débitable — le mode le plus utilisé était le seul non testé.
   scenarios:
-    name: Scénarios canoniques (SQLite)
+    name: Scénarios canoniques
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -179,48 +186,77 @@ jobs:
           PY
           python3 /tmp/sink.py &
 
-      # SQLite plutôt que le mode mémoire : c'est le défaut de
-      # deploy/compose.yml, et le mode où les défauts d'asynchronisme
-      # se manifestent réellement — la course corrigée en v0.4.6 était
-      # invisible en mémoire, donc invisible pour go test.
-      - name: Démarrer Paysim
+      # Les deux modes de stockage, dans un seul job.
+      #
+      # SQLite reste indispensable : c'est le défaut de
+      # deploy/compose.yml, et le mode où les défauts d'asynchronisme se
+      # manifestent réellement — la course corrigée en v0.4.6 était
+      # invisible en mémoire, donc invisible pour go test. La mémoire
+      # s'y ajoute plutôt qu'elle ne le remplace, parce que c'est elle
+      # que rencontre un `docker run` sans configuration.
+      #
+      # Une boucle plutôt qu'une matrice, pour que le nom du check reste
+      # « Scénarios canoniques » quels que soient les modes couverts :
+      # une matrice le suffixe, et chaque mode ajouté casserait alors la
+      # protection de branche qui le référence. Le coût est de les jouer
+      # en séquence — une quarantaine de secondes.
+      - name: Exécuter les scénarios dans les deux modes
         run: |
-          ./paysim &
-          for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
-              echo "Paysim répond après ${i} tentative(s)"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Paysim n'a pas démarré dans le délai imparti"
-          exit 1
-        env:
-          PAYSIM_PUBLIC_URL: http://127.0.0.1:8080
-          PAYSIM_CALLBACK_URL: http://127.0.0.1:9099
-          PAYSIM_PAYZEN_HMAC_KEY: dev-hmac-key
-          PAYSIM_STORE: sqlite
-          PAYSIM_SQLITE_PATH: /tmp/paysim-ci.db
-          PAYSIM_LOG_LEVEL: warn
+          global=0
+          for store in memory sqlite; do
+            echo "::group::mode $store"
+            rm -f /tmp/paysim-ci.db
+            PAYSIM_PUBLIC_URL=http://127.0.0.1:8080 \
+            PAYSIM_CALLBACK_URL=http://127.0.0.1:9099 \
+            PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key \
+            PAYSIM_STORE="$store" \
+            PAYSIM_SQLITE_PATH=/tmp/paysim-ci.db \
+            PAYSIM_LOG_LEVEL=warn \
+            ./paysim &
+            pid=$!
 
-      - name: Exécuter les scénarios
-        run: |
-          failed=0
-          for f in examples/scenarios/*.yml; do
-            if ./paysim run "$f"; then
-              echo "OK    $(basename "$f")"
-            else
-              echo "ECHEC $(basename "$f")"
-              failed=$((failed + 1))
+            up=0
+            for i in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
+                up=1
+                break
+              fi
+              sleep 1
+            done
+            if [ "$up" -ne 1 ]; then
+              echo "mode $store : Paysim n'a pas démarré"
+              kill "$pid" 2>/dev/null
+              global=$((global + 1))
+              echo "::endgroup::"
+              continue
             fi
+
+            failed=0
+            for f in examples/scenarios/*.yml; do
+              if PAYSIM_URL=http://127.0.0.1:8080 ./paysim run "$f"; then
+                echo "OK    $(basename "$f")"
+              else
+                echo "ECHEC $(basename "$f")"
+                failed=$((failed + 1))
+              fi
+            done
+
+            kill "$pid" 2>/dev/null
+            wait "$pid" 2>/dev/null
+            if [ "$failed" -ne 0 ]; then
+              echo "mode $store : $failed scenario(s) en echec"
+              global=$((global + 1))
+            else
+              echo "mode $store : tous les scenarios passent"
+            fi
+            echo "::endgroup::"
           done
-          if [ "$failed" -ne 0 ]; then
-            echo "$failed scenario(s) en echec"
+
+          if [ "$global" -ne 0 ]; then
+            echo "$global mode(s) en echec"
             exit 1
           fi
-          echo "Tous les scenarios passent"
-        env:
-          PAYSIM_URL: http://127.0.0.1:8080
+          echo "Les deux modes passent"
 
   # Les types TypeScript de l'API sont générés depuis les DTOs Go, mais
   # rien ne lançait la génération : `make web-types` n'est appelé par

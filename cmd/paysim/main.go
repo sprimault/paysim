@@ -29,6 +29,7 @@ import (
 	"github.com/sprimault/paysim/internal/httplog"
 	"github.com/sprimault/paysim/internal/providers/payzen"
 	"github.com/sprimault/paysim/internal/store"
+	"github.com/sprimault/paysim/internal/store/inmem"
 	sqlitepkg "github.com/sprimault/paysim/internal/store/sqlite"
 	"github.com/sprimault/paysim/internal/webui"
 )
@@ -102,12 +103,22 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 
 	eventBus := bus.New()
 
-	// StoreBackend gouverne memory vs sqlite. Le PaymentRepository
-	// cross-provider est construit ici et partagé entre le store
-	// payzen (via SQLiteStore) et l'API UI (endpoints DELETE
-	// cross-provider). En mode mémoire, l'API UI n'utilise pas de
-	// repo — les endpoints de suppression cross-provider retombent
-	// sur les Delete du store payzen.
+	// StoreBackend gouverne memory vs sqlite. Les trois dépôts
+	// cross-provider sont construits ici et partagés entre le store
+	// payzen et l'API UI, quel que soit le backend.
+	//
+	// Les deux branches sont volontairement symétriques. Elles ne
+	// l'étaient pas : en mémoire, aucun dépôt n'était construit et
+	// l'API répondait « liste vide » sur /payment-methods et
+	// /subscriptions, « 404 » sur le détail d'un alias pourtant
+	// utilisable. Comme c'est le mode par défaut de l'image, tout
+	// `docker run` sans configuration donnait cette vue mensongère.
+	//
+	// NewSQLiteStore ne dépend d'aucun backend malgré son nom : il
+	// n'enveloppe que les trois interfaces, d'où son emploi identique
+	// de part et d'autre. Une seule traduction payzen ↔ store, donc
+	// aucune divergence possible entre les deux modes. Le nom mérite
+	// de changer, mais pas dans le même commit qu'un correctif.
 	var (
 		payzenStore       payzen.Store
 		paymentRepo       store.PaymentRepository
@@ -153,7 +164,10 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		defer func() { _ = eventBus.Close() }()
 		logger.Info("store_backend", "backend", "sqlite", "path", cfg.SQLitePath)
 	default:
-		payzenStore = payzen.NewMemoryStore()
+		paymentRepo = inmem.NewPaymentsRepository()
+		subscriptionRepo = inmem.NewSubscriptionsRepository()
+		paymentMethodRepo = inmem.NewPaymentMethodsRepository()
+		payzenStore = payzen.NewSQLiteStore(paymentRepo, subscriptionRepo, paymentMethodRepo)
 		logger.Info("store_backend", "backend", "memory")
 	}
 	queue.SetPublisher(eventBus)

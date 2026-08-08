@@ -1333,22 +1333,26 @@ func enroll(t *testing.T, server *httptest.Server, pan string, expM, expY int) s
 
 // --- Tests 7a : endpoints listing subscriptions + payment methods ---------
 
-func TestListPaymentMethods_emptyInMemoryMode(t *testing.T) {
+// TestListPaymentMethods_sansDepot : un handler monte sans depot ne
+// repond plus 200 avec une liste vide.
+//
+// Ce test verifiait l'inverse, et son nom disait « mode memoire » alors
+// qu'il decrivait un defaut de cablage. La confusion a coute cher : le
+// mode memoire cablait effectivement zero depot, l'API affirmait donc
+// qu'aucun alias n'existait, et ce test figeait ce mensonge en
+// comportement attendu. Les deux backends cablent desormais leurs
+// depots ; un handler qui n'en a pas est une erreur de montage.
+func TestListPaymentMethods_sansDepot(t *testing.T) {
 	t.Parallel()
 	server, _ := setupWithPayzen(t, "")
-	// setupWithPayzen ne branche pas PaymentMethodRepo → endpoint retourne [].
 	resp, err := http.Get(server.URL + "/paysim/api/v1/payment-methods")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, veut 200", resp.StatusCode)
-	}
-	var out []PaymentMethodOutput
-	_ = json.NewDecoder(resp.Body).Decode(&out)
-	if len(out) != 0 {
-		t.Errorf("liste = %d entries, veut 0 en mode memoire", len(out))
+	if resp.StatusCode != http.StatusNotImplemented {
+		t.Errorf("status = %d, veut 501 — une liste vide ferait croire qu'aucun alias n'existe",
+			resp.StatusCode)
 	}
 }
 
@@ -1619,14 +1623,18 @@ func TestGetPaymentMethod_unknown(t *testing.T) {
 	}
 }
 
-func TestGetPaymentMethod_inMemoryMode(t *testing.T) {
+// TestGetPaymentMethod_sansDepot : sans depot, le detail ne repond plus
+// 404. Un 404 affirme « ce token n'existe pas » ; le serveur ne sait en
+// realite pas repondre, et l'integrateur en concluait a tort que son
+// enrolement avait echoue alors que le token etait debitable.
+func TestGetPaymentMethod_sansDepot(t *testing.T) {
 	t.Parallel()
-	// setupWithPayzen ne branche pas PaymentMethodRepo → 404.
 	server, _ := setupWithPayzen(t, "")
 	resp, _ := http.Get(server.URL + "/paysim/api/v1/payment-methods/any-token")
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("status = %d, veut 404 (mode memoire sans repo)", resp.StatusCode)
+	if resp.StatusCode != http.StatusNotImplemented {
+		t.Errorf("status = %d, veut 501 — un 404 ferait conclure a un enrolement echoue",
+			resp.StatusCode)
 	}
 }
 
