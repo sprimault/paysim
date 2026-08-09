@@ -4,6 +4,7 @@
 package inmem
 
 import (
+	"errors"
 	"sort"
 	"sync"
 
@@ -26,6 +27,10 @@ func NewSubscriptionsRepository() *SubscriptionsRepository {
 func (r *SubscriptionsRepository) Save(rec *store.SubscriptionRecord) error {
 	if rec == nil {
 		return errNilRecord
+	}
+	// Clé primaire vide : refusée, comme en SQLite.
+	if rec.ID == "" {
+		return errors.New("Save: ID vide")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()

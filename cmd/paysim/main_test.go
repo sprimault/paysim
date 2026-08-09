@@ -16,7 +16,20 @@ import (
 
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/providers/payzen"
+	"github.com/sprimault/paysim/internal/store/inmem"
 )
+
+// newMemStore monte un Store adosse a des depots en memoire, comme le
+// fait main pour PAYSIM_STORE=memory. Remplace le payzen.MemoryStore
+// supprime : le mode memoire ne passe plus par une implementation
+// distincte du contrat.
+func newMemStore() payzen.Store {
+	return payzen.NewRepoStore(
+		inmem.NewPaymentsRepository(),
+		inmem.NewSubscriptionsRepository(),
+		inmem.NewPaymentMethodsRepository(),
+	)
+}
 
 // buildTestServer construit un httptest.Server câblé exactement comme
 // le vrai binaire (buildMux + composants réels), avec le basePath donné.
@@ -25,7 +38,7 @@ import (
 func buildTestServer(t *testing.T, basePath string) (*httptest.Server, *atomic.Bool) {
 	t.Helper()
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	store := payzen.NewMemoryStore()
+	store := newMemStore()
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
 
 	ctx, cancel := context.WithCancel(context.Background())

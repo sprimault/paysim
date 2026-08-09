@@ -41,7 +41,7 @@ func openTestStore(t *testing.T, path string) *RepoStore {
 }
 
 // runContract lance le même scénario sur une Store — vérifie que
-// MemoryStore et RepoStore respectent tous deux le contrat au bit
+// Adosse a inmem ou a SQLite, RepoStore respecte le contrat au bit
 // près (même comportement pour un même input).
 func runContract(t *testing.T, s Store) {
 	t.Helper()
@@ -93,6 +93,33 @@ func runContract(t *testing.T, s Store) {
 	if n != 1 {
 		t.Errorf("Len = %d, veut 1", n)
 	}
+
+	// Cles vides — ajoute apres coup, et pas par gout de l'exhaustivite.
+	//
+	// L'implementation memoire les acceptait la ou SQLite les refusait :
+	// une transaction sans UUID s'y enregistrait, et une recherche a vide
+	// la retrouvait. Deux backends censes etre interchangeables ne
+	// l'etaient donc pas, et ce contrat ne le voyait pas parce qu'il
+	// n'exercait que des transactions completes.
+	// La transaction porte un Payment valide et un UUID vide : sans lui,
+	// Save echouerait des la traduction, sur le Payment nil, et ce test
+	// passerait meme sans la garde qu'il pretend verifier.
+	sansUUID := buildSampleTx(t)
+	sansUUID.UUID = ""
+	sansUUID.FormToken = "sans-uuid"
+	if err := s.Save(sansUUID); err == nil {
+		t.Error("Save d'une transaction sans UUID = nil, veut une erreur")
+	}
+	if got, err := s.ByUUID(""); err != nil || got != nil {
+		t.Errorf("ByUUID(\"\") = %+v, %v — veut nil, nil : une cle vide ne doit rien trouver",
+			got, err)
+	}
+	if got, err := s.ByToken(""); err != nil || got != nil {
+		t.Errorf("ByToken(\"\") = %+v, %v — veut nil, nil", got, err)
+	}
+	if n, _ := s.Len(); n != 1 {
+		t.Errorf("Len = %d apres les appels a vide, veut 1 — rien n'a du etre ajoute", n)
+	}
 }
 
 // buildSampleTx : Transaction test avec Payment domain non trivial
@@ -130,13 +157,13 @@ func TestRepoStoreContract(t *testing.T) {
 	runContract(t, s)
 }
 
-func TestMemoryStoreContract(t *testing.T) {
+func TestRepoStoreMemoireContract(t *testing.T) {
 	t.Parallel()
-	runContract(t, NewMemoryStore())
+	runContract(t, newMemStore())
 }
 
 // runMethodContract vérifie les 3 méthodes de PaymentMethod du contrat
-// Store. Passé sur MemoryStore et RepoStore pour garantir la parité.
+// Store. Passé sur les deux backends de RepoStore pour garantir la parité.
 func runMethodContract(t *testing.T, s Store) {
 	t.Helper()
 	m := &PaymentMethod{
@@ -184,7 +211,7 @@ func runMethodContract(t *testing.T, s Store) {
 }
 
 // runSubscriptionContract vérifie les 3 méthodes de Subscription du
-// contrat Store. Passé sur MemoryStore et RepoStore.
+// contrat Store. Passé sur les deux backends de RepoStore.
 func runSubscriptionContract(t *testing.T, s Store) {
 	t.Helper()
 	sub := &Subscription{
@@ -244,9 +271,9 @@ func TestRepoStoreMethodContract(t *testing.T) {
 	runMethodContract(t, openTestStore(t, filepath.Join(t.TempDir(), "methods.db")))
 }
 
-func TestMemoryStoreMethodContract(t *testing.T) {
+func TestRepoStoreMemoireMethodContract(t *testing.T) {
 	t.Parallel()
-	runMethodContract(t, NewMemoryStore())
+	runMethodContract(t, newMemStore())
 }
 
 func TestRepoStoreSubscriptionContract(t *testing.T) {
@@ -254,9 +281,9 @@ func TestRepoStoreSubscriptionContract(t *testing.T) {
 	runSubscriptionContract(t, openTestStore(t, filepath.Join(t.TempDir(), "subs.db")))
 }
 
-func TestMemoryStoreSubscriptionContract(t *testing.T) {
+func TestRepoStoreMemoireSubscriptionContract(t *testing.T) {
 	t.Parallel()
-	runSubscriptionContract(t, NewMemoryStore())
+	runSubscriptionContract(t, newMemStore())
 }
 
 func TestRepoStoreSurvivesReopen(t *testing.T) {

@@ -20,8 +20,9 @@ import (
 // modes de stockage l'emploient donc à l'identique, mémoire comprise —
 // une seule traduction payzen ↔ store, et aucune divergence possible
 // entre les deux. Le nom disait le contraire, et c'est en partie ce qui
-// a fait construire un MemoryStore séparé plutôt que réutiliser
-// celui-ci.
+// a fait construire une implémentation en mémoire séparée plutôt que de
+// réutiliser celle-ci. Elle a été supprimée depuis : une seule
+// traduction du contrat, empruntée par les deux modes.
 //
 // Les trois repositories :
 //   - store.PaymentRepository pour les transactions et leur journal
