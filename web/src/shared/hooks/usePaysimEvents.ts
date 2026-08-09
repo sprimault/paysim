@@ -6,7 +6,44 @@ import { fetchPayment, fetchPayments } from '@/entities/payment/api/paymentApi';
 import { usePaymentStore } from '@/entities/payment/model/paymentStore';
 import { fetchWebhooks } from '@/entities/webhook/api/webhookApi';
 import { useWebhookStore } from '@/entities/webhook/model/webhookStore';
+import { fetchPaymentMethods } from '@/entities/payment-method/api/paymentMethodApi';
+import { usePaymentMethodStore } from '@/entities/payment-method/model/paymentMethodStore';
+import { fetchSubscriptions } from '@/entities/subscription/api/subscriptionApi';
+import { useSubscriptionStore } from '@/entities/subscription/model/subscriptionStore';
 import { isPaysimEvent } from '@/shared/model/events';
+
+/**
+ * resynchroniser relit les collections déjà chargées.
+ *
+ * Appelé au retour d'une coupure SSE. Le rattrapage par `Last-Event-ID`
+ * ne suffit pas : après un redémarrage serveur, le ring d'événements est
+ * vide et les identifiants repartent, si bien que le client reçoit le
+ * flux vivant sans jamais apprendre que ce qu'il affiche a disparu.
+ * `internal/bus` prévoit explicitement que le front relise un instantané
+ * dans ce cas.
+ *
+ * Seules les collections déjà chargées sont relues — en charger une que
+ * l'utilisateur n'a jamais ouverte reviendrait à travailler pour un
+ * écran que personne ne regarde.
+ */
+function resynchroniser(): void {
+  const payments = usePaymentStore.getState();
+  if (payments.listLoaded) {
+    void fetchPayments().then(payments.setList).catch(() => undefined);
+  }
+  const webhooks = useWebhookStore.getState();
+  if (webhooks.listLoaded) {
+    void fetchWebhooks().then(webhooks.setList).catch(() => undefined);
+  }
+  const methods = usePaymentMethodStore.getState();
+  if (methods.listLoaded) {
+    void fetchPaymentMethods().then(methods.setList).catch(() => undefined);
+  }
+  const subscriptions = useSubscriptionStore.getState();
+  if (subscriptions.listLoaded) {
+    void fetchSubscriptions().then(subscriptions.setList).catch(() => undefined);
+  }
+}
 
 /**
  * usePaysimEvents ouvre UNE connexion SSE au top level de l'app et
@@ -70,5 +107,5 @@ export function usePaysimEvents(
         void fetchWebhooks().then(setWebhookList).catch(() => undefined);
         return;
     }
-  });
+  }, resynchroniser);
 }

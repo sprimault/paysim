@@ -139,4 +139,55 @@ describe('usePaysimEvents', () => {
     });
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
+
+  // Resynchronisation au retour de connexion.
+  //
+  // Le rattrapage par Last-Event-ID ne corrige pas ce qui est déjà
+  // affiché : après un redémarrage serveur, le front gardait des
+  // paiements disparus et l'indicateur repassait au vert sans que rien
+  // ne le contredise. Il fallait cliquer sur Rafraîchir pour voir l'état
+  // réel.
+  it('relit les collections chargées à la reconnexion', async () => {
+    usePaymentStore.getState().setList([]);
+    expect(usePaymentStore.getState().listLoaded).toBe(true);
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response('[]', { status: 200 }),
+    );
+    renderHook(() => usePaysimEvents());
+
+    act(() => {
+      instances[0].onopen?.(new Event('open'));
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+
+    act(() => {
+      instances[0].onerror?.(new Event('error'));
+      instances[0].onopen?.(new Event('open'));
+    });
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+
+    const urls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) =>
+      String(c[0]),
+    );
+    expect(urls.some((u) => u.includes('/payments'))).toBe(true);
+  });
+
+  // Recharger une collection jamais ouverte ferait travailler l'app pour
+  // un écran que personne ne regarde.
+  it('ne relit pas les collections jamais chargées', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response('[]', { status: 200 }),
+    );
+    renderHook(() => usePaysimEvents());
+
+    act(() => {
+      instances[0].onopen?.(new Event('open'));
+      instances[0].onerror?.(new Event('error'));
+      instances[0].onopen?.(new Event('open'));
+    });
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 });

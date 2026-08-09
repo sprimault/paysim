@@ -14,15 +14,24 @@ import { subscribeSSE, type SSEEvent } from '@/shared/api/sse';
  * dispatche vers un store Zustand (voir entities/payment,
  * entities/webhook en 3c.3).
  */
-export function useSSE(path: string, onEvent: (evt: SSEEvent) => void): { connected: boolean } {
+export function useSSE(
+  path: string,
+  onEvent: (evt: SSEEvent) => void,
+  onReconnect?: () => void,
+): { connected: boolean } {
   const [connected, setConnected] = useState(false);
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
+  // Même raison que pour onEvent : passer le callback par un ref évite
+  // de rouvrir la connexion à chaque rendu du consommateur.
+  const onReconnectRef = useRef(onReconnect);
+  onReconnectRef.current = onReconnect;
 
   useEffect(() => {
     const handle = subscribeSSE(path, {
       onEvent: (evt) => onEventRef.current(evt),
       onStatusChange: setConnected,
+      onReconnect: () => onReconnectRef.current?.(),
     });
     return () => handle.close();
   }, [path]);

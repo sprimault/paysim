@@ -90,4 +90,39 @@ describe('subscribeSSE', () => {
     handle.close();
     expect(instances[0].close).toHaveBeenCalledTimes(1);
   });
+
+  // La première ouverture ne doit rien resynchroniser : les hooks de
+  // liste chargent déjà les collections au montage, un refetch de plus
+  // serait un doublon à chaque démarrage de l'application.
+  it('n\'appelle pas onReconnect à la première ouverture', () => {
+    const onReconnect = vi.fn();
+    subscribeSSE('/x', { onEvent: () => undefined, onReconnect });
+    instances[0].onopen?.(new Event('open'));
+    expect(onReconnect).not.toHaveBeenCalled();
+  });
+
+  // Le cas que ce mécanisme existe pour couvrir : le serveur redémarre,
+  // EventSource se reconnecte seul, l'indicateur repasse au vert — et
+  // sans ce signal l'interface continuait d'afficher des entités
+  // disparues, le rattrapage par Last-Event-ID ne pouvant rien pour
+  // elles.
+  it('appelle onReconnect à chaque réouverture, pas la première', () => {
+    const onReconnect = vi.fn();
+    subscribeSSE('/x', { onEvent: () => undefined, onReconnect });
+
+    instances[0].onopen?.(new Event('open'));
+    instances[0].onerror?.(new Event('error'));
+    instances[0].onopen?.(new Event('open'));
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+
+    instances[0].onerror?.(new Event('error'));
+    instances[0].onopen?.(new Event('open'));
+    expect(onReconnect).toHaveBeenCalledTimes(2);
+  });
+
+  it('reste silencieux sans onReconnect fourni', () => {
+    subscribeSSE('/x', { onEvent: () => undefined });
+    instances[0].onopen?.(new Event('open'));
+    expect(() => instances[0].onopen?.(new Event('open'))).not.toThrow();
+  });
 });
