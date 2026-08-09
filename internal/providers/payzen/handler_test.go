@@ -37,7 +37,7 @@ func newTestServer(t *testing.T) (*httptest.Server, Store) {
 // worker de la queue est lance en background et arrete par le cleanup.
 func newTestServerFull(t *testing.T, cfg HandlerConfig) (*httptest.Server, Store, *delivery.Queue) {
 	t.Helper()
-	store := NewMemoryStore()
+	store := newMemStore()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
 

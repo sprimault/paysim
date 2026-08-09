@@ -4,6 +4,7 @@
 package inmem
 
 import (
+	"errors"
 	"sort"
 	"sync"
 
@@ -49,6 +50,12 @@ func (r *PaymentsRepository) Save(rec *store.PaymentRecord) error {
 	if rec == nil {
 		return errNilRecord
 	}
+	// Clé primaire vide : refusée, comme en SQLite. Sans cette garde,
+	// toutes les entrées sans UUID s'écraseraient mutuellement sous la
+	// clé "" et seraient retrouvées par une recherche à vide.
+	if rec.UUID == "" {
+		return errors.New("Save: UUID vide")
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	cp := copyRecord(*rec)
@@ -61,6 +68,9 @@ func (r *PaymentsRepository) Save(rec *store.PaymentRecord) error {
 
 // ByUUID retourne le paiement, ou nil, nil si inconnu.
 func (r *PaymentsRepository) ByUUID(uuid string) (*store.PaymentRecord, error) {
+	if uuid == "" {
+		return nil, nil
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	rec, ok := r.payments[uuid]
@@ -74,6 +84,9 @@ func (r *PaymentsRepository) ByUUID(uuid string) (*store.PaymentRecord, error) {
 // ByProviderRef retrouve un paiement par la référence que lui a donnée
 // son adaptateur — formToken côté PayZen.
 func (r *PaymentsRepository) ByProviderRef(provider, providerRef string) (*store.PaymentRecord, error) {
+	if providerRef == "" {
+		return nil, nil
+	}
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, rec := range r.payments {
@@ -127,6 +140,9 @@ func (r *PaymentsRepository) Count() (int, error) {
 
 // DeleteByUUID supprime un paiement, sans erreur s'il est inconnu.
 func (r *PaymentsRepository) DeleteByUUID(uuid string) error {
+	if uuid == "" {
+		return nil
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.payments, uuid)
@@ -136,6 +152,12 @@ func (r *PaymentsRepository) DeleteByUUID(uuid string) error {
 // DeleteByProvider supprime les paiements d'un adaptateur et retourne
 // le nombre supprimé.
 func (r *PaymentsRepository) DeleteByProvider(provider string) (int, error) {
+	// Un provider vide ne purge rien : sans cette garde, l'appel
+	// supprimerait les entrées dont le provider n'est pas renseigné,
+	// ce que SQLite refuse de faire.
+	if provider == "" {
+		return 0, nil
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	n := 0

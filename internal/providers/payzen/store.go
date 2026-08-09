@@ -11,18 +11,20 @@ package payzen
 //     c'est lui qu'emploie cmd/paysim dans les deux modes, adossé à
 //     internal/store/sqlite ou à internal/store/inmem selon
 //     PAYSIM_STORE.
-//   - MemoryStore (NewMemoryStore) : maps protégées par mutex, sans
-//     état entre redémarrages. Plus employé en production depuis que
-//     le mode mémoire passe par RepoStore ; conservé pour les tests,
-//     qui s'en servent comme d'un double sans dépendance.
 //
-// Les deux impls partagent le même contrat testé dans
-// store_contract_test.go — un ajout de méthode ici doit être suivi
-// d'un ajout dans les deux impls et d'un test contract associé.
+// Une seule implémentation, volontairement. Il en existait une seconde,
+// MemoryStore, qui servait au mode mémoire : deux traductions du même
+// contrat, dont une que la production a cessé d'emprunter sans que les
+// tests le remarquent. C'est ce qui a permis au mode par défaut de
+// répondre « liste vide » sur des objets existants jusqu'en v0.6.1.
+//
+// Le contrat est testé dans store_contract_test.go, joué sur les deux
+// backends de RepoStore — un ajout de méthode ici doit être suivi d'un
+// test contract associé.
 //
 // Toute erreur de persistance (SQLite plein, corruption) remonte via
-// error. MemoryStore ne peut pas échouer et retourne toujours nil ;
-// la signature est identique pour ne pas divergér.
+// error. Les dépôts en mémoire ne peuvent pas échouer et retournent
+// toujours nil ; la signature est identique pour ne pas diverger.
 type Store interface {
 	// Save indexe une transaction sous FormToken + UUID. Écrase
 	// silencieusement une transaction existante — mise à jour
@@ -79,8 +81,8 @@ type Store interface {
 	// token n'est plus utilisable » est atteint).
 	RevokeMethod(token string) error
 
-	// Close libère les ressources (utile pour RepoStore ; no-op
-	// pour MemoryStore). L'appelant doit toujours l'appeler à
+	// Close libère les ressources sous-jacentes — utile adossé à
+	// SQLite, no-op en mémoire. L'appelant doit toujours l'appeler à
 	// l'arrêt propre.
 	Close() error
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/domain"
 	"github.com/sprimault/paysim/internal/providers/payzen"
+	"github.com/sprimault/paysim/internal/store/inmem"
 	sqlitepkg "github.com/sprimault/paysim/internal/store/sqlite"
 )
 
@@ -31,12 +32,24 @@ func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+// newMemStore monte un Store adosse a des depots en memoire, tel que
+// cmd/paysim le fait pour PAYSIM_STORE=memory. Remplace le
+// payzen.MemoryStore supprime : le mode memoire ne passe plus par une
+// implementation distincte du contrat.
+func newMemStore() payzen.Store {
+	return payzen.NewRepoStore(
+		inmem.NewPaymentsRepository(),
+		inmem.NewSubscriptionsRepository(),
+		inmem.NewPaymentMethodsRepository(),
+	)
+}
+
 // setup construit un environnement complet : store peuplé + queue +
 // bus + handler API branché.
 func setup(t *testing.T, token string) (*httptest.Server, payzen.Store, *delivery.Queue, *bus.Bus) {
 	t.Helper()
 	logger := discardLogger()
-	store := payzen.NewMemoryStore()
+	store := newMemStore()
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
 	b := bus.New()
 	queue.SetPublisher(b)
@@ -509,7 +522,7 @@ func TestSimulatePaymentBrowserReturn(t *testing.T) {
 	t.Parallel()
 	// Setup avec un vrai payzenHandler (nécessaire pour Simulate).
 	logger := discardLogger()
-	store := payzen.NewMemoryStore()
+	store := newMemStore()
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
 	b := bus.New()
 	queue.SetPublisher(b)
@@ -566,7 +579,7 @@ func TestSimulatePaymentBrowserReturn(t *testing.T) {
 func TestSimulatePaymentUnknownUUID(t *testing.T) {
 	t.Parallel()
 	logger := discardLogger()
-	store := payzen.NewMemoryStore()
+	store := newMemStore()
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
 	b := bus.New()
 	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{HMACKey: "k", Publisher: b})
@@ -589,7 +602,7 @@ func TestSimulatePaymentUnknownUUID(t *testing.T) {
 func TestSimulatePaymentInvalidChannel(t *testing.T) {
 	t.Parallel()
 	logger := discardLogger()
-	store := payzen.NewMemoryStore()
+	store := newMemStore()
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
 	b := bus.New()
 	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{HMACKey: "k", Publisher: b})
@@ -618,7 +631,7 @@ func TestSimulatePaymentInvalidChannel(t *testing.T) {
 func TestSimulatePaymentUnknownOutcomeListsAccepted(t *testing.T) {
 	t.Parallel()
 	logger := discardLogger()
-	store := payzen.NewMemoryStore()
+	store := newMemStore()
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
 	b := bus.New()
 	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{HMACKey: "k", Publisher: b})
@@ -709,7 +722,7 @@ func TestSSEStreamReceivesEvents(t *testing.T) {
 func TestSSELastEventIDReplay(t *testing.T) {
 	t.Parallel()
 	logger := discardLogger()
-	store := payzen.NewMemoryStore()
+	store := newMemStore()
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
 	b := bus.New()
 	handler := NewHandler(Deps{Store: store, Queue: queue, Publisher: b, Logger: logger})
@@ -821,7 +834,7 @@ func setupWithSQLite(t *testing.T) *httptest.Server {
 func setupWithPayzen(t *testing.T, token string) (*httptest.Server, payzen.Store) {
 	t.Helper()
 	logger := discardLogger()
-	store := payzen.NewMemoryStore()
+	store := newMemStore()
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
 	b := bus.New()
 	queue.SetPublisher(b)

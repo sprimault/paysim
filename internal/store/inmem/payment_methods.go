@@ -16,6 +16,7 @@
 package inmem
 
 import (
+	"errors"
 	"sort"
 	"sync"
 
@@ -47,6 +48,10 @@ func NewPaymentMethodsRepository() *PaymentMethodsRepository {
 func (r *PaymentMethodsRepository) Save(rec *store.PaymentMethodRecord) error {
 	if rec == nil {
 		return errNilRecord
+	}
+	// Clé primaire vide : refusée, comme en SQLite.
+	if rec.Token == "" {
+		return errors.New("Save: Token vide")
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
