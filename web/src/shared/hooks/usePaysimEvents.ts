@@ -26,6 +26,31 @@ import { isPaysimEvent } from '@/shared/model/events';
  * l'utilisateur n'a jamais ouverte reviendrait à travailler pour un
  * écran que personne ne regarde.
  */
+/**
+ * planifierResync regroupe les demandes de relecture.
+ *
+ * Tout événement qui modifie l'état doit pouvoir remettre l'interface
+ * d'aplomb : simuler un paiement enrôle un moyen, une échéance touche un
+ * abonnement, et le traitement unitaire ne relit que le paiement. Mais
+ * les webhooks arrivent en rafale — relire les quatre collections à
+ * chaque événement ferait quarante requêtes là où une suffit.
+ *
+ * D'où ce regroupement : les demandes rapprochées n'en déclenchent
+ * qu'une, après le calme. Le délai est court, l'interface reste vive.
+ */
+const delaiRegroupementMs = 300;
+let resyncEnAttente: ReturnType<typeof setTimeout> | undefined;
+
+function planifierResync(): void {
+  if (resyncEnAttente !== undefined) {
+    clearTimeout(resyncEnAttente);
+  }
+  resyncEnAttente = setTimeout(() => {
+    resyncEnAttente = undefined;
+    resynchroniser();
+  }, delaiRegroupementMs);
+}
+
 function resynchroniser(): void {
   const payments = usePaymentStore.getState();
   if (payments.listLoaded) {
@@ -87,17 +112,23 @@ export function usePaysimEvents(
               if (p) upsertPayment(p);
             });
           });
+        // Un paiement en entraîne d'autres : simuler PAID sur un
+        // enrôlement crée un moyen, une échéance touche un abonnement.
+        // Le refetch unitaire ci-dessus ne voit rien de tout cela.
+        planifierResync();
         return;
       }
       case 'payment_deleted':
         // Retire directement du store — pas de refetch nécessaire.
         removePayment(raw.data.uuid);
+        planifierResync();
         return;
       case 'payments_purged':
         // Refetch la liste plutôt qu'un clear local : après un bulk
         // delete, on veut être sûr qu'aucune entrée ne survit du fait
         // d'un race entre plusieurs clients.
         void fetchPayments().then(setPaymentList).catch(() => undefined);
+        planifierResync();
         return;
       case 'reset':
         // La réinitialisation vide les quatre collections d'un coup.

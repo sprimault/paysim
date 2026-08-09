@@ -59,8 +59,15 @@ export function ConfirmDialog({
       aria-labelledby="confirm-title"
       onClick={loading ? undefined : onCancel}
     >
+      {/*
+        La hauteur est bornée à la fenêtre : sans cela, un contenu long
+        déborde en haut comme en bas — la boîte est centrée, donc elle
+        sort des deux côtés — et rien ne permet d'atteindre les boutons.
+        Le débordement défile à l'intérieur plutôt que de pousser la
+        page.
+      */}
       <div
-        className="w-full max-w-md rounded-panel border border-zinc-200 bg-white p-5 shadow-panel dark:border-zinc-800 dark:bg-zinc-900"
+        className="flex max-h-[calc(100vh-2rem)] w-full max-w-md flex-col overflow-y-auto rounded-panel border border-zinc-200 bg-white p-5 shadow-panel dark:border-zinc-800 dark:bg-zinc-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-start gap-3">
