@@ -29,6 +29,8 @@ export function SubscriptionDetail() {
   const { id } = useParams();
   const { subscription, loading, error, refresh } = useSubscription(id);
   const [cancelOpen, setCancelOpen] = useState(false);
+  // Element cliqué : la boîte s'ancre dessous plutôt qu'au centre.
+  const [ancre, setAncre] = useState<HTMLElement | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (!id) return null;
@@ -120,7 +122,10 @@ export function SubscriptionDetail() {
                 variant="danger"
                 size="sm"
                 leftIcon={<Ban size={14} />}
-                onClick={() => setCancelOpen(true)}
+                onClick={(e) => {
+                  setAncre(e.currentTarget);
+                  setCancelOpen(true);
+                }}
                 disabled={busy}
               >
                 {t('subscription.detail.action.cancel')}
@@ -194,6 +199,7 @@ export function SubscriptionDetail() {
         loading={busy}
         onConfirm={handleCancel}
         onCancel={() => setCancelOpen(false)}
+        anchorEl={ancre}
       />
     </div>
   );

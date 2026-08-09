@@ -32,6 +32,8 @@ interface ResetOutput {
 export function ResetAllButton() {
   const t = useT();
   const [open, setOpen] = useState(false);
+  // Element cliqué : la boîte s'ancre dessous plutôt qu'au centre.
+  const [ancre, setAncre] = useState<HTMLElement | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleConfirm() {
@@ -65,7 +67,10 @@ export function ResetAllButton() {
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={(e) => {
+          setAncre(e.currentTarget);
+          setOpen(true);
+        }}
         title={t('header.reset.title')}
         aria-label={t('header.reset.title')}
         className="rounded p-1.5 text-zinc-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-zinc-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
@@ -81,6 +86,7 @@ export function ResetAllButton() {
         loading={loading}
         onConfirm={handleConfirm}
         onCancel={() => setOpen(false)}
+        anchorEl={ancre}
       />
     </>
   );

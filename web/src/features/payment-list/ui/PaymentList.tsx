@@ -29,6 +29,11 @@ export function PaymentList() {
   const removeFromStore = usePaymentStore((s) => s.remove);
   const [providerFilter, setProviderFilter] = useState<string>('');
   const [toDelete, setToDelete] = useState<PaymentSummary | null>(null);
+  // Element cliqué : chaque boîte s'ancre sous son propre déclencheur.
+  // La corbeille d'une ligne vit dans PaymentRow, le bouton de purge
+  // ici — d'où deux ancres distinctes.
+  const [ancreLigne, setAncreLigne] = useState<HTMLElement | null>(null);
+  const [ancrePurge, setAncrePurge] = useState<HTMLElement | null>(null);
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -99,7 +104,10 @@ export function PaymentList() {
               variant="danger"
               size="sm"
               leftIcon={<Trash2 size={14} />}
-              onClick={() => setPurgeOpen(true)}
+              onClick={(e) => {
+                setAncrePurge(e.currentTarget);
+                setPurgeOpen(true);
+              }}
             >
               {providerFilter
                 ? t('payment.list.action.purgeProvider', { provider: providerFilter })
@@ -148,7 +156,10 @@ export function PaymentList() {
                 <PaymentRow
                   key={p.uuid}
                   payment={p}
-                  onDelete={setToDelete}
+                  onDelete={(payment, trigger) => {
+                    setAncreLigne(trigger);
+                    setToDelete(payment);
+                  }}
                   showProvider={providerFilter === ''}
                 />
               ))}
@@ -169,6 +180,7 @@ export function PaymentList() {
         loading={busy}
         onConfirm={handleDelete}
         onCancel={() => setToDelete(null)}
+        anchorEl={ancreLigne}
       />
       <ConfirmDialog
         open={purgeOpen}
@@ -187,6 +199,7 @@ export function PaymentList() {
         loading={busy}
         onConfirm={handlePurge}
         onCancel={() => setPurgeOpen(false)}
+        anchorEl={ancrePurge}
       />
     </div>
   );
