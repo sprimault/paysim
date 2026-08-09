@@ -305,11 +305,20 @@ func (c *Client) SimulatePayment(ctx context.Context, uuid, outcome, channel str
 // besoins des assertions. Le journal d'événements est ignoré — le scénario
 // n'assert que l'état pour l'instant.
 type PaymentDetail struct {
-	// Vue volontairement réduite : le runner n'a besoin que de l'état
-	// pour ses assertions. Décoder davantage le rendrait sensible à des
-	// évolutions de l'API qui ne le concernent pas.
+	// Vue volontairement réduite : on ne décode que ce sur quoi le
+	// runner sait porter une assertion. Décoder davantage le rendrait
+	// sensible à des évolutions de l'API qui ne le concernent pas.
 	UUID  string `json:"uuid"`
 	State string `json:"state"`
+
+	// DeclineCode est le motif bancaire du refus — le code ISO 8583
+	// remonté par l'acquéreur. Décodé parce que assert_state sait
+	// désormais le vérifier : c'est lui qui décide de la reconduction
+	// chez le marchand, et un scénario doit pouvoir figer qu'un montant
+	// magique donné produit bien le motif attendu.
+	//
+	// Vide sur un paiement non refusé, ou refusé sans motif bancaire.
+	DeclineCode string `json:"declineCode,omitempty"`
 
 	// Customer est le contexte marchand restitué. Même forme que celui
 	// envoyé, ce qui permet à assert_customer de comparer les deux sans

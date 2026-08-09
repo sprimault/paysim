@@ -384,6 +384,24 @@ type Transaction struct {
 	//     token existant fourni par le marchand.
 	// Vide sur un paiement one-shot sans enrôlement.
 	PaymentMethodToken string
+
+	// DeclineCode et DeclineMessage conservent le motif bancaire du
+	// refus — le code de retour d'autorisation ISO 8583 et son libellé.
+	//
+	// Le motif partait jusqu'ici dans le kr-answer et dans la note de
+	// l'événement, où il finissait aplati en une phrase. Il n'était donc
+	// exploitable ni par l'interface, ni par un marchand qui interroge
+	// l'API de contrôle, alors que c'est lui qui décide d'une
+	// reconduction : un 51 se retente, un 43 non.
+	//
+	// Conservé ici plutôt que dans le domaine : un code d'acquéreur est
+	// du vocabulaire de protocole, et Stripe apportera le sien. La note
+	// de l'événement reste inchangée, elle sert la chronologie.
+	//
+	// Vides quand le refus n'a pas de motif bancaire — abandon,
+	// expiration — auquel cas il n'y a rien à afficher.
+	DeclineCode    string
+	DeclineMessage string
 }
 
 // UpdatePaymentRequest est le corps de POST /api-payment/V4/Charge/UpdatePayment.

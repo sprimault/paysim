@@ -129,6 +129,23 @@ export interface PaymentSummary {
    * qu'on ouvre la fiche du moyen.
    */
   paymentMethodToken?: string;
+  /**
+   * DeclineCode et DeclineMessage portent le motif bancaire du refus :
+   * le code de retour d'autorisation ISO 8583 tel que l'acquéreur le
+   * remonte, et son libellé.
+   * C'est ce couple qui décide de la suite chez le marchand — un 51 se
+   * retente dans trois jours, un 43 impose de réclamer une autre carte.
+   * Il ne circulait jusqu'ici que dans le kr-answer et dans la note de
+   * l'événement, où il finissait aplati en une phrase : ni l'interface
+   * ni un marchand interrogeant cette API ne pouvaient s'en servir.
+   * Sur le sommaire pour la même raison que le token ci-dessus : c'est
+   * en balayant la liste qu'on veut distinguer un refus reconductible
+   * d'un refus définitif.
+   * Vides quand le refus n'a pas de motif bancaire — abandon,
+   * expiration — et sur tout paiement non refusé.
+   */
+  declineCode?: string;
+  declineMessage?: string;
 }
 /**
  * PaymentDetail ajoute le journal d'événements.

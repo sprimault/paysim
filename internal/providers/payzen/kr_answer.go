@@ -109,17 +109,26 @@ func declineNote(reason string, d chaos.DeclineReason) string {
 // domaine — toute divergence produit une erreur domain (par exemple
 // PAID sur un paiement déjà capturé). Le mapping ABANDONED→Expire est
 // documenté dans les constantes.
-func applyOutcome(tx *Transaction, outcome, reason string) error {
+//
+// Le motif bancaire est écrit ici, et non chez les appelants : quatre
+// chemins mènent à un refus, et un motif renseigné dans trois d'entre
+// eux ne se voit pas — il produit simplement une interface muette sur le
+// quatrième. La note du journal et les champs structurés partent donc du
+// même endroit, de la même source.
+func applyOutcome(tx *Transaction, outcome, reason string, decline chaos.DeclineReason) error {
 	switch outcome {
 	case OutcomePaid:
 		return tx.Payment.Capture()
 	case OutcomeAuthorised:
 		return tx.Payment.Authorize()
 	case OutcomeUnpaid:
-		if reason == "" {
-			reason = "simulation"
+		tx.DeclineCode = decline.Code
+		tx.DeclineMessage = decline.Message
+		note := declineNote(reason, decline)
+		if note == "" {
+			note = "simulation"
 		}
-		return tx.Payment.Decline(reason)
+		return tx.Payment.Decline(note)
 	case OutcomeExpired, OutcomeAbandoned:
 		return tx.Payment.Expire()
 	}

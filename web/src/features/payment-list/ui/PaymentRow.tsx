@@ -38,9 +38,29 @@ export function PaymentRow({ payment: p, onDelete, showProvider }: PaymentRowPro
   return (
     <tr className="border-b border-zinc-200 last:border-b-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900/50">
       <td className="px-4 py-2.5">
-        <Badge tone={meta.tone} icon={<StateIcon size={12} />}>
-          {t(meta.labelKey)}
-        </Badge>
+        <div className="flex items-center gap-1.5">
+          <Badge tone={meta.tone} icon={<StateIcon size={12} />}>
+            {t(meta.labelKey)}
+          </Badge>
+          {/*
+            Le code du motif accolé à l'état, pas son libellé : « refusé »
+            ne dit pas si l'on peut reconduire, alors qu'un 51 se retente
+            et qu'un 43 impose de réclamer une autre carte. Le libellé
+            tient dans l'infobulle — en colonne, il pousserait le tableau.
+
+            Rien ne s'affiche quand le refus n'a pas de motif bancaire :
+            un abandon ou une expiration n'ont pas de code, et un badge
+            vide vaudrait moins que l'absence de badge.
+          */}
+          {p.declineCode && (
+            <span
+              title={p.declineMessage}
+              className="rounded bg-rose-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
+            >
+              {p.declineCode}
+            </span>
+          )}
+        </div>
       </td>
       {showProvider && (
         <td className="px-4 py-2.5 text-xs text-zinc-500 dark:text-zinc-400">

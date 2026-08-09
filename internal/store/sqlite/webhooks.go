@@ -159,6 +159,12 @@ func (r *WebhooksRepository) ByPayment(paymentUUID string, limit int) ([]*store.
 	return collectWebhooks(rows)
 }
 
+// collectWebhooks matérialise un curseur en enregistrements.
+//
+// Extrait des trois lectures qui parcourent les mêmes colonnes : sans
+// cela, une requête ajoutée oublie facilement la fermeture du curseur ou
+// le rows.Err() final, qui seul distingue une liste vide d'une lecture
+// interrompue.
 func collectWebhooks(rows *sql.Rows) ([]*store.WebhookRecord, error) {
 	defer func() { _ = rows.Close() }()
 	var out []*store.WebhookRecord
