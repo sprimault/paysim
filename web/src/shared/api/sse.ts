@@ -13,8 +13,18 @@ import { apiUrl } from './basePath';
  *     mécanisme qui déclenche le catch-up côté handler Go
  *     (voir internal/api.streamEvents).
  *
- * Le contrat de non-doublon/non-trou est donc entièrement délégué au
- * couple navigateur + serveur, on n'a rien à dédupliquer côté client.
+ * Le rattrapage ne couvre pas tout, contrairement à ce que ce
+ * commentaire affirmait. `internal/bus` le dit explicitement : un client
+ * qui revient avec un `Last-Event-ID` sorti du ring — ou après un
+ * redémarrage serveur, où le ring est vide et les identifiants
+ * repartent — « perdra des events, le front doit alors refetch un
+ * snapshot complet via les endpoints REST ».
+ *
+ * Cette responsabilité n'était pas assumée : au retour, l'indicateur
+ * repassait au vert et l'interface continuait d'afficher des entités
+ * disparues, sans que rien ne la contredise. D'où `onReconnect`, qui
+ * distingue un retour d'une première connexion — seul un retour justifie
+ * de tout relire.
  */
 
 // Format d'un event tel qu'écrit par api.streamEvents côté Go.
@@ -33,6 +43,14 @@ export interface SubscribeOptions {
   onEvent: (evt: SSEEvent) => void;
   /** Passe à `true` sur `open`, à `false` sur `error`. */
   onStatusChange?: (connected: boolean) => void;
+  /**
+   * Appelé sur une reconnexion, jamais sur la première ouverture.
+   *
+   * La distinction est le point du mécanisme : au premier `open`, les
+   * hooks de liste chargent déjà les collections. Un refetch de plus
+   * ferait double emploi à chaque montage de l'application.
+   */
+  onReconnect?: () => void;
 }
 
 /**
@@ -45,8 +63,16 @@ export interface SubscribeOptions {
 export function subscribeSSE(path: string, opts: SubscribeOptions): SSEHandle {
   const source = new EventSource(apiUrl(path));
 
+  // EventSource rappelle `onopen` à chaque connexion réussie, la
+  // première comprise. Ce drapeau porte toute la distinction.
+  let dejaConnecte = false;
+
   source.onopen = () => {
     opts.onStatusChange?.(true);
+    if (dejaConnecte) {
+      opts.onReconnect?.();
+    }
+    dejaConnecte = true;
   };
 
   source.onerror = () => {

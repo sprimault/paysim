@@ -28,6 +28,8 @@ export function PaymentMethodDetail() {
   const { token } = useParams();
   const { method, loading, error, refresh } = usePaymentMethod(token);
   const [revokeOpen, setRevokeOpen] = useState(false);
+  // Element cliqué : la boîte s'ancre dessous plutôt qu'au centre.
+  const [ancre, setAncre] = useState<HTMLElement | null>(null);
   const [busy, setBusy] = useState(false);
 
   if (!token) return null;
@@ -89,7 +91,10 @@ export function PaymentMethodDetail() {
             variant="danger"
             size="sm"
             leftIcon={<Ban size={14} />}
-            onClick={() => setRevokeOpen(true)}
+            onClick={(e) => {
+              setAncre(e.currentTarget);
+              setRevokeOpen(true);
+            }}
             disabled={busy}
           >
             {t('paymentMethod.detail.action.revoke')}
@@ -132,6 +137,7 @@ export function PaymentMethodDetail() {
         loading={busy}
         onConfirm={handleRevoke}
         onCancel={() => setRevokeOpen(false)}
+        anchorEl={ancre}
       />
     </div>
   );

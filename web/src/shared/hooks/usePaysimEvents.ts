@@ -6,7 +6,69 @@ import { fetchPayment, fetchPayments } from '@/entities/payment/api/paymentApi';
 import { usePaymentStore } from '@/entities/payment/model/paymentStore';
 import { fetchWebhooks } from '@/entities/webhook/api/webhookApi';
 import { useWebhookStore } from '@/entities/webhook/model/webhookStore';
+import { fetchPaymentMethods } from '@/entities/payment-method/api/paymentMethodApi';
+import { usePaymentMethodStore } from '@/entities/payment-method/model/paymentMethodStore';
+import { fetchSubscriptions } from '@/entities/subscription/api/subscriptionApi';
+import { useSubscriptionStore } from '@/entities/subscription/model/subscriptionStore';
 import { isPaysimEvent } from '@/shared/model/events';
+
+/**
+ * resynchroniser relit les collections déjà chargées.
+ *
+ * Appelé au retour d'une coupure SSE. Le rattrapage par `Last-Event-ID`
+ * ne suffit pas : après un redémarrage serveur, le ring d'événements est
+ * vide et les identifiants repartent, si bien que le client reçoit le
+ * flux vivant sans jamais apprendre que ce qu'il affiche a disparu.
+ * `internal/bus` prévoit explicitement que le front relise un instantané
+ * dans ce cas.
+ *
+ * Seules les collections déjà chargées sont relues — en charger une que
+ * l'utilisateur n'a jamais ouverte reviendrait à travailler pour un
+ * écran que personne ne regarde.
+ */
+/**
+ * planifierResync regroupe les demandes de relecture.
+ *
+ * Tout événement qui modifie l'état doit pouvoir remettre l'interface
+ * d'aplomb : simuler un paiement enrôle un moyen, une échéance touche un
+ * abonnement, et le traitement unitaire ne relit que le paiement. Mais
+ * les webhooks arrivent en rafale — relire les quatre collections à
+ * chaque événement ferait quarante requêtes là où une suffit.
+ *
+ * D'où ce regroupement : les demandes rapprochées n'en déclenchent
+ * qu'une, après le calme. Le délai est court, l'interface reste vive.
+ */
+const delaiRegroupementMs = 300;
+let resyncEnAttente: ReturnType<typeof setTimeout> | undefined;
+
+function planifierResync(): void {
+  if (resyncEnAttente !== undefined) {
+    clearTimeout(resyncEnAttente);
+  }
+  resyncEnAttente = setTimeout(() => {
+    resyncEnAttente = undefined;
+    resynchroniser();
+  }, delaiRegroupementMs);
+}
+
+function resynchroniser(): void {
+  const payments = usePaymentStore.getState();
+  if (payments.listLoaded) {
+    void fetchPayments().then(payments.setList).catch(() => undefined);
+  }
+  const webhooks = useWebhookStore.getState();
+  if (webhooks.listLoaded) {
+    void fetchWebhooks().then(webhooks.setList).catch(() => undefined);
+  }
+  const methods = usePaymentMethodStore.getState();
+  if (methods.listLoaded) {
+    void fetchPaymentMethods().then(methods.setList).catch(() => undefined);
+  }
+  const subscriptions = useSubscriptionStore.getState();
+  if (subscriptions.listLoaded) {
+    void fetchSubscriptions().then(subscriptions.setList).catch(() => undefined);
+  }
+}
 
 /**
  * usePaysimEvents ouvre UNE connexion SSE au top level de l'app et
@@ -50,17 +112,34 @@ export function usePaysimEvents(
               if (p) upsertPayment(p);
             });
           });
+        // Un paiement en entraîne d'autres : simuler PAID sur un
+        // enrôlement crée un moyen, une échéance touche un abonnement.
+        // Le refetch unitaire ci-dessus ne voit rien de tout cela.
+        planifierResync();
         return;
       }
       case 'payment_deleted':
         // Retire directement du store — pas de refetch nécessaire.
         removePayment(raw.data.uuid);
+        planifierResync();
         return;
       case 'payments_purged':
         // Refetch la liste plutôt qu'un clear local : après un bulk
         // delete, on veut être sûr qu'aucune entrée ne survit du fait
         // d'un race entre plusieurs clients.
         void fetchPayments().then(setPaymentList).catch(() => undefined);
+        planifierResync();
+        return;
+      case 'reset':
+        // La réinitialisation vide les quatre collections d'un coup.
+        //
+        // Le type était modélisé mais aucune branche ne le traitait : le
+        // serveur annonçait le vidage, le switch laissait passer, et
+        // l'interface gardait paiements, moyens et abonnements à
+        // l'écran. Comme aucune connexion n'est coupée, rien d'autre ne
+        // venait la détromper — d'où des alias affichés en nombre alors
+        // que la base était vide.
+        resynchroniser();
         return;
       case 'webhook_enqueued':
       case 'webhook_delivered':
@@ -70,5 +149,5 @@ export function usePaysimEvents(
         void fetchWebhooks().then(setWebhookList).catch(() => undefined);
         return;
     }
-  });
+  }, resynchroniser);
 }

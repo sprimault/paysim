@@ -15,7 +15,11 @@ import type { PaymentSummary } from '@/shared/model';
 
 interface PaymentRowProps {
   payment: PaymentSummary;
-  onDelete?: (payment: PaymentSummary) => void;
+  /**
+   * Reçoit aussi le bouton cliqué : la confirmation s'ancre dessous, et
+   * le déclencheur vit ici alors que la boîte est ouverte par le parent.
+   */
+  onDelete?: (payment: PaymentSummary, trigger: HTMLElement) => void;
   /**
    * Affiche la colonne provider quand true — utile dans l'onglet
    * « Tous » où le provider n'est pas déjà porté par le contexte de
@@ -93,7 +97,7 @@ export function PaymentRow({ payment: p, onDelete, showProvider }: PaymentRowPro
           {onDelete && (
             <button
               type="button"
-              onClick={() => onDelete(p)}
+              onClick={(e) => onDelete(p, e.currentTarget)}
               aria-label={t('payment.list.action.deletePayment')}
               title={t('common.action.delete')}
               className="rounded p-1 text-zinc-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40 dark:hover:text-rose-400"

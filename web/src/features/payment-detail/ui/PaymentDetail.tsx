@@ -37,6 +37,8 @@ export function PaymentDetail() {
   const { webhooks } = useWebhooksOfPayment(uuid);
   const [tab, setTab] = useState<TabId>('overview');
   const [deleteOpen, setDeleteOpen] = useState(false);
+  // Element cliqué : la boîte s'ancre dessous plutôt qu'au centre.
+  const [ancre, setAncre] = useState<HTMLElement | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   async function handleDelete() {
@@ -113,7 +115,10 @@ export function PaymentDetail() {
             variant="ghost"
             size="sm"
             leftIcon={<Trash2 size={14} />}
-            onClick={() => setDeleteOpen(true)}
+            onClick={(e) => {
+              setAncre(e.currentTarget);
+              setDeleteOpen(true);
+            }}
           >
             {t('common.action.delete')}
           </Button>
@@ -151,6 +156,7 @@ export function PaymentDetail() {
         loading={deleting}
         onConfirm={handleDelete}
         onCancel={() => setDeleteOpen(false)}
+        anchorEl={ancre}
       />
     </div>
   );
