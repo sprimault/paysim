@@ -99,6 +99,17 @@ export function usePaysimEvents(
         // d'un race entre plusieurs clients.
         void fetchPayments().then(setPaymentList).catch(() => undefined);
         return;
+      case 'reset':
+        // La réinitialisation vide les quatre collections d'un coup.
+        //
+        // Le type était modélisé mais aucune branche ne le traitait : le
+        // serveur annonçait le vidage, le switch laissait passer, et
+        // l'interface gardait paiements, moyens et abonnements à
+        // l'écran. Comme aucune connexion n'est coupée, rien d'autre ne
+        // venait la détromper — d'où des alias affichés en nombre alors
+        // que la base était vide.
+        resynchroniser();
+        return;
       case 'webhook_enqueued':
       case 'webhook_delivered':
       case 'webhook_failed':

@@ -173,6 +173,35 @@ describe('usePaysimEvents', () => {
     expect(urls.some((u) => u.includes('/payments'))).toBe(true);
   });
 
+  // La réinitialisation vide les quatre collections côté serveur, sans
+  // couper la connexion : rien ne détrompait l'interface, qui gardait
+  // les alias et abonnements à l'écran alors que la base était vide.
+  it('relit les collections sur un event reset', async () => {
+    usePaymentStore.getState().setList([]);
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response('[]', { status: 200 }),
+    );
+    renderHook(() => usePaysimEvents());
+
+    act(() => {
+      instances[0].onmessage?.(
+        new MessageEvent('message', {
+          data: JSON.stringify({
+            type: 'reset',
+            at: 't',
+            data: { payments: 10, subscriptions: 1, paymentMethods: 3, webhooks: 6 },
+          }),
+        }),
+      );
+    });
+
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+    const urls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) =>
+      String(c[0]),
+    );
+    expect(urls.some((u) => u.includes('/payments'))).toBe(true);
+  });
+
   // Recharger une collection jamais ouverte ferait travailler l'app pour
   // un écran que personne ne regarde.
   it('ne relit pas les collections jamais chargées', async () => {
