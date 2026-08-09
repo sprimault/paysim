@@ -299,7 +299,7 @@ func (h *Handler) autoplay(tx *Transaction, pm *PaymentMethod) {
 		outcome, reason, decline = magic, "montant magique", chaos.MagicDeclineReason(tx.Amount)
 	}
 
-	if err := applyOutcome(tx, outcome, declineNote(reason, decline)); err != nil {
+	if err := applyOutcome(tx, outcome, reason, decline); err != nil {
 		h.logger.Warn("autoplay_transition_failed",
 			"uuid", tx.UUID, "outcome", outcome, "err", err)
 		return
@@ -500,7 +500,7 @@ func (h *Handler) createFromToken(in CreateInput) (*Transaction, error) {
 	}
 
 	outcome, reason, decline := decideReplayOutcome(pm, in.Amount, now)
-	if err := applyOutcome(tx, outcome, declineNote(reason, decline)); err != nil {
+	if err := applyOutcome(tx, outcome, reason, decline); err != nil {
 		return nil, fmt.Errorf("apply outcome: %w", err)
 	}
 	tx.UpdatedAt = h.clock().Now()
@@ -878,7 +878,7 @@ func (h *Handler) TriggerBilling(subID string) (*Transaction, error) {
 	}
 
 	outcome, reason, decline := decideReplayOutcome(pm, sub.Amount, now)
-	if err := applyOutcome(tx, outcome, declineNote(reason, decline)); err != nil {
+	if err := applyOutcome(tx, outcome, reason, decline); err != nil {
 		return nil, fmt.Errorf("apply outcome: %w", err)
 	}
 	tx.UpdatedAt = h.clock().Now()
@@ -1263,7 +1263,7 @@ func (h *Handler) simulate(
 	if targetURL == "" {
 		return "", "", errors.New("URL cible manquante : ni fournie dans la requete, ni stockee dans la transaction, ni PAYSIM_CALLBACK_URL configuree")
 	}
-	if err := applyOutcome(tx, opts.Outcome, declineNote(opts.ErrorMessage, opts.DeclineReason)); err != nil {
+	if err := applyOutcome(tx, opts.Outcome, opts.ErrorMessage, opts.DeclineReason); err != nil {
 		return "", "", fmt.Errorf("transition domain: %w", err)
 	}
 	tx.UpdatedAt = time.Now().UTC()

@@ -55,6 +55,20 @@ export function PaymentOverview({ payment }: { payment: PaymentInStore }) {
         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
           <Info label={t('payment.detail.overview.fieldState')} value={payment.state} mono />
           <Info label={t('payment.detail.overview.fieldCurrency')} value={payment.currency} />
+          {/*
+            Le motif bancaire en clair, code et libelle : sur la fiche on
+            a la place, et c'est lui qui dit quoi faire ensuite — relancer
+            plus tard sur un 51, reclamer une autre carte sur un 43.
+            Absent des paiements non refuses, et de ceux dont le refus n'a
+            pas de code bancaire (abandon, expiration).
+          */}
+          {payment.declineCode && (
+            <Info
+              label={t('payment.detail.overview.fieldDeclineReason')}
+              value={`${payment.declineCode} — ${payment.declineMessage ?? ''}`.trim()}
+              mono
+            />
+          )}
           <Info label={t('payment.detail.overview.fieldAmount')} value={`${formatAmount(payment.amount)} ${payment.currency}`} mono />
           <Info label={t('payment.detail.overview.fieldOrder')} value={payment.orderId} />
           <Info label={t('payment.detail.overview.fieldCreatedAt')} value={formatShort(payment.createdAt)} />

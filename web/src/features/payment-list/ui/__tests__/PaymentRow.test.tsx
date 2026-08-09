@@ -45,6 +45,24 @@ describe('PaymentRow', () => {
     expect(link).toHaveAttribute('href', `/payments/${p.uuid}`);
   });
 
+  // Le motif decide de la suite chez le marchand : un 51 se retente, un
+  // 43 impose de reclamer une autre carte. Il etait livre par l'API et
+  // affiche nulle part — il fallait ouvrir la charge utile et lire du
+  // JSON pour le trouver.
+  it('affiche le code du motif de refus, libelle en infobulle', () => {
+    renderRow({ ...p, state: 'declined', declineCode: '51', declineMessage: 'provision insuffisante' });
+    const badge = screen.getByText('51');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveAttribute('title', 'provision insuffisante');
+  });
+
+  // Un abandon ou une expiration n'ont pas de code bancaire : un badge
+  // vide vaudrait moins que pas de badge du tout.
+  it('sans motif, aucun badge de refus', () => {
+    renderRow({ ...p, state: 'declined' });
+    expect(screen.queryByTitle(/provision/)).not.toBeInTheDocument();
+  });
+
   it('rend un bouton de copie pour l\'uuid', () => {
     renderRow();
     const copyButtons = screen.getAllByRole('button', { name: /copier/i });

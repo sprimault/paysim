@@ -204,6 +204,25 @@ type PaymentSummary struct {
 	// sur le seul détail : la liste l'affiche en colonne, et c'est de là
 	// qu'on ouvre la fiche du moyen.
 	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
+
+	// DeclineCode et DeclineMessage portent le motif bancaire du refus :
+	// le code de retour d'autorisation ISO 8583 tel que l'acquéreur le
+	// remonte, et son libellé.
+	//
+	// C'est ce couple qui décide de la suite chez le marchand — un 51 se
+	// retente dans trois jours, un 43 impose de réclamer une autre carte.
+	// Il ne circulait jusqu'ici que dans le kr-answer et dans la note de
+	// l'événement, où il finissait aplati en une phrase : ni l'interface
+	// ni un marchand interrogeant cette API ne pouvaient s'en servir.
+	//
+	// Sur le sommaire pour la même raison que le token ci-dessus : c'est
+	// en balayant la liste qu'on veut distinguer un refus reconductible
+	// d'un refus définitif.
+	//
+	// Vides quand le refus n'a pas de motif bancaire — abandon,
+	// expiration — et sur tout paiement non refusé.
+	DeclineCode    string `json:"declineCode,omitempty"`
+	DeclineMessage string `json:"declineMessage,omitempty"`
 }
 
 // PaymentDetail ajoute le journal d'événements.
@@ -1477,10 +1496,21 @@ func writeEvent(w http.ResponseWriter, flusher http.Flusher, evt bus.Event, logg
 	return true
 }
 
-// -----------------------------------------------------------------------------
-// Convertisseurs internes → DTOs API
-// -----------------------------------------------------------------------------
+// Conversion des types internes vers les DTO exposés.
+//
+// La frontière est volontaire : les structures internes portent des
+// types du domaine et des champs propres à un adaptateur, que l'API ne
+// doit pas laisser fuir. Chaque vue décide donc de ce qu'elle expose, et
+// un champ ajouté ici est un engagement envers les consommateurs — pas
+// un effet de bord d'un changement interne.
 
+// toPaymentSummary réduit une transaction provider à la vue de liste.
+//
+// Le sommaire ne porte que ce qui s'affiche en colonne ou sert à ouvrir
+// une fiche : ni le client, ni les métadonnées, ni le journal — une
+// liste de plusieurs centaines d'entrées n'a pas à transporter tout
+// cela. Ce qui s'y ajoute doit donc justifier sa place, comme le token
+// du moyen et le motif de refus, qu'on veut lire d'un coup d'œil.
 func toPaymentSummary(tx *payzen.Transaction) PaymentSummary {
 	return PaymentSummary{
 		UUID:               tx.UUID,
@@ -1490,11 +1520,20 @@ func toPaymentSummary(tx *payzen.Transaction) PaymentSummary {
 		Currency:           tx.Currency,
 		PaymentMethodToken: tx.PaymentMethodToken,
 		State:              string(tx.Payment.State()),
+		DeclineCode:        tx.DeclineCode,
+		DeclineMessage:     tx.DeclineMessage,
 		CreatedAt:          tx.CreatedAt,
 		UpdatedAt:          tx.UpdatedAt,
 	}
 }
 
+// toPaymentDetail enrichit le sommaire de ce que la fiche seule montre :
+// le journal d'événements, le contexte client et les métadonnées.
+//
+// Construit à partir de toPaymentSummary plutôt qu'en recopiant ses
+// champs — les deux vues avaient divergé par le passé sur les moyens de
+// paiement, un même objet portant des attributs différents selon la
+// route interrogée.
 func toPaymentDetail(tx *payzen.Transaction) PaymentDetail {
 	events := tx.Payment.Events()
 	dto := PaymentDetail{
@@ -1514,6 +1553,11 @@ func toPaymentDetail(tx *payzen.Transaction) PaymentDetail {
 	return dto
 }
 
+// toWebhookEntry réduit une livraison à sa ligne de journal.
+//
+// Ni les en-têtes ni le corps n'y figurent : ils pèsent lourd et ne
+// servent qu'à la vue détaillée, où le marchand relit sa signature ou
+// son kr-answer.
 func toWebhookEntry(r delivery.WebhookRecord) WebhookEntry {
 	return WebhookEntry{
 		ID:          r.Webhook.ID,
@@ -1529,6 +1573,9 @@ func toWebhookEntry(r delivery.WebhookRecord) WebhookEntry {
 	}
 }
 
+// toWebhookDetail ajoute à l'entrée ce qui a réellement été envoyé :
+// en-têtes et corps, tels quels. C'est là-dessus que se vérifie une
+// signature, donc rien n'y est reformaté.
 func toWebhookDetail(r delivery.WebhookRecord) WebhookDetail {
 	return WebhookDetail{
 		WebhookEntry: toWebhookEntry(r),
@@ -1537,6 +1584,12 @@ func toWebhookDetail(r delivery.WebhookRecord) WebhookDetail {
 	}
 }
 
+// writeJSON sérialise une réponse et pose son en-tête.
+//
+// L'erreur d'encodage est ignorée volontairement : elle ne survient
+// qu'après l'écriture du code de statut, quand plus rien ne peut être
+// signalé au client. La traiter donnerait l'illusion d'un recours qui
+// n'existe pas.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

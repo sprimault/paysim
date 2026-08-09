@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sprimault/paysim/internal/chaos"
 	"github.com/sprimault/paysim/internal/domain"
 	"github.com/sprimault/paysim/internal/format"
 )
@@ -48,7 +49,7 @@ func TestApplyOutcomeAll(t *testing.T) {
 		t.Run(c.outcome, func(t *testing.T) {
 			t.Parallel()
 			tx := makeTx(t, 1500)
-			if err := applyOutcome(tx, c.outcome, "test"); err != nil {
+			if err := applyOutcome(tx, c.outcome, "test", chaos.DeclineReason{}); err != nil {
 				t.Fatalf("applyOutcome(%s) : %v", c.outcome, err)
 			}
 			if got := string(tx.Payment.State()); got != c.wantState {
@@ -61,7 +62,7 @@ func TestApplyOutcomeAll(t *testing.T) {
 func TestApplyOutcomeUnknown(t *testing.T) {
 	t.Parallel()
 	tx := makeTx(t, 1500)
-	err := applyOutcome(tx, "N_IMPORTE_QUOI", "")
+	err := applyOutcome(tx, "N_IMPORTE_QUOI", "", chaos.DeclineReason{})
 	if !errors.Is(err, ErrUnknownOutcome) {
 		t.Errorf("erreur = %v, veut ErrUnknownOutcome", err)
 	}
@@ -71,7 +72,7 @@ func TestApplyOutcomeUnpaidDefaultReason(t *testing.T) {
 	t.Parallel()
 	// reason vide → "simulation" par defaut.
 	tx := makeTx(t, 1500)
-	if err := applyOutcome(tx, OutcomeUnpaid, ""); err != nil {
+	if err := applyOutcome(tx, OutcomeUnpaid, "", chaos.DeclineReason{}); err != nil {
 		t.Fatal(err)
 	}
 	events := tx.Payment.Events()
@@ -84,7 +85,7 @@ func TestApplyOutcomeUnpaidDefaultReason(t *testing.T) {
 func TestBuildKrAnswerPAID(t *testing.T) {
 	t.Parallel()
 	tx := makeTx(t, 1500)
-	_ = applyOutcome(tx, OutcomePaid, "")
+	_ = applyOutcome(tx, OutcomePaid, "", chaos.DeclineReason{})
 
 	opts := BrowserReturnOpts{Outcome: OutcomePaid}
 	answer := buildKrAnswer(tx, nil, opts,"http://paysim", "TEST")
@@ -129,7 +130,7 @@ func TestBuildKrAnswerPAID(t *testing.T) {
 func TestBuildKrAnswerAuthorised(t *testing.T) {
 	t.Parallel()
 	tx := makeTx(t, 1500)
-	_ = applyOutcome(tx, OutcomeAuthorised, "")
+	_ = applyOutcome(tx, OutcomeAuthorised, "", chaos.DeclineReason{})
 
 	opts := BrowserReturnOpts{Outcome: OutcomeAuthorised}
 	answer := buildKrAnswer(tx, nil, opts,"", "TEST")
@@ -148,7 +149,7 @@ func TestBuildKrAnswerAuthorised(t *testing.T) {
 func TestBuildKrAnswerUnpaidCarriesError(t *testing.T) {
 	t.Parallel()
 	tx := makeTx(t, 1500)
-	_ = applyOutcome(tx, OutcomeUnpaid, "carte refusée")
+	_ = applyOutcome(tx, OutcomeUnpaid, "carte refusée", chaos.DeclineReason{})
 
 	opts := BrowserReturnOpts{
 		Outcome:      OutcomeUnpaid,
@@ -169,7 +170,7 @@ func TestBuildKrAnswerUnpaidCarriesError(t *testing.T) {
 func TestBuildKrAnswerWithWallet(t *testing.T) {
 	t.Parallel()
 	tx := makeTx(t, 1500)
-	_ = applyOutcome(tx, OutcomePaid, "")
+	_ = applyOutcome(tx, OutcomePaid, "", chaos.DeclineReason{})
 
 	opts := BrowserReturnOpts{
 		Outcome: OutcomePaid,
@@ -184,7 +185,7 @@ func TestBuildKrAnswerWithWallet(t *testing.T) {
 func TestBuildKrAnswerNonCardsMethodOmitsCardDetails(t *testing.T) {
 	t.Parallel()
 	tx := makeTx(t, 1500)
-	_ = applyOutcome(tx, OutcomePaid, "")
+	_ = applyOutcome(tx, OutcomePaid, "", chaos.DeclineReason{})
 
 	opts := BrowserReturnOpts{Outcome: OutcomePaid, PaymentMethodType: "IP_WIRE"}
 	answer := buildKrAnswer(tx, nil, opts,"", "TEST")
@@ -202,7 +203,7 @@ func TestBuildKrAnswerNonCardsMethodOmitsCardDetails(t *testing.T) {
 func TestBuildDeliveryWebhookRattacheLePaiement(t *testing.T) {
 	t.Parallel()
 	tx := makeTx(t, 4990)
-	_ = applyOutcome(tx, OutcomePaid, "")
+	_ = applyOutcome(tx, OutcomePaid, "", chaos.DeclineReason{})
 
 	opts := BrowserReturnOpts{Outcome: OutcomePaid}
 	answer := buildKrAnswer(tx, nil, opts, "", "TEST")
@@ -242,7 +243,7 @@ func TestBuildDeliveryWebhookSansTransaction(t *testing.T) {
 func TestBuildDeliveryWebhookSignsCorrectly(t *testing.T) {
 	t.Parallel()
 	tx := makeTx(t, 1500)
-	_ = applyOutcome(tx, OutcomePaid, "")
+	_ = applyOutcome(tx, OutcomePaid, "", chaos.DeclineReason{})
 
 	opts := BrowserReturnOpts{Outcome: OutcomePaid}
 	answer := buildKrAnswer(tx, nil, opts,"", "TEST")
@@ -309,7 +310,7 @@ func TestBuildDeliveryWebhookSignsCorrectly(t *testing.T) {
 func TestBuildKrAnswerCardDetailsFromPaymentMethod(t *testing.T) {
 	t.Parallel()
 	tx := makeTx(t, 1500)
-	_ = applyOutcome(tx, OutcomePaid, "")
+	_ = applyOutcome(tx, OutcomePaid, "", chaos.DeclineReason{})
 
 	pm := NewPaymentMethod("tok-pm", Card{
 		PAN:         "4000001234562646",
@@ -343,7 +344,7 @@ func TestBuildKrAnswerCardDetailsFromPaymentMethod(t *testing.T) {
 func TestBuildKrAnswerCardDetailsFallbackWithoutMethod(t *testing.T) {
 	t.Parallel()
 	tx := makeTx(t, 1500)
-	_ = applyOutcome(tx, OutcomePaid, "")
+	_ = applyOutcome(tx, OutcomePaid, "", chaos.DeclineReason{})
 
 	// Sans moyen enregistre, la carte de demonstration reste legitime :
 	// aucune carte n'a ete saisie, il n'y a rien de reel a decrire.
@@ -364,7 +365,7 @@ func TestBuildKrAnswerCardDetailsFallbackWithoutMethod(t *testing.T) {
 func TestBuildKrAnswerBrandFromPaymentMethodOverridesDefault(t *testing.T) {
 	t.Parallel()
 	tx := makeTx(t, 1500)
-	_ = applyOutcome(tx, OutcomePaid, "")
+	_ = applyOutcome(tx, OutcomePaid, "", chaos.DeclineReason{})
 
 	// Brand absent des opts : c'est celui du moyen qui doit primer,
 	// pas le defaut VISA.

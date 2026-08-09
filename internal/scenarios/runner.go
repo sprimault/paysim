@@ -409,6 +409,14 @@ func (r *Runner) doAssertState(ctx context.Context, st *state, in *AssertState) 
 	if got.State != in.State {
 		return fmt.Errorf("%w: etat: obtenu %q, veut %q", ErrAssertion, got.State, in.State)
 	}
+	// Vérifié seulement s'il est demandé : la plupart des scénarios ne
+	// s'intéressent pas au motif, et exiger sa présence partout
+	// obligerait à le renseigner dans des cas où il n'existe pas — un
+	// abandon ou une expiration n'ont pas de code bancaire.
+	if in.DeclineCode != "" && got.DeclineCode != in.DeclineCode {
+		return fmt.Errorf("%w: motif de refus: obtenu %q, veut %q",
+			ErrAssertion, got.DeclineCode, in.DeclineCode)
+	}
 	return nil
 }
 

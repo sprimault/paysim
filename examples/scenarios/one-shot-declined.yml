@@ -13,6 +13,11 @@ steps:
     status: captured
   - action: assert_state
     state: declined
+    # Le montant decide aussi du motif : centimes 01 donne un 51,
+    # provision insuffisante. C'est ce code que le marchand lit pour
+    # savoir s'il peut reconduire — le figer ici evite qu'il se perde
+    # en route sans que rien ne le signale.
+    decline_code: "51"
   - action: assert_webhook
     count: 1
     outcome: UNPAID

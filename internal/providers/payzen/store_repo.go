@@ -230,6 +230,12 @@ type payzenProviderData struct {
 	ReturnURL          string `json:"returnUrl,omitempty"`
 	NotificationURL    string `json:"notificationUrl,omitempty"`
 	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
+
+	// Motif bancaire du refus. Dans le blob provider et non dans une
+	// colonne : un code d'acquéreur appartient au protocole, et le
+	// stocker ici évite une migration de schéma sur les deux backends.
+	DeclineCode    string `json:"declineCode,omitempty"`
+	DeclineMessage string `json:"declineMessage,omitempty"`
 }
 
 // payzenToRecord sérialise Transaction en PaymentRecord générique.
@@ -253,6 +259,8 @@ func payzenToRecord(tx *Transaction) (*store.PaymentRecord, error) {
 		ReturnURL:          tx.ReturnURL,
 		NotificationURL:    tx.NotificationURL,
 		PaymentMethodToken: tx.PaymentMethodToken,
+		DeclineCode:        tx.DeclineCode,
+		DeclineMessage:     tx.DeclineMessage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal provider_data: %w", err)
@@ -429,6 +437,8 @@ func recordToPayzen(rec *store.PaymentRecord) (*Transaction, error) {
 		ReturnURL:          provData.ReturnURL,
 		NotificationURL:    provData.NotificationURL,
 		PaymentMethodToken: provData.PaymentMethodToken,
+		DeclineCode:        provData.DeclineCode,
+		DeclineMessage:     provData.DeclineMessage,
 		CreatedAt:          rec.CreatedAt,
 		UpdatedAt:          rec.UpdatedAt,
 	}, nil

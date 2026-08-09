@@ -498,6 +498,17 @@ type AssertState struct {
 	// State attendu, en vocabulaire du domaine. Voir docs/states.md
 	// pour la liste et les transitions permises.
 	State string `yaml:"state"`
+
+	// DeclineCode attendu : le code de retour d'autorisation ISO 8583
+	// du refus — 51 pour une provision insuffisante, 43 pour une
+	// opposition, 91 pour un émetteur injoignable.
+	//
+	// Optionnel, et vérifié seulement s'il est renseigné : la plupart
+	// des scénarios se moquent du motif, mais ceux qui l'exercent
+	// doivent pouvoir le figer. C'est ce couple qui décide de la
+	// reconduction chez le marchand, or rien ne le couvrait de bout en
+	// bout — un motif perdu en route ne se serait vu nulle part.
+	DeclineCode string `yaml:"decline_code,omitempty"`
 }
 
 // Duration accepte les durées YAML sous forme de chaîne parsée par
