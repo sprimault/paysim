@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, X } from 'lucide-react';
 import { useT } from '@/shared/i18n/useT';
 import { Button } from './Button';
@@ -51,9 +52,17 @@ export function ConfirmDialog({
 
   if (!open) return null;
 
-  return (
+  // Rendue dans document.body plutôt qu'à l'endroit où elle est
+  // déclarée. Un `position: fixed` cesse de se caler sur la fenêtre dès
+  // qu'un ancêtre porte transform, filter ou backdrop-filter : la boîte
+  // se centre alors sur cet ancêtre, et paraît décalée. Sortir du sous-
+  // arbre supprime la classe entière du problème plutôt que le cas du
+  // jour, et vaut pour les cinq écrans qui partagent cette modale.
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      // dvh et non vh : sur mobile et fenêtre réduite, vh compte les
+      // barres du navigateur et déborde de la zone réellement visible.
+      className="fixed inset-0 z-50 flex h-dvh w-screen items-center justify-center bg-black/40 p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-title"
@@ -67,7 +76,7 @@ export function ConfirmDialog({
         page.
       */}
       <div
-        className="flex max-h-[calc(100vh-2rem)] w-full max-w-md flex-col overflow-y-auto rounded-panel border border-zinc-200 bg-white p-5 shadow-panel dark:border-zinc-800 dark:bg-zinc-900"
+        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-y-auto rounded-panel border border-zinc-200 bg-white p-5 shadow-panel dark:border-zinc-800 dark:bg-zinc-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-start gap-3">
@@ -115,6 +124,7 @@ export function ConfirmDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
