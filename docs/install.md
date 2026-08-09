@@ -348,6 +348,47 @@ payments first. Set `NOTIF_URL` if you want webhooks delivered
 somewhere reachable (default: `http://localhost:1/discard` — a closed
 port that fails immediately, keeping the queue view uncluttered).
 
+### Bringing the whole stack up in one command
+
+`seed-paysim.sh` assumes Paysim is already running. To avoid starting
+anything yourself, `examples/demo-ui.sh` brings up the whole set —
+Paysim, a webhook receiver, and the Docker network linking them — then
+seeds it:
+
+```bash
+# Bash / Linux / macOS / Windows git-bash
+bash examples/demo-ui.sh
+```
+
+```powershell
+# Native Windows PowerShell
+./examples/demo-ui.ps1
+```
+
+**Docker must be installed and running** — on Windows or macOS that means
+Docker Desktop started, not merely installed. Both scripts check this
+upfront and stop with a clear message otherwise.
+
+Beyond Docker, the bash version needs `curl` and `python3`; the
+PowerShell one needs nothing extra, as `Invoke-RestMethod` is built in.
+Both print the UI URL when done.
+
+Change the port with `PORT` / `-Port`, the image with `IMAGE` / `-Image`
+(`:edge` for the state of the main branch). On systems without
+`hostname -I` — macOS in particular — set `HOST_IP` to the address your
+browser uses to reach the machine; under PowerShell, `-HostIp` defaults
+to `localhost`.
+
+Tearing it down is a single command, echoed at the end of the run:
+
+```bash
+docker rm -f paysim-demo paysim-sink && docker network rm paysim-demo-net
+```
+
+Its dataset is chosen for what shows on screen: a full customer context,
+three declines with distinct reasons, a payment left pending, an
+unusable payment method, and a subscription with one billing run.
+
 ## Merchant integration
 
 The [`examples/php`](../examples/php/README.md) folder contains a full

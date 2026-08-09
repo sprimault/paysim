@@ -361,6 +361,47 @@ mensuel avec 2 renewals réussis, magic PAN + renewal en échec,
 enrolements Mastercard / Amex / carte expirée, et une révocation
 manuelle.
 
+### Tout monter d'une commande
+
+`seed-paysim.sh` suppose un Paysim déjà démarré. Pour ne rien avoir à
+lancer soi-même, `examples/demo-ui.sh` monte l'ensemble — Paysim, un
+récepteur de webhooks, le réseau Docker qui les relie — puis le peuple :
+
+```bash
+# Bash / Linux / macOS / Windows git-bash
+bash examples/demo-ui.sh
+```
+
+```powershell
+# PowerShell natif sous Windows
+./examples/demo-ui.ps1
+```
+
+**Docker doit être installé et démarré** — sous Windows ou macOS, cela
+veut dire Docker Desktop lancé, pas seulement installé. Les deux scripts
+le vérifient d'emblée et s'arrêtent avec un message clair sinon.
+
+Au-delà de Docker, la version bash demande `curl` et `python3` ; la
+version PowerShell ne demande rien de plus, `Invoke-RestMethod` étant
+natif. Les deux affichent à la fin l'URL de l'interface.
+
+Le port se change par `PORT` / `-Port`, l'image par `IMAGE` / `-Image`
+(`:edge` pour l'état de la branche principale). Sur un système où
+`hostname -I` n'existe pas — macOS, notamment — renseigner `HOST_IP`
+avec l'adresse par laquelle le navigateur joint la machine ; sous
+PowerShell, `-HostIp` vaut `localhost` par défaut.
+
+Tout se démonte d'une commande, rappelée en fin d'exécution :
+
+```bash
+docker rm -f paysim-demo paysim-sink && docker network rm paysim-demo-net
+```
+
+Le jeu de données y est choisi pour ce qui se regarde à l'écran : un
+contexte client complet, trois refus de motifs différents, un paiement
+resté en attente, un moyen inexploitable, un abonnement avec une
+échéance jouée.
+
 Options : `--purge` (bash) / `-Purge` (PowerShell) vide les paiements
 existants avant de peupler. Définir `NOTIF_URL` pour livrer les
 webhooks ailleurs (défaut : `http://localhost:1/discard` — port
