@@ -7,9 +7,13 @@ description: |
 steps:
   - action: create_payment
     provider: payzen
-    amount: 100
+    amount: 0
     currency: EUR
     order_id: INIT
+    # Enrôlement sans débit : la vérification ne juge pas la provision,
+    # un PAN « refusé » s'enregistre donc très bien. C'est tout l'objet
+    # du levier — obtenir un alias qui refusera aux échéances.
+    form_action: REGISTER
     card:
       pan: "4000000000000002"
       expiry_month: 12

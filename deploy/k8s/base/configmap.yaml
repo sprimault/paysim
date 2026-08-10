@@ -1,8 +1,8 @@
 # Variables d'environnement non-sensibles. Adapter les valeurs à votre
 # cluster puis appliquer avec le reste des manifests (voir README).
 #
-# Les secrets (PAYSIM_PAYZEN_HMAC_KEY, PAYSIM_API_TOKEN) sont dans
-# secret.yaml — surtout pas ici.
+# Les secrets (PAYSIM_PAYZEN_HMAC_KEY, PAYSIM_PAYZEN_REST_PASSWORD,
+# PAYSIM_API_TOKEN) sont dans secret.yaml — surtout pas ici.
 apiVersion: v1
 kind: ConfigMap
 metadata:

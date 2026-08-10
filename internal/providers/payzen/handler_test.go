@@ -611,7 +611,7 @@ func simulate(t *testing.T, url string, body any, bearer string) (*BrowserReturn
 
 func TestBrowserReturnSuccess(t *testing.T) {
 	t.Parallel()
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "test-hmac-key"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "test-hmac-key", RESTPassword: "pwd-rest"})
 	merchant, received := newMerchantServer(t)
 
 	// Créer une transaction via CreatePayment.
@@ -662,7 +662,7 @@ func TestBrowserReturnSuccess(t *testing.T) {
 
 func TestBrowserReturnUsesTransactionReturnURL(t *testing.T) {
 	t.Parallel()
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"})
 	merchant, received := newMerchantServer(t)
 
 	// ReturnURL stockée à CreatePayment.
@@ -690,7 +690,7 @@ func TestBrowserReturnUsesTransactionReturnURL(t *testing.T) {
 
 func TestBrowserReturnPrioritySimulationOverTransaction(t *testing.T) {
 	t.Parallel()
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"})
 	transactionURL, _ := newMerchantServer(t)
 	simulationURL, simReceived := newMerchantServer(t)
 
@@ -720,7 +720,7 @@ func TestBrowserReturnPrioritySimulationOverTransaction(t *testing.T) {
 
 func TestBrowserReturnMissingURL(t *testing.T) {
 	t.Parallel()
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"})
 
 	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
 		CreatePaymentRequest{OrderID: "o", Amount: 100, Currency: "EUR"}, "u", "p")
@@ -744,7 +744,7 @@ func TestBrowserReturnFallbackDefaultCallbackURL(t *testing.T) {
 	t.Parallel()
 	merchant, hits := newMerchantServer(t)
 	server, _, _ := newTestServerFull(t, HandlerConfig{
-		HMACKey:            "k",
+		HMACKey: "k", RESTPassword: "pwd-rest",
 		DefaultCallbackURL: merchant.URL,
 	})
 
@@ -791,7 +791,7 @@ func TestBrowserReturnMissingHMAC(t *testing.T) {
 
 func TestBrowserReturnUnknownOutcome(t *testing.T) {
 	t.Parallel()
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"})
 	merchant, _ := newMerchantServer(t)
 
 	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
@@ -812,7 +812,7 @@ func TestBrowserReturnUnknownOutcome(t *testing.T) {
 
 func TestBrowserReturnUnknownFormToken(t *testing.T) {
 	t.Parallel()
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"})
 	merchant, _ := newMerchantServer(t)
 
 	_, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
@@ -828,7 +828,7 @@ func TestBrowserReturnUnknownFormToken(t *testing.T) {
 
 func TestBrowserReturnDomainConflict(t *testing.T) {
 	t.Parallel()
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"})
 	merchant, _ := newMerchantServer(t)
 
 	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
@@ -858,7 +858,7 @@ func TestBrowserReturnDomainConflict(t *testing.T) {
 
 func TestIPNSuccess(t *testing.T) {
 	t.Parallel()
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"})
 	merchant, received := newMerchantServer(t)
 
 	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
@@ -887,7 +887,7 @@ func TestIPNSuccess(t *testing.T) {
 
 func TestBearerAuthMissing(t *testing.T) {
 	t.Parallel()
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", APIToken: "secret-bearer"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", APIToken: "secret-bearer"})
 
 	req, _ := http.NewRequest(http.MethodPost,
 		server.URL+"/paysim/simulate/browserReturn",
@@ -911,7 +911,7 @@ func TestBearerAuthMissing(t *testing.T) {
 
 func TestBearerAuthWrongToken(t *testing.T) {
 	t.Parallel()
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", APIToken: "secret-bearer"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", APIToken: "secret-bearer"})
 
 	_, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
 		BrowserReturnRequest{FormToken: "x", Outcome: OutcomePaid}, "mauvais-token")
@@ -922,7 +922,7 @@ func TestBearerAuthWrongToken(t *testing.T) {
 
 func TestBearerAuthCorrectToken(t *testing.T) {
 	t.Parallel()
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", APIToken: "secret-bearer"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", APIToken: "secret-bearer"})
 	merchant, _ := newMerchantServer(t)
 
 	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
@@ -978,7 +978,7 @@ func TestChaosDoesNotAffectSimulateRoutes(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	c := chaos.New(chaos.Config{ErrorRate: 100}, logger)
 
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", Chaos: c})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", Chaos: c})
 
 	// L'appel simulate avec un formToken inconnu doit répondre 400
 	// (erreur métier), pas 500 (chaos). Preuve que le middleware chaos
@@ -992,7 +992,7 @@ func TestChaosDoesNotAffectSimulateRoutes(t *testing.T) {
 
 func TestMagicAmountForcesUnpaid(t *testing.T) {
 	t.Parallel()
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"})
 	merchant, received := newMerchantServer(t)
 
 	// Montant se terminant par 01 → force UNPAID quel que soit outcome demandé.
@@ -1081,7 +1081,7 @@ func TestChaosDefaultInertOnAPIRoutes(t *testing.T) {
 
 func TestWebhookChaosDuplicate(t *testing.T) {
 	t.Parallel()
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"})
 	merchant, received := newMerchantServer(t)
 
 	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
@@ -1112,7 +1112,7 @@ func TestWebhookChaosDuplicate(t *testing.T) {
 
 func TestWebhookChaosBadSignature(t *testing.T) {
 	t.Parallel()
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "cle-hmac"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "cle-hmac", RESTPassword: "pwd-rest"})
 	merchant, received := newMerchantServer(t)
 
 	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
@@ -1150,7 +1150,7 @@ func TestWebhookChaosOutOfOrder(t *testing.T) {
 	t.Parallel()
 	// Composition : deux appels successifs, le premier avec DeliveryDelayMs=300,
 	// le second sans → le second arrive en premier chez le marchand.
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"})
 
 	// Marchand qui tag chaque POST par ordre d'arrivée dans un channel.
 	arrivals := make(chan string, 2)
@@ -1203,7 +1203,7 @@ func TestWebhookChaosRaceBeforeResponse(t *testing.T) {
 	t.Parallel()
 	// La réponse HTTP à simulate doit arriver APRÈS le webhook côté
 	// marchand. Vérifie que la course la plus subtile est bien reproduite.
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"})
 
 	webhookAt := make(chan time.Time, 1)
 	merchant := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -1253,7 +1253,7 @@ func TestWebhookChaosRaceBeforeResponse(t *testing.T) {
 func TestBearerOpenWhenTokenUnset(t *testing.T) {
 	t.Parallel()
 	// APIToken vide → pas de check, tout passe.
-	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k"})
+	server, _, _ := newTestServerFull(t, HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"})
 	merchant, _ := newMerchantServer(t)
 
 	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
@@ -1280,7 +1280,7 @@ func TestBearerOpenWhenTokenUnset(t *testing.T) {
 func TestReplayFallbackDefaultCallbackURL(t *testing.T) {
 	t.Parallel()
 	merchant, hits := newMerchantServer(t)
-	cfg := HandlerConfig{HMACKey: "k", DefaultCallbackURL: merchant.URL}
+	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", DefaultCallbackURL: merchant.URL}
 	_, store, queue := newTestServerFull(t, cfg)
 
 	pm := NewPaymentMethod("tok-replay", Card{
@@ -1313,7 +1313,7 @@ func TestReplayFallbackDefaultCallbackURL(t *testing.T) {
 func TestTriggerBillingNotifie(t *testing.T) {
 	t.Parallel()
 	merchant, hits := newMerchantServer(t)
-	cfg := HandlerConfig{HMACKey: "k", DefaultCallbackURL: merchant.URL}
+	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", DefaultCallbackURL: merchant.URL}
 	_, store, queue := newTestServerFull(t, cfg)
 
 	pm := NewPaymentMethod("tok-sub", Card{
@@ -1347,7 +1347,7 @@ func TestTriggerBillingNotifie(t *testing.T) {
 func TestAutoplayJoueLePaiementEtNotifie(t *testing.T) {
 	t.Parallel()
 	merchant, hits := newMerchantServer(t)
-	cfg := HandlerConfig{HMACKey: "k", DefaultCallbackURL: merchant.URL, Autoplay: true}
+	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", DefaultCallbackURL: merchant.URL, Autoplay: true}
 	_, store, queue := newTestServerFull(t, cfg)
 	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
 
@@ -1370,7 +1370,7 @@ func TestAutoplayJoueLePaiementEtNotifie(t *testing.T) {
 func TestAutoplayDesactiveParDefaut(t *testing.T) {
 	t.Parallel()
 	merchant, _ := newMerchantServer(t)
-	cfg := HandlerConfig{HMACKey: "k", DefaultCallbackURL: merchant.URL}
+	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", DefaultCallbackURL: merchant.URL}
 	_, store, queue := newTestServerFull(t, cfg)
 	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
 
@@ -1411,7 +1411,7 @@ func TestAutoplayRespecteLesValeursMagiques(t *testing.T) {
 		t.Run(c.nom, func(t *testing.T) {
 			t.Parallel()
 			merchant, _ := newMerchantServer(t)
-			cfg := HandlerConfig{HMACKey: "k", DefaultCallbackURL: merchant.URL, Autoplay: true}
+			cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", DefaultCallbackURL: merchant.URL, Autoplay: true}
 			_, store, queue := newTestServerFull(t, cfg)
 			h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
 
@@ -1437,7 +1437,7 @@ func TestCustomerReferenceRemonteDansKrAnswer(t *testing.T) {
 	t.Parallel()
 	merchant, hits := newMerchantServer(t)
 	server, _, _ := newTestServerFull(t, HandlerConfig{
-		HMACKey: "k", DefaultCallbackURL: merchant.URL,
+		HMACKey: "k", RESTPassword: "pwd-rest", DefaultCallbackURL: merchant.URL,
 	})
 
 	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
@@ -1478,7 +1478,7 @@ func TestCustomerReferenceRemonteDansKrAnswer(t *testing.T) {
 // tout le reste, puisque c'est lui qui fera autorité au rejeu.
 func TestEnrolementCaptureLeClient(t *testing.T) {
 	t.Parallel()
-	cfg := HandlerConfig{HMACKey: "k"}
+	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"}
 	_, store, queue := newTestServerFull(t, cfg)
 	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
 
@@ -1513,7 +1513,7 @@ func TestEnrolementCaptureLeClient(t *testing.T) {
 // intégration qui dérive en production.
 func TestRejeuIgnoreLeClientDeLaRequete(t *testing.T) {
 	t.Parallel()
-	cfg := HandlerConfig{HMACKey: "k"}
+	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"}
 	_, store, queue := newTestServerFull(t, cfg)
 	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
 
@@ -1570,7 +1570,7 @@ func TestRejeuIgnoreLeClientDeLaRequete(t *testing.T) {
 // rejeu retombe alors sur celui de la requête, faute de mieux.
 func TestRejeuSurAliasSansClientGardeLaRequete(t *testing.T) {
 	t.Parallel()
-	cfg := HandlerConfig{HMACKey: "k"}
+	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"}
 	_, store, queue := newTestServerFull(t, cfg)
 
 	pm := NewPaymentMethod("tok-ancien", Card{
@@ -1660,7 +1660,7 @@ func TestSubscriptionGetTokenIncoherentRefuse(t *testing.T) {
 // carte. Sans lui, la logique de reconduction s'écrit à l'aveugle.
 func TestMotifDeRefusDansLeKrAnswer(t *testing.T) {
 	t.Parallel()
-	cfg := HandlerConfig{HMACKey: "k"}
+	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"}
 	_, store, queue := newTestServerFull(t, cfg)
 	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
 
@@ -1796,5 +1796,132 @@ func TestRefusPorteLeCodePSP(t *testing.T) {
 	}
 	if got.DetailedErrorCode != "51" {
 		t.Errorf("detailedErrorCode = %q, veut 51", got.DetailedErrorCode)
+	}
+}
+
+// La cause du refus et le code bancaire doivent designer la meme chose.
+//
+// Une carte a la fois expiree et porteuse d'un PAN de refus annoncait
+// « moyen de paiement expire (51 provision insuffisante) » : la cause
+// disait l'expiration, le code disait la provision. Un marchand qui
+// decide de reconduire sur le code aurait reconduit une carte perimee.
+func TestEvaluateMethodOutcome_causeEtCodeConcordent(t *testing.T) {
+	t.Parallel()
+	passe := time.Date(2020, 1, 31, 0, 0, 0, 0, time.UTC)
+	futur := time.Date(2030, 12, 31, 0, 0, 0, 0, time.UTC)
+	maintenant := time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC)
+
+	cas := []struct {
+		nom        string
+		pm         *PaymentMethod
+		wantReason string
+		wantCode   string
+	}{
+		{
+			nom:        "expiree et PAN de refus : l'expiration l'emporte, sans code bancaire",
+			pm:         &PaymentMethod{PANFull: "4000000000000002", ExpiryMonth: 1, ExpiryYear: passe.Year()},
+			wantReason: ReasonExpired,
+			wantCode:   "",
+		},
+		{
+			nom:        "revoquee et PAN de refus : la revocation l'emporte, sans code bancaire",
+			pm:         &PaymentMethod{PANFull: "4000000000000002", ExpiryMonth: 12, ExpiryYear: futur.Year(), Revoked: true},
+			wantReason: ReasonRevoked,
+			wantCode:   "",
+		},
+		{
+			nom:        "PAN de refus seul : le code de l'emetteur accompagne le motif",
+			pm:         &PaymentMethod{PANFull: "4000000000000002", ExpiryMonth: 12, ExpiryYear: futur.Year()},
+			wantReason: ReasonDeclinedTestPAN,
+			wantCode:   "51",
+		},
+		{
+			nom:        "carte saine : aucun refus",
+			pm:         &PaymentMethod{PANFull: "4111111111111111", ExpiryMonth: 12, ExpiryYear: futur.Year()},
+			wantReason: "",
+			wantCode:   "",
+		},
+	}
+	for _, c := range cas {
+		t.Run(c.nom, func(t *testing.T) {
+			_, reason, decline := evaluateMethodOutcome(c.pm, maintenant)
+			if reason != c.wantReason {
+				t.Errorf("reason = %q, veut %q", reason, c.wantReason)
+			}
+			if decline.Code != c.wantCode {
+				t.Errorf("code = %q, veut %q", decline.Code, c.wantCode)
+			}
+		})
+	}
+}
+
+// PayZen ne signe pas les deux canaux avec la meme cle, et le SDK
+// marchand choisit la sienne d'apres kr-hash-key : « sha256_hmac » pour
+// le retour navigateur, « password » pour la notification serveur.
+//
+// Tout signer avec la cle du navigateur laissait la branche « password »
+// du code marchand inexercee jusqu'a sa mise en production — le
+// simulateur validait un chemin que le vrai n'emprunte pas.
+func TestSignatureParCanal(t *testing.T) {
+	t.Parallel()
+	const cleNavigateur = "cle-hmac-boutique"
+	const clePassword = "mot-de-passe-rest"
+
+	cas := []struct {
+		nom      string
+		endpoint string
+		champURL string
+		wantNom  string
+		wantCle  string
+	}{
+		{"retour navigateur", "/paysim/simulate/browserReturn", "returnUrl", "sha256_hmac", cleNavigateur},
+		{"notification serveur", "/paysim/simulate/ipn", "notificationUrl", "password", clePassword},
+	}
+	for _, c := range cas {
+		t.Run(c.nom, func(t *testing.T) {
+			merchant, hits := newMerchantServer(t)
+			server, _, _ := newTestServerFull(t, HandlerConfig{
+				HMACKey: cleNavigateur, RESTPassword: clePassword,
+			})
+
+			create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+				CreatePaymentRequest{OrderID: "SIGN-1", Amount: 4990, Currency: "EUR"}, "u", "p")
+			var ca CreatePaymentAnswer
+			_ = json.Unmarshal(create.Answer, &ca)
+
+			body := map[string]any{
+				"formToken": ca.FormToken,
+				"outcome":   OutcomePaid,
+				c.champURL:  merchant.URL,
+			}
+			if _, code := simulate(t, server.URL+c.endpoint, body, ""); code != http.StatusOK {
+				t.Fatalf("simulate status = %d", code)
+			}
+
+			select {
+			case recu := <-hits:
+				if got := recu.Values.Get("kr-hash-key"); got != c.wantNom {
+					t.Errorf("kr-hash-key = %q, veut %q", got, c.wantNom)
+				}
+				if got := recu.Values.Get("kr-hash-algorithm"); got != "sha256_hmac" {
+					t.Errorf("kr-hash-algorithm = %q, veut sha256_hmac", got)
+				}
+				// La signature doit verifier avec la cle annoncee, et
+				// avec elle seule.
+				answer := recu.Values.Get("kr-answer")
+				if got := recu.Values.Get("kr-hash"); got != Sign([]byte(answer), c.wantCle) {
+					t.Errorf("kr-hash ne verifie pas avec la cle annoncee (%s)", c.wantNom)
+				}
+				autre := cleNavigateur
+				if c.wantCle == cleNavigateur {
+					autre = clePassword
+				}
+				if recu.Values.Get("kr-hash") == Sign([]byte(answer), autre) {
+					t.Error("kr-hash verifie avec l'autre cle : les deux canaux ne sont pas distingues")
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("aucun webhook recu")
+			}
+		})
 	}
 }

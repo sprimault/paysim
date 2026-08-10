@@ -285,8 +285,10 @@ export interface CreatePaymentInput {
   orderId: string;
   /**
    * FormAction déclare l'intention (PAYMENT, REGISTER,
-   * REGISTER_PAY…). Conservée et restituée, mais sans effet sur
-   * l'enrôlement : une carte fournie est toujours enregistrée.
+   * REGISTER_PAY…). Conservée et restituée.
+   * Ce n'est pas elle qui décide du moment de l'enrôlement, c'est le
+   * montant : à zéro centime, la carte est vérifiée et l'alias rendu
+   * tout de suite ; dès qu'il y a un débit, l'alias attend son issue.
    */
   formAction?: string;
   /**
@@ -352,6 +354,17 @@ export interface CreatePaymentOutput {
    * enregistrer, la marque n'a rien à qualifier.
    */
   brand?: string;
+  /**
+   * DeclineCode et DeclineMessage qualifient un refus immédiat — rejeu
+   * one-click, ou autoplay actif. Vides sur tout autre état.
+   * Livrés ici parce que le serveur les avait déjà en main : sans eux,
+   * un intégrateur qui reçoit `state: declined` doit relire le paiement
+   * pour apprendre s'il peut reconduire. Le vrai PayZen renvoie ses
+   * transactions complètes dès la création ; ne rendre que l'état
+   * obligeait à un aller-retour que le protocole imité ne demande pas.
+   */
+  declineCode?: string;
+  declineMessage?: string;
 }
 /**
  * SimulatePaymentRequest est le corps de POST

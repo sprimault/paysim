@@ -92,6 +92,7 @@ if ((Invoke-Docker @(
             '-e', "PAYSIM_PUBLIC_URL=http://$($HostIp):$Port",
             '-e', "PAYSIM_CALLBACK_URL=http://$Sink",
             '-e', 'PAYSIM_PAYZEN_HMAC_KEY=demo-hmac-key',
+            '-e', 'PAYSIM_PAYZEN_REST_PASSWORD=demo-rest-password',
             '-e', 'PAYSIM_LOG_LEVEL=warn',
             $Image)) -ne 0) {
     throw 'docker run echoue'

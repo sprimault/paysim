@@ -140,7 +140,7 @@ l'image directement (aucune donnée de seed, aucune persistance).
 Même one-liner sur Linux/macOS/Git Bash et Windows PowerShell :
 
 ```bash
-docker run --rm -p 30880:8080 -e PAYSIM_PUBLIC_URL=http://localhost:30880 -e PAYSIM_CALLBACK_URL=http://localhost:30880 -e PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key ghcr.io/sprimault/paysim:latest
+docker run --rm -p 30880:8080 -e PAYSIM_PUBLIC_URL=http://localhost:30880 -e PAYSIM_CALLBACK_URL=http://localhost:30880 -e PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key -e PAYSIM_PAYZEN_REST_PASSWORD=dev-rest-password ghcr.io/sprimault/paysim:latest
 ```
 
 Puis ouvrir http://localhost:30880/.
@@ -204,8 +204,10 @@ Basculer une intégration PayZen vers Paysim, c'est un changement d'URL :
 $client = new PayzenClient([
     'endpoint'  => 'http://localhost:30880',  // au lieu de https://api.payzen.eu
     'username'  => '00000000',                 // n'importe quelle valeur non vide
-    'password'  => 'testpassword_XXXX',
-    'hmac_key'  => 'dev-hmac-key',             // correspond à PAYSIM_PAYZEN_HMAC_KEY
+    // Signe les notifications serveur — correspond à PAYSIM_PAYZEN_REST_PASSWORD
+    'password'  => 'dev-rest-password',
+    // Signe le retour navigateur — correspond à PAYSIM_PAYZEN_HMAC_KEY
+    'hmac_key'  => 'dev-hmac-key',
 ]);
 $response = $client->post('/api-payment/V4/Charge/CreatePayment', [...]);
 ```
@@ -264,7 +266,7 @@ d'une interface entre deux fusions.
 
 ## Statut
 
-Préversion, tag `v0.6.2`. Le support Stripe et un GIF de démonstration
+Préversion, tag `v0.6.3`. Le support Stripe et un GIF de démonstration
 sont prévus.
 
 **Comment c'est validé.** Chaque pull request exécute le linter, les tests

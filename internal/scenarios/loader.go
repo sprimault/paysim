@@ -123,9 +123,10 @@ type Step struct {
 
 // CreatePayment demande à Paysim de créer un paiement via un provider.
 //
-// Fournir une Card déclenche l'enrôlement d'un moyen de paiement, et ce
-// quelle que soit la FormAction déclarée : côté simulateur, une carte
-// présentée est toujours enregistrée.
+// Fournir une Card présente un moyen de paiement. L'alias n'en sort
+// qu'une fois l'issue connue : immédiatement quand le montant est nul —
+// c'est une simple vérification —, au simulate sinon. Un refus n'en
+// laisse aucun.
 type CreatePayment struct {
 	// Provider choisit l'adaptateur, "payzen" à défaut.
 	Provider string `yaml:"provider"`

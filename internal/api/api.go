@@ -116,6 +116,7 @@ func NewHandler(deps Deps) http.Handler {
 	mux.HandleFunc("GET /paysim/api/v1/payment-methods", h.listPaymentMethods)
 	mux.HandleFunc("GET /paysim/api/v1/payment-methods/{token}", h.getPaymentMethod)
 	mux.HandleFunc("POST /paysim/api/v1/payment-methods/{token}/revoke", h.revokePaymentMethod)
+	mux.HandleFunc("POST /paysim/api/v1/payment-methods/{token}/expire", h.expirePaymentMethod)
 	mux.HandleFunc("POST /paysim/api/v1/subscriptions", h.createSubscription)
 	mux.HandleFunc("GET /paysim/api/v1/subscriptions", h.listSubscriptions)
 	mux.HandleFunc("GET /paysim/api/v1/subscriptions/{id}", h.getSubscription)
@@ -338,8 +339,11 @@ type CreatePaymentInput struct {
 	OrderID  string `json:"orderId"`
 
 	// FormAction déclare l'intention (PAYMENT, REGISTER,
-	// REGISTER_PAY…). Conservée et restituée, mais sans effet sur
-	// l'enrôlement : une carte fournie est toujours enregistrée.
+	// REGISTER_PAY…). Conservée et restituée.
+	//
+	// Ce n'est pas elle qui décide du moment de l'enrôlement, c'est le
+	// montant : à zéro centime, la carte est vérifiée et l'alias rendu
+	// tout de suite ; dès qu'il y a un débit, l'alias attend son issue.
 	FormAction string `json:"formAction,omitempty"`
 
 	// Customer et Metadata sont restitués tels quels dans le webhook.
@@ -394,6 +398,17 @@ type CreatePaymentOutput struct {
 	// Toujours accompagnée du token, jamais seule : sans alias à
 	// enregistrer, la marque n'a rien à qualifier.
 	Brand string `json:"brand,omitempty"`
+
+	// DeclineCode et DeclineMessage qualifient un refus immédiat — rejeu
+	// one-click, ou autoplay actif. Vides sur tout autre état.
+	//
+	// Livrés ici parce que le serveur les avait déjà en main : sans eux,
+	// un intégrateur qui reçoit `state: declined` doit relire le paiement
+	// pour apprendre s'il peut reconduire. Le vrai PayZen renvoie ses
+	// transactions complètes dès la création ; ne rendre que l'état
+	// obligeait à un aller-retour que le protocole imité ne demande pas.
+	DeclineCode    string `json:"declineCode,omitempty"`
+	DeclineMessage string `json:"declineMessage,omitempty"`
 }
 
 // SimulatePaymentRequest est le corps de POST
@@ -509,10 +524,12 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 			PaymentMethodToken: req.PaymentMethodToken,
 		})
 		if err != nil {
-			// Les erreurs domain (montant, devise) et l'inconnu de moyen
-			// de paiement sont fonctionnelles (400). Toute autre (store,
-			// génération d'uuid) est infra et remonte en 500 avec log.
-			if isDomainErr(err) || errors.Is(err, payzen.ErrPaymentMethodUnknown) {
+			// Les erreurs domain (montant, devise), l'inconnu de moyen de
+			// paiement et la carte invalide sont fonctionnelles (400).
+			// Toute autre (store, génération d'uuid) est infra et remonte
+			// en 500 avec log.
+			if isDomainErr(err) || errors.Is(err, payzen.ErrPaymentMethodUnknown) ||
+				errors.Is(err, payzen.ErrInvalidCard) {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
@@ -530,6 +547,8 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 			Provider:           "payzen",
 			State:              string(tx.Payment.State()),
 			PaymentMethodToken: tx.PaymentMethodToken,
+			DeclineCode:        tx.DeclineCode,
+			DeclineMessage:     tx.DeclineMessage,
 		}
 		if tx.Payment.State() == domain.StateDeclined {
 			out.PaymentMethodToken = ""
@@ -1070,6 +1089,40 @@ func (h *Handler) revokePaymentMethod(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// expirePaymentMethod traite POST /paysim/api/v1/payment-methods/{token}/expire.
+//
+// Fait vieillir l'alias jusqu'à sa date d'expiration : les débits
+// suivants le refusent pour « moyen de paiement expire ». C'est le
+// pendant de revoke pour la seconde cause d'inexploitabilité.
+//
+// L'endpoint existe parce qu'une carte ne peut plus être enrôlée déjà
+// expirée — PayZen refuserait l'autorisation et ne créerait pas
+// d'alias. Le levier de test documenté devait donc se déplacer de
+// l'enrôlement vers l'alias lui-même.
+//
+// Action propre à Paysim, sans équivalent PayZen : elle vit dans l'API
+// de contrôle, jamais dans les routes du fournisseur, pour qu'on ne
+// puisse pas la prendre pour du protocole.
+//
+// Idempotent : un token inconnu retourne 204, comme revoke.
+func (h *Handler) expirePaymentMethod(w http.ResponseWriter, r *http.Request) {
+	if h.payzenHandler == nil {
+		http.Error(w, "payzen handler non configure", http.StatusServiceUnavailable)
+		return
+	}
+	token := r.PathValue("token")
+	if token == "" {
+		http.Error(w, "token manquant", http.StatusBadRequest)
+		return
+	}
+	if err := h.payzenHandler.ExpireMethod(token); err != nil {
+		h.logger.Error("api_expire_method_failed", "token", token, "err", err)
+		http.Error(w, "expiration impossible", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // isDomainErr identifie les erreurs métier remontées par domain.New à
 // travers l'enveloppement fmt.Errorf du provider. Utilisé pour choisir
 // entre 400 (input invalide) et 500 (infra).
@@ -1398,12 +1451,18 @@ func (h *Handler) simulatePayment(w http.ResponseWriter, r *http.Request) {
 		AnswerType: "V4/Payment",
 		Opts:       opts,
 	}
+	// Le canal ne choisit pas que l'URL cible : il choisit aussi la clé
+	// de signature. PayZen signe le retour navigateur avec la clé HMAC
+	// de la boutique et la notification serveur avec le mot de passe
+	// d'API REST — deux clés que le marchand détient à deux endroits.
 	switch req.Channel {
 	case "browserReturn":
 		input.URLOverride = req.ReturnURL
+		input.Canal = payzen.CanalNavigateur
 		input.FallbackURL = func(tx *payzen.Transaction) string { return tx.ReturnURL }
 	case "ipn":
 		input.URLOverride = req.NotificationURL
+		input.Canal = payzen.CanalServeur
 		input.FallbackURL = func(tx *payzen.Transaction) string { return tx.NotificationURL }
 	}
 

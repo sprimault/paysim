@@ -311,6 +311,11 @@ type PaymentDetail struct {
 	UUID  string `json:"uuid"`
 	State string `json:"state"`
 
+	// PaymentMethodToken est l'alias, quand le paiement en a produit un.
+	// Relu après la simulation : l'enrôlement n'aboutit qu'à l'issue
+	// favorable, la réponse de création ne peut donc pas le porter.
+	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
+
 	// DeclineCode est le motif bancaire du refus — le code ISO 8583
 	// remonté par l'acquéreur. Décodé parce que assert_state sait
 	// désormais le vérifier : c'est lui qui décide de la reconduction

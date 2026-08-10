@@ -101,9 +101,24 @@ below).
 - The `card` field is **not part of the real PayZen contract** — in
   production the card data transits via the SmartForm client
   (`kr-payment-form.min.js`), never through the merchant API. Paysim
-  accepts it as an integration convenience: attaching a card triggers
-  systematic enrollment (independent of `formAction`) and returns a
-  `paymentMethodToken` in the webhook. See
+  accepts it as an integration convenience. **The alias is only created
+  once the authorization is accepted**, as with PayZen — "the alias
+  (token) will not be created if the authorization or information
+  request is declined":
+
+  | Amount | What happens | Payment state | When the alias appears |
+  | --- | --- | --- | --- |
+  | `0` | Verification, no debit | `authorized` if accepted, `declined` otherwise | Immediately, in the creation response |
+  | `> 0` | A debit to play | `initiated` until `simulate` | At `simulate`, if the outcome is accepted |
+
+  The verification is **authorized, never captured**: at Lyra this
+  transaction "is never settled and stays in the Transactions in
+  progress tab". There was an authorization request, no movement of
+  funds.
+
+  A declined payment therefore leaves **no** alias, and the creation
+  response of a `REGISTER_PAY` carries no token yet — read the payment
+  back, or read it from the webhook. See
   [testing-cards.md](../testing-cards.md).
 - `paymentMethodToken` in the request triggers **one-click recurring
   charge** mode: no form, direct capture (or decline), synchronous
@@ -286,7 +301,8 @@ KrAnswer
 │   ├── amount               integer
 │   ├── currency             string
 │   ├── paymentMethodType    string
-│   ├── paymentMethodToken   string (present after REGISTER_PAY or replay)
+│   ├── paymentMethodToken   string (present when an alias was created or replayed)
+│   ├── paymentMethodTokenStatus  "ACTIVE" | "CANCELLED" (alongside the token)
 │   ├── status               "PAID" | "UNPAID"
 │   ├── detailedStatus       "AUTHORISED" | "CAPTURED" | "REFUSED" | …
 │   ├── operationType        "DEBIT" | "CREDIT"
@@ -459,6 +475,29 @@ retry logic would then be written against us rather than against PayZen.
 Two levers set the reason: the **magic amount** on the checkout path, the **test PAN** on
 the recurring one, where the amount is fixed by the subscription. See
 [testing-cards.md](../testing-cards.md).
+
+### The same reason goes by two names
+
+`detailedErrorCode` is the **PayZen** name, the one in `kr-answer`. Paysim's own control
+API exposes the same data flat, under two different fields:
+
+| Where you read it                             | Code                | Message                  |
+| --------------------------------------------- | ------------------- | ------------------------ |
+| PayZen `kr-answer` (`transactions[0]`)         | `detailedErrorCode` | `detailedErrorMessage`   |
+| Control API (`/paysim/api/v1/payments`)        | `declineCode`       | `declineMessage`         |
+
+This is not a rewrite of the protocol: the control API is not PayZen, and giving it a
+PayZen field name would suggest it mimics that format. But coding from this page without
+knowing the second pair means looking for a field that does not exist — and a missing
+reason raises nothing, it just stays empty.
+
+Both pairs appear everywhere a decline can be read: in a payment summary, in its detail,
+and **in the creation response itself** when the outcome is immediate (one-click replay,
+autoplay). No extra read is needed to learn the reason.
+
+A decline with no bank reason leaves both fields empty — an abandon, an expiry, a revoked
+payment method: no issuer declined there, and inventing an authorization code would
+announce a banking decision that never happened.
 
 ## Chaos values (magic values)
 

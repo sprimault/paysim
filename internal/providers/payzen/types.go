@@ -60,6 +60,8 @@ const (
 	ErrCodePaymentMethodUnknown = "PAYSIM_PAYMENT_METHOD_UNKNOWN"
 	ErrCodeExpiredCard          = "PAYSIM_EXPIRED_CARD"
 	ErrCodeRevokedCard          = "PAYSIM_REVOKED_CARD"
+	// #nosec G101 -- code d'erreur, pas un secret.
+	ErrCodeInvalidCard = "PAYSIM_INVALID_CARD"
 
 	// ErrCodeRefused habille un paiement refusé au niveau PSP. Le motif
 	// bancaire, lui, vit dans detailedErrorCode : c'est un code ISO 8583
@@ -349,10 +351,21 @@ type Transaction struct {
 	Currency string
 
 	// FormAction porte l'intention déclarée par le marchand
-	// (PAYMENT, REGISTER, REGISTER_PAY…). Conservé pour restitution,
-	// mais sans effet sur l'enrôlement : côté simulateur, une carte
-	// fournie est toujours enregistrée.
+	// (PAYMENT, REGISTER, REGISTER_PAY…). Conservé pour restitution.
 	FormAction string
+
+	// Card est la carte présentée, en attente d'enrôlement.
+	//
+	// Elle vit ici et non dans le dépôt des moyens tant que l'issue
+	// n'est pas connue : PayZen ne crée l'alias qu'après une
+	// autorisation acceptée — « L'alias (token) ne sera pas créé si la
+	// demande d'autorisation ou de renseignement est refusée ». La
+	// publier dès la création exposerait, le temps que le porteur
+	// paie, un alias que le vrai n'a pas encore attribué.
+	//
+	// Effacée au moment de l'enrôlement : elle n'a plus de raison
+	// d'être dupliquée une fois le PaymentMethod créé.
+	Card *Card
 
 	// Customer et Metadata sont le contexte marchand, restitués tels
 	// quels dans le webhook. Paysim ne les interprète jamais.
@@ -817,6 +830,18 @@ type KrTransaction struct {
 	// refusé : un alias annoncé à côté d'un refus laisserait croire
 	// qu'il est débitable.
 	PaymentMethodToken string `json:"paymentMethodToken,omitempty"`
+
+	// PaymentMethodTokenStatus dit si l'alias est encore utilisable :
+	// ACTIVE, ou CANCELLED pour un alias résilié.
+	//
+	// PayZen le rend à côté du token. Sans lui, un marchand qui relit
+	// une transaction ancienne ne peut pas savoir que l'alias qu'elle
+	// nomme a été résilié depuis — il le découvrirait au refus du
+	// prochain débit.
+	//
+	// Vide quand il n'y a pas de token : un statut sans alias ne
+	// qualifie rien.
+	PaymentMethodTokenStatus string `json:"paymentMethodTokenStatus,omitempty"`
 
 	// Status est le résultat de la transaction : PAID ou UNPAID.
 	Status string `json:"status"`

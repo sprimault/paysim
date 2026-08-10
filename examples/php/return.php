@@ -11,11 +11,17 @@
 // du paiement et l'orderId. Consommé par scenario.php pour attendre
 // et afficher le résultat.
 
-const HMAC_KEY = 'cle-hmac-de-test'; // identique à PAYSIM_PAYZEN_HMAC_KEY
+// PayZen signe avec deux clés selon le canal et annonce laquelle dans
+// kr-hash-key. Les deux doivent être connues du marchand : la clé HMAC
+// de boutique pour le retour navigateur, le mot de passe d'API REST
+// pour la notification serveur.
+const HMAC_KEY     = 'cle-hmac-de-test';          // = PAYSIM_PAYZEN_HMAC_KEY
+const REST_PASSWORD = 'mot-de-passe-rest-de-test'; // = PAYSIM_PAYZEN_REST_PASSWORD
 
 $krAnswer      = $_POST['kr-answer']      ?? '';
 $krHash        = $_POST['kr-hash']        ?? '';
 $krHashAlgo    = $_POST['kr-hash-algorithm'] ?? '';
+$krHashKey     = $_POST['kr-hash-key']    ?? '';
 $krAnswerType  = $_POST['kr-answer-type'] ?? '';
 
 if ($krAnswer === '' || $krHash === '') {
@@ -30,8 +36,26 @@ if ($krHashAlgo !== 'sha256_hmac') {
     exit('algorithme non supporté');
 }
 
+// La clé se choisit d'après kr-hash-key, jamais en dur : c'est ce que
+// fait le SDK officiel, et c'est ce qui distingue un retour navigateur
+// d'une notification serveur. Vérifier les deux avec la même clé
+// fonctionne tant que le simulateur n'en emploie qu'une — puis échoue
+// en production, où PayZen en emploie deux.
+switch ($krHashKey) {
+    case 'sha256_hmac':
+        $key = HMAC_KEY;
+        break;
+    case 'password':
+        $key = REST_PASSWORD;
+        break;
+    default:
+        logLine('KO', 'kr-hash-key inattendu: ' . $krHashKey, '');
+        http_response_code(400);
+        exit('kr-hash-key non supporté');
+}
+
 // Vérification signature — cœur de la démonstration.
-$expected = hash_hmac('sha256', $krAnswer, HMAC_KEY);
+$expected = hash_hmac('sha256', $krAnswer, $key);
 if (!hash_equals($expected, $krHash)) {
     logLine('KO', 'signature invalide', '');
     http_response_code(400);

@@ -87,6 +87,22 @@ func errorCodeFor(opts BrowserReturnOpts) string {
 	return ""
 }
 
+// tokenStatus qualifie l'alias annoncé : ACTIVE, ou CANCELLED s'il a
+// été résilié.
+//
+// Rien sans token — un statut seul ne qualifierait rien. Et rien non
+// plus quand le moyen n'a pas pu être relu : mieux vaut un champ absent
+// qu'un « ACTIVE » affirmé sans l'avoir vérifié.
+func tokenStatus(token string, pm *PaymentMethod) string {
+	if token == "" || pm == nil {
+		return ""
+	}
+	if pm.Revoked {
+		return "CANCELLED"
+	}
+	return "ACTIVE"
+}
+
 // declineNote compose le motif inscrit au journal du domaine : le texte
 // en clair, suivi du code bancaire quand il y en a un.
 //
@@ -235,17 +251,18 @@ func buildKrAnswer(tx *Transaction, pm *PaymentMethod, opts BrowserReturnOpts, s
 	}
 
 	kt := KrTransaction{
-		UUID:               tx.UUID,
-		Amount:             tx.Amount,
-		Currency:           tx.Currency,
-		PaymentMethodType:  paymentMethodType,
-		PaymentMethodToken: tx.PaymentMethodToken, // propagé si enrôlement ou rejeu
-		Status:             spec.TxStatus,
-		DetailedStatus:     spec.DetailedStatus,
-		OperationType:      spec.OperationType,
-		CreationDate:       now,
-		ErrorCode:          errorCodeFor(opts),
-		ErrorMessage:       opts.ErrorMessage,
+		UUID:                     tx.UUID,
+		Amount:                   tx.Amount,
+		Currency:                 tx.Currency,
+		PaymentMethodType:        paymentMethodType,
+		PaymentMethodToken:       tx.PaymentMethodToken, // propagé si enrôlement ou rejeu
+		PaymentMethodTokenStatus: tokenStatus(tx.PaymentMethodToken, pm),
+		Status:                   spec.TxStatus,
+		DetailedStatus:           spec.DetailedStatus,
+		OperationType:            spec.OperationType,
+		CreationDate:             now,
+		ErrorCode:                errorCodeFor(opts),
+		ErrorMessage:             opts.ErrorMessage,
 
 		DetailedErrorCode:    opts.DeclineReason.Code,
 		DetailedErrorMessage: opts.DeclineReason.Message,
@@ -345,12 +362,12 @@ type BrowserReturnOpts struct {
 // L'outcome porté par le Webhook vient de answer.OrderStatus : c'est
 // l'adaptateur qui traduit son protocole en résultat métier, delivery
 // ne lit jamais le corps.
-func buildDeliveryWebhook(id, targetURL string, answer *KrAnswer, hmacKey, answerType string, badSignature bool, delay time.Duration) (delivery.Webhook, string, error) {
+func buildDeliveryWebhook(id, targetURL string, answer *KrAnswer, cle, nomCle, answerType string, badSignature bool, delay time.Duration) (delivery.Webhook, string, error) {
 	raw, err := json.Marshal(answer)
 	if err != nil {
 		return delivery.Webhook{}, "", fmt.Errorf("serialisation kr-answer: %w", err)
 	}
-	hash := Sign(raw, hmacKey)
+	hash := Sign(raw, cle)
 
 	sentHash := hash
 	if badSignature {
@@ -361,7 +378,11 @@ func buildDeliveryWebhook(id, targetURL string, answer *KrAnswer, hmacKey, answe
 	form.Set("kr-answer", string(raw))
 	form.Set("kr-hash", sentHash)
 	form.Set("kr-hash-algorithm", "sha256_hmac")
-	form.Set("kr-hash-key", "sha256_hmac")
+	// kr-hash-key nomme la clé qui a servi, il ne décrit pas
+	// l'algorithme : « sha256_hmac » pour le retour navigateur,
+	// « password » pour la notification serveur. Le SDK marchand s'en
+	// sert pour choisir laquelle de ses deux clés appliquer.
+	form.Set("kr-hash-key", nomCle)
 	form.Set("kr-answer-type", answerType)
 
 	// Le paiement rattaché se lit dans la réponse que cet adaptateur

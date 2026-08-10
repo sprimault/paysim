@@ -136,7 +136,7 @@ git, run the image directly (no seed data, no persistence). Same
 one-liner works on Linux/macOS/Git Bash and Windows PowerShell:
 
 ```bash
-docker run --rm -p 30880:8080 -e PAYSIM_PUBLIC_URL=http://localhost:30880 -e PAYSIM_CALLBACK_URL=http://localhost:30880 -e PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key ghcr.io/sprimault/paysim:latest
+docker run --rm -p 30880:8080 -e PAYSIM_PUBLIC_URL=http://localhost:30880 -e PAYSIM_CALLBACK_URL=http://localhost:30880 -e PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key -e PAYSIM_PAYZEN_REST_PASSWORD=dev-rest-password ghcr.io/sprimault/paysim:latest
 ```
 
 Then browse to http://localhost:30880/.
@@ -199,8 +199,10 @@ Switching a PayZen integration to Paysim is one URL change:
 $client = new PayzenClient([
     'endpoint'  => 'http://localhost:30880',  // was https://api.payzen.eu
     'username'  => '00000000',                 // any non-empty value
-    'password'  => 'testpassword_XXXX',
-    'hmac_key'  => 'dev-hmac-key',             // matches PAYSIM_PAYZEN_HMAC_KEY
+    // Signs server notifications — matches PAYSIM_PAYZEN_REST_PASSWORD
+    'password'  => 'dev-rest-password',
+    // Signs the browser return — matches PAYSIM_PAYZEN_HMAC_KEY
+    'hmac_key'  => 'dev-hmac-key',
 ]);
 $response = $client->post('/api-payment/V4/Charge/CreatePayment', [...]);
 ```
@@ -258,7 +260,7 @@ stability between two merges.
 
 ## Status
 
-Preview release, tag `v0.6.2`. Stripe support and a demo GIF are planned.
+Preview release, tag `v0.6.3`. Stripe support and a demo GIF are planned.
 
 **How it is validated.** Every pull request runs the linter, the unit tests
 with the race detector, a dependency audit, a drift check on the TypeScript

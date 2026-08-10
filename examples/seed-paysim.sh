@@ -71,12 +71,9 @@ echo "  $uuid — authorized"
 
 echo "==> 4. Enrolement Visa valide (long-terme, dates 2028)"
 p=$(curl -s -X POST "$API/payments" "${CURL_HEADERS[@]}" \
-    -d '{"amount":2990,"currency":"EUR","orderId":"SUB-INIT-VISA","formAction":"REGISTER_PAY","card":{"pan":"4111111111111111","expiryMonth":12,"expiryYear":2028,"brand":"VISA"}}')
-uuid=$(echo "$p" | json_get uuid)
+    -d '{"amount":0,"currency":"EUR","orderId":"SUB-INIT-VISA","formAction":"REGISTER","card":{"pan":"4111111111111111","expiryMonth":12,"expiryYear":2028,"brand":"VISA"}}')
 token_visa=$(echo "$p" | json_get paymentMethodToken)
-curl -s -X POST "$API/payments/$uuid/simulate" "${CURL_HEADERS[@]}" \
-    -d "{\"outcome\":\"PAID\",\"channel\":\"ipn\",\"notificationUrl\":\"$NOTIF_URL\"}" >/dev/null
-echo "  $uuid — captured, token Visa = $token_visa"
+echo "  token Visa = $token_visa"
 
 echo "==> 5. Subscription mensuelle active + 2 renewals réussis"
 s=$(curl -s -X POST "$API/subscriptions" "${CURL_HEADERS[@]}" \
@@ -90,12 +87,9 @@ done
 
 echo "==> 6. Enrolement magic PAN Visa 4000...02 (refus systématique)"
 p=$(curl -s -X POST "$API/payments" "${CURL_HEADERS[@]}" \
-    -d '{"amount":1500,"currency":"EUR","orderId":"CARD-MAGIC-DECLINE","formAction":"REGISTER_PAY","card":{"pan":"4000000000000002","expiryMonth":12,"expiryYear":2028,"brand":"VISA"}}')
+    -d '{"amount":0,"currency":"EUR","orderId":"CARD-MAGIC-DECLINE","formAction":"REGISTER","card":{"pan":"4000000000000002","expiryMonth":12,"expiryYear":2028,"brand":"VISA"}}')
 token_magic=$(echo "$p" | json_get paymentMethodToken)
-uuid=$(echo "$p" | json_get uuid)
-curl -s -X POST "$API/payments/$uuid/simulate" "${CURL_HEADERS[@]}" \
-    -d "{\"outcome\":\"PAID\",\"channel\":\"ipn\",\"notificationUrl\":\"$NOTIF_URL\"}" >/dev/null
-echo "  $uuid — declined (magic PAN au simulate), token = $token_magic"
+echo "  token = $token_magic — refusera a chaque debit"
 
 echo "==> 7. Subscription sur CB magic PAN → renewal declined"
 s=$(curl -s -X POST "$API/subscriptions" "${CURL_HEADERS[@]}" \
@@ -106,7 +100,7 @@ echo "  subscription $subid + renewal (declined)"
 
 echo "==> 8. Enrolement Mastercard valide"
 p=$(curl -s -X POST "$API/payments" "${CURL_HEADERS[@]}" \
-    -d '{"amount":3500,"currency":"EUR","orderId":"MC-CHECKOUT","formAction":"REGISTER_PAY","card":{"pan":"5555555555554444","expiryMonth":6,"expiryYear":2029}}')
+    -d '{"amount":0,"currency":"EUR","orderId":"MC-CHECKOUT","formAction":"REGISTER","card":{"pan":"5555555555554444","expiryMonth":6,"expiryYear":2029}}')
 uuid=$(echo "$p" | json_get uuid)
 curl -s -X POST "$API/payments/$uuid/simulate" "${CURL_HEADERS[@]}" \
     -d "{\"outcome\":\"PAID\",\"channel\":\"ipn\",\"notificationUrl\":\"$NOTIF_URL\"}" >/dev/null
@@ -120,24 +114,23 @@ curl -s -X POST "$API/payments/$uuid/simulate" "${CURL_HEADERS[@]}" \
     -d "{\"outcome\":\"PAID\",\"channel\":\"ipn\",\"notificationUrl\":\"$NOTIF_URL\"}" >/dev/null
 echo "  $uuid — captured"
 
-echo "==> 10. Enrolement CB expirée (01/2020) — état « Expiré » côté UI"
+echo "==> 10. Moyen périmé — état « Expiré » côté UI"
+# Une carte ne s'enrôle jamais déjà expirée : PayZen refuserait
+# l'autorisation et ne créerait aucun alias. On l'enregistre saine, puis
+# on la fait vieillir — c'est le cas réel, et le seul qui produise un
+# alias périmé à regarder dans l'interface.
 p=$(curl -s -X POST "$API/payments" "${CURL_HEADERS[@]}" \
-    -d '{"amount":1200,"currency":"EUR","orderId":"CARD-EXPIRED","formAction":"REGISTER_PAY","card":{"pan":"4242424242424242","expiryMonth":1,"expiryYear":2020,"brand":"VISA"}}')
-uuid=$(echo "$p" | json_get uuid)
+    -d '{"amount":0,"currency":"EUR","orderId":"CARD-EXPIRED","formAction":"REGISTER","card":{"pan":"4242424242424242","expiryMonth":12,"expiryYear":2030,"brand":"VISA"}}')
 token_exp=$(echo "$p" | json_get paymentMethodToken)
-curl -s -X POST "$API/payments/$uuid/simulate" "${CURL_HEADERS[@]}" \
-    -d "{\"outcome\":\"PAID\",\"channel\":\"ipn\",\"notificationUrl\":\"$NOTIF_URL\"}" >/dev/null
-echo "  $uuid — declined (CB expirée au simulate), token = $token_exp"
+curl -sX POST "$API/payment-methods/$token_exp/expire" -o /dev/null
+echo "  token = $token_exp — périmé"
 
 echo "==> 11. Enrolement Mastercard série 2 (nouveau BIN) puis révocation"
 p=$(curl -s -X POST "$API/payments" "${CURL_HEADERS[@]}" \
-    -d '{"amount":2200,"currency":"EUR","orderId":"MC2-CHECKOUT","formAction":"REGISTER_PAY","card":{"pan":"2223000048400011","expiryMonth":10,"expiryYear":2030}}')
-uuid=$(echo "$p" | json_get uuid)
+    -d '{"amount":0,"currency":"EUR","orderId":"MC2-CHECKOUT","formAction":"REGISTER","card":{"pan":"2223000048400011","expiryMonth":10,"expiryYear":2030}}')
 token_mc2=$(echo "$p" | json_get paymentMethodToken)
-curl -s -X POST "$API/payments/$uuid/simulate" "${CURL_HEADERS[@]}" \
-    -d "{\"outcome\":\"PAID\",\"channel\":\"ipn\",\"notificationUrl\":\"$NOTIF_URL\"}" >/dev/null
 curl -sX POST "$API/payment-methods/$token_mc2/revoke" -o /dev/null
-echo "  $uuid — captured + moyen révoqué manuellement"
+echo "  token = $token_mc2 — moyen révoqué manuellement"
 
 # Comptage : chaque entrée du tableau porte le champ scalaire attendu
 # une seule fois — grep -c compte les occurrences sans dépendance JSON.

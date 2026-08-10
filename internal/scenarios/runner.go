@@ -259,7 +259,21 @@ func (r *Runner) doSimulate(ctx context.Context, st *state, in *Simulate) error 
 	// Channel ipn par défaut : un scénario CI n'a pas de navigateur
 	// pour recevoir le POST de retour ; l'IPN suffit à déclencher le
 	// webhook côté marchand et à faire progresser la machine à états.
-	return r.client.SimulatePayment(ctx, st.currentUUID, outcome, "ipn", opts)
+	if err := r.client.SimulatePayment(ctx, st.currentUUID, outcome, "ipn", opts); err != nil {
+		return err
+	}
+	// L'alias naît de l'issue, pas de la création : c'est ici qu'un
+	// enrôlement accepté produit son token, et c'est donc ici qu'il faut
+	// le relire pour qu'un charge_token ultérieur le trouve. Le lire à
+	// la création ne rendait rien — l'autorisation n'avait pas eu lieu.
+	det, err := r.client.GetPayment(ctx, st.currentUUID)
+	if err != nil {
+		return err
+	}
+	if det.PaymentMethodToken != "" {
+		st.currentToken = det.PaymentMethodToken
+	}
+	return nil
 }
 
 // doInject empile un mode chaos pour la prochaine étape simulate.

@@ -173,6 +173,7 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 	queue.SetPublisher(eventBus)
 	payzenHandler := payzen.NewHandler(payzenStore, queue, logger, payzen.HandlerConfig{
 		HMACKey:            cfg.PayzenHMACKey,
+		RESTPassword:       cfg.PayzenRESTPassword,
 		APIToken:           cfg.APIToken,
 		Chaos:              chaosInj,
 		Publisher:          eventBus,

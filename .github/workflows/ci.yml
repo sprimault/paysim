@@ -209,6 +209,7 @@ jobs:
             PAYSIM_PUBLIC_URL=http://127.0.0.1:8080 \
             PAYSIM_CALLBACK_URL=http://127.0.0.1:9099 \
             PAYSIM_PAYZEN_HMAC_KEY=dev-hmac-key \
+            PAYSIM_PAYZEN_REST_PASSWORD=dev-rest-password \
             PAYSIM_STORE="$store" \
             PAYSIM_SQLITE_PATH=/tmp/paysim-ci.db \
             PAYSIM_LOG_LEVEL=warn \
