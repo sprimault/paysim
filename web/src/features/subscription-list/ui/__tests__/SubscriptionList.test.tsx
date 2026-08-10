@@ -19,6 +19,7 @@ function makeSub(overrides: Partial<SubscriptionOutput> = {}): SubscriptionOutpu
     effectDate: '2026-09-01',
     rrule: 'RRULE:FREQ=MONTHLY;INTERVAL=1',
     cancelled: false,
+    billingCount: 0,
     createdAt: '2026-08-02T10:00:00Z',
     ...overrides,
   };

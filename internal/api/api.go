@@ -641,6 +641,16 @@ type SubscriptionOutput struct {
 	// suivants répondent alors 400 — l'annulation est définitive.
 	Cancelled bool `json:"cancelled"`
 
+	// BillingCount est le nombre d'échéances déjà produites par cet
+	// abonnement, réussies comme refusées.
+	//
+	// Compté à la volée en balayant les métadonnées des paiements : le
+	// rattachement vit là, sans table dédiée ni compteur persisté. Un
+	// compteur stocké serait à maintenir à chaque échéance et pourrait
+	// diverger du réel, ce qu'un simulateur ne doit pas faire — mieux
+	// vaut recompter que mentir.
+	BillingCount int `json:"billingCount"`
+
 	// CreatedAt en UTC.
 	CreatedAt time.Time `json:"createdAt"`
 }
@@ -715,7 +725,7 @@ func (h *Handler) createSubscription(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "erreur de lecture", http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusCreated, subscriptionToOutput(rec))
+		writeJSON(w, http.StatusCreated, subscriptionToOutput(rec, 0))
 	default:
 		http.Error(w, fmt.Sprintf("provider %q inconnu", provider), http.StatusBadRequest)
 	}
@@ -737,7 +747,7 @@ func (h *Handler) getSubscription(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "abonnement inconnu", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, subscriptionToOutput(rec))
+	writeJSON(w, http.StatusOK, subscriptionToOutput(rec, h.billingCounts()[rec.ID]))
 }
 
 // repoManquant répond quand un dépôt n'est pas câblé.
@@ -781,12 +791,13 @@ func (h *Handler) listSubscriptions(w http.ResponseWriter, r *http.Request) {
 	// ce moyen ». Un alias révoqué dont il reste un abonnement actif est
 	// précisément ce qu'on veut voir d'un coup d'œil.
 	token := r.URL.Query().Get("paymentMethodToken")
+	counts := h.billingCounts()
 	out := make([]SubscriptionOutput, 0, len(subs))
 	for _, s := range subs {
 		if token != "" && s.PaymentMethodToken != token {
 			continue
 		}
-		out = append(out, subscriptionToOutput(s))
+		out = append(out, subscriptionToOutput(s, counts[s.ID]))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -847,7 +858,11 @@ func (h *Handler) cancelSubscription(w http.ResponseWriter, r *http.Request) {
 // n'apportait rien et aurait imposé un second convertisseur le jour où
 // Stripe arrive. Le stockage fournit déjà la forme neutre, autant s'en
 // servir.
-func subscriptionToOutput(rec *store.SubscriptionRecord) SubscriptionOutput {
+//
+// billingCount vient de l'appelant plutôt que d'être calculé ici : il
+// suppose de parcourir les paiements, et le faire par abonnement
+// relirait tout le stockage à chaque ligne d'une liste.
+func subscriptionToOutput(rec *store.SubscriptionRecord, billingCount int) SubscriptionOutput {
 	// Métadonnées illisibles : on rend l'abonnement sans elles plutôt
 	// que de faire échouer la lecture. Elles sont du contexte marchand,
 	// pas une donnée dont dépend l'affichage.
@@ -866,8 +881,32 @@ func subscriptionToOutput(rec *store.SubscriptionRecord) SubscriptionOutput {
 		Rrule:              rec.Rrule,
 		Metadata:           metadata,
 		Cancelled:          rec.Cancelled,
+		BillingCount:       billingCount,
 		CreatedAt:          rec.CreatedAt,
 	}
+}
+
+// billingCounts compte les échéances de chaque abonnement.
+//
+// Un seul parcours des paiements, quel que soit le nombre
+// d'abonnements : compter abonnement par abonnement relirait tout le
+// stockage à chaque ligne, et une liste de cinquante abonnements ferait
+// cinquante lectures complètes pour un résultat identique.
+func (h *Handler) billingCounts() map[string]int {
+	txs, err := h.store.AllTransactions()
+	if err != nil {
+		// Un décompte manquant vaut mieux qu'une liste en erreur : la
+		// page reste utilisable, le compteur affiche zéro.
+		h.logger.Error("api_store_failure", "op", "AllTransactions/billingCounts", "err", err)
+		return nil
+	}
+	counts := make(map[string]int)
+	for _, tx := range txs {
+		if id := tx.Metadata["subscriptionId"]; id != "" {
+			counts[id]++
+		}
+	}
+	return counts
 }
 
 // PaymentMethodOutput est la vue exposée d'un moyen de paiement
@@ -1042,15 +1081,21 @@ func isDomainErr(err error) bool {
 
 // listPayments traite GET /paysim/api/v1/payments.
 //
-// Filtre optionnel ?paymentMethodToken= : retourne les paiements liés à
-// un moyen enregistré — celui qui l'a enrôlé comme ceux qui l'ont
-// débité. C'est la lecture inverse de PaymentSummary.PaymentMethodToken,
-// celle qui répond à « qu'a-t-on fait avec cet alias ».
+// Deux filtres optionnels et cumulables : ?paymentMethodToken= pour
+// « qu'a-t-on débité avec cet alias » — l'enrôlement comme les débits,
+// lecture inverse de PaymentSummary.PaymentMethodToken — et
+// ?subscriptionId= pour « quelles échéances a produit cet abonnement ».
+//
+// Le second lit la métadonnée plutôt qu'une colonne : le rattachement à
+// un abonnement vit là depuis l'origine, sans table dédiée. Filtrer ici
+// et non côté client est ce qui rend la réponse fiable — le sommaire
+// n'expose pas les métadonnées, un front ne pourrait donc pas trancher
+// lui-même, et le lui faire faire supposerait de les lui envoyer toutes.
 //
 // Filtrage en mémoire plutôt qu'en base : le plafond de rétention borne
-// déjà le nombre de transactions, et un index par token n'existe pas
-// dans le contrat de store. Le jour où ça pèse, c'est le store qu'on
-// étend, pas ce handler.
+// déjà le nombre de transactions, et aucun index par token ou par
+// abonnement n'existe dans le contrat de store. Le jour où ça pèse,
+// c'est le store qu'on étend, pas ce handler.
 func (h *Handler) listPayments(w http.ResponseWriter, r *http.Request) {
 	txs, err := h.store.AllTransactions()
 	if err != nil {
@@ -1059,9 +1104,13 @@ func (h *Handler) listPayments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := r.URL.Query().Get("paymentMethodToken")
+	subID := r.URL.Query().Get("subscriptionId")
 	out := make([]PaymentSummary, 0, len(txs))
 	for _, tx := range txs {
 		if token != "" && tx.PaymentMethodToken != token {
+			continue
+		}
+		if subID != "" && tx.Metadata["subscriptionId"] != subID {
 			continue
 		}
 		out = append(out, toPaymentSummary(tx))

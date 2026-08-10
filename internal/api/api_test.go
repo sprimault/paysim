@@ -2136,3 +2136,131 @@ func TestPaymentSummaryPorteLeToken(t *testing.T) {
 		t.Errorf("token absent du resume : %+v", liste)
 	}
 }
+
+// Le filtre par abonnement repond a « qu'a prelevé cette souscription ».
+// Le rattachement vit dans les metadonnees du paiement, que le resume
+// n'expose pas : sans filtre serveur, la fiche d'un abonnement ne peut
+// pas retrouver ses echeances.
+func TestListPaymentsFiltreParSubscription(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithRepos(t, "")
+
+	creer := func(orderID, subID string) {
+		in := CreatePaymentInput{
+			Provider: "payzen", Amount: 1990, Currency: "EUR", OrderID: orderID,
+		}
+		if subID != "" {
+			in.Metadata = map[string]string{"subscriptionId": subID}
+		}
+		body, _ := json.Marshal(in)
+		r, err := http.Post(server.URL+"/paysim/api/v1/payments",
+			"application/json", bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = r.Body.Close()
+	}
+	creer("ECH-1", "sub-A")
+	creer("ECH-2", "sub-A")
+	creer("AUTRE-SUB", "sub-B")
+	creer("HORS-ABO", "")
+
+	resp, err := http.Get(server.URL + "/paysim/api/v1/payments?subscriptionId=sub-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var filtres []PaymentSummary
+	if err := json.NewDecoder(resp.Body).Decode(&filtres); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(filtres) != 2 {
+		t.Fatalf("%d paiements, veut 2 (les deux echeances de sub-A)", len(filtres))
+	}
+	for _, p := range filtres {
+		if p.OrderID != "ECH-1" && p.OrderID != "ECH-2" {
+			t.Errorf("%s a franchi le filtre", p.OrderID)
+		}
+	}
+}
+
+// Un identifiant inconnu ne doit pas se comporter comme un filtre absent :
+// repondre la liste entiere ferait passer tous les paiements pour les
+// echeances de cet abonnement.
+func TestListPaymentsSubscriptionInconnue(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithRepos(t, "")
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 100, Currency: "EUR", OrderID: "SEUL",
+	})
+	r, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	_ = r.Body.Close()
+
+	resp, _ := http.Get(server.URL + "/paysim/api/v1/payments?subscriptionId=sub-fantome")
+	defer func() { _ = resp.Body.Close() }()
+	var filtres []PaymentSummary
+	_ = json.NewDecoder(resp.Body).Decode(&filtres)
+	if len(filtres) != 0 {
+		t.Errorf("%d paiements, veut 0", len(filtres))
+	}
+}
+
+// Le compteur d'echeances distingue en liste un abonnement qui preleve
+// d'un abonnement qui n'a encore rien produit — la question qu'on se pose
+// justement quand une facturation recurrente ne tombe pas.
+func TestSubscriptionBillingCount(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithRepos(t, "")
+
+	enrol, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 100, Currency: "EUR", OrderID: "INIT",
+		FormAction: "REGISTER_PAY",
+		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	r, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(enrol))
+	var created CreatePaymentOutput
+	_ = json.NewDecoder(r.Body).Decode(&created)
+	_ = r.Body.Close()
+
+	subBody, _ := json.Marshal(CreateSubscriptionInput{
+		PaymentMethodToken: created.PaymentMethodToken,
+		Amount:             2990, Currency: "EUR", OrderID: "SUB",
+		EffectDate: "2026-09-01", Rrule: "RRULE:FREQ=MONTHLY",
+	})
+	subResp, _ := http.Post(server.URL+"/paysim/api/v1/subscriptions",
+		"application/json", bytes.NewReader(subBody))
+	var sub SubscriptionOutput
+	_ = json.NewDecoder(subResp.Body).Decode(&sub)
+	_ = subResp.Body.Close()
+
+	if sub.BillingCount != 0 {
+		t.Errorf("a la creation, billingCount = %d, veut 0", sub.BillingCount)
+	}
+
+	for _, ord := range []string{"ECH-1", "ECH-2", "ECH-3"} {
+		body, _ := json.Marshal(CreatePaymentInput{
+			Provider: "payzen", Amount: 2990, Currency: "EUR", OrderID: ord,
+			Metadata: map[string]string{"subscriptionId": sub.ID},
+		})
+		p, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+			"application/json", bytes.NewReader(body))
+		_ = p.Body.Close()
+	}
+
+	resp, _ := http.Get(server.URL + "/paysim/api/v1/subscriptions")
+	defer func() { _ = resp.Body.Close() }()
+	var liste []SubscriptionOutput
+	if err := json.NewDecoder(resp.Body).Decode(&liste); err != nil {
+		t.Fatal(err)
+	}
+	if len(liste) != 1 {
+		t.Fatalf("%d abonnements, veut 1", len(liste))
+	}
+	if liste[0].BillingCount != 3 {
+		t.Errorf("billingCount = %d, veut 3", liste[0].BillingCount)
+	}
+}
