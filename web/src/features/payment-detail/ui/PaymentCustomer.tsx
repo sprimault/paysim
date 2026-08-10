@@ -1,6 +1,7 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
+import { Link } from 'react-router';
 import { Card } from '@/shared/ui/Card';
 import { useT } from '@/shared/i18n/useT';
 import type { Customer } from '@/shared/model';
@@ -128,7 +129,24 @@ function Section({
                 (mono ? 'font-mono text-xs' : 'text-sm')
               }
             >
-              {valeur}
+              {/*
+                subscriptionId n'est pas une métadonnée marchande comme
+                les autres : c'est Paysim qui la pose pour rattacher une
+                échéance à son abonnement, faute de table dédiée. La
+                rendre cliquable évite de recopier un identifiant à la
+                main pour retrouver l'abonnement qui a produit ce
+                prélèvement.
+              */}
+              {label === 'subscriptionId' ? (
+                <Link
+                  to={`/subscriptions/${valeur}`}
+                  className="text-brand-600 hover:underline dark:text-brand-400"
+                >
+                  {valeur}
+                </Link>
+              ) : (
+                valeur
+              )}
             </dd>
           </div>
         ))}

@@ -641,6 +641,16 @@ type SubscriptionOutput struct {
 	// suivants répondent alors 400 — l'annulation est définitive.
 	Cancelled bool `json:"cancelled"`
 
+	// BillingCount est le nombre d'échéances déjà produites par cet
+	// abonnement, réussies comme refusées.
+	//
+	// Compté à la volée en balayant les métadonnées des paiements : le
+	// rattachement vit là, sans table dédiée ni compteur persisté. Un
+	// compteur stocké serait à maintenir à chaque échéance et pourrait
+	// diverger du réel, ce qu'un simulateur ne doit pas faire — mieux
+	// vaut recompter que mentir.
+	BillingCount int `json:"billingCount"`
+
 	// CreatedAt en UTC.
 	CreatedAt time.Time `json:"createdAt"`
 }
@@ -699,7 +709,23 @@ func (h *Handler) createSubscription(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "erreur de creation", http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusCreated, subscriptionToOutput(sub, provider))
+		// Relu depuis le dépôt plutôt que converti depuis le type de
+		// l'adaptateur : la réponse décrit alors ce qui est réellement
+		// persisté, et l'API n'a pas à connaître la forme interne de
+		// PayZen.
+		//
+		// Un abonnement qui vient d'être créé n'a pas d'échéance.
+		if h.subscriptionRepo == nil {
+			h.repoManquant(w, "subscriptions")
+			return
+		}
+		rec, err := h.subscriptionRepo.ByID(sub.ID)
+		if err != nil || rec == nil {
+			h.logger.Error("api_create_subscription_reread_failed", "id", sub.ID, "err", err)
+			http.Error(w, "erreur de lecture", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusCreated, subscriptionToOutput(rec, 0))
 	default:
 		http.Error(w, fmt.Sprintf("provider %q inconnu", provider), http.StatusBadRequest)
 	}
@@ -707,21 +733,21 @@ func (h *Handler) createSubscription(w http.ResponseWriter, r *http.Request) {
 
 // getSubscription traite GET /paysim/api/v1/subscriptions/{id}.
 func (h *Handler) getSubscription(w http.ResponseWriter, r *http.Request) {
-	if h.payzenHandler == nil {
-		http.Error(w, "payzen handler non configure", http.StatusServiceUnavailable)
+	if h.subscriptionRepo == nil {
+		h.repoManquant(w, "subscriptions")
 		return
 	}
-	sub, err := h.payzenHandler.SubscriptionByID(r.PathValue("id"))
+	rec, err := h.subscriptionRepo.ByID(r.PathValue("id"))
 	if err != nil {
 		h.logger.Error("api_get_subscription_failed", "err", err)
 		http.Error(w, "erreur de lecture", http.StatusInternalServerError)
 		return
 	}
-	if sub == nil {
+	if rec == nil {
 		http.Error(w, "abonnement inconnu", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, subscriptionToOutput(sub, "payzen"))
+	writeJSON(w, http.StatusOK, subscriptionToOutput(rec, h.billingCounts()[rec.ID]))
 }
 
 // repoManquant répond quand un dépôt n'est pas câblé.
@@ -751,11 +777,11 @@ func (h *Handler) listSubscriptions(w http.ResponseWriter, r *http.Request) {
 		h.repoManquant(w, "subscriptions")
 		return
 	}
-	// L'accès direct au store passe par le handler payzen — pas d'API
-	// listSubscriptions publique dessus car listage cross-provider viendra
-	// avec Stripe (phase 5) via un repo générique. Pour l'instant on
-	// n'expose que payzen (unique provider câblé).
-	subs, err := h.payzenSubscriptions()
+	// Lu directement depuis le dépôt cross-provider. Seul PayZen est
+	// câblé aujourd'hui, d'où le filtre par nom ; le jour où Stripe
+	// arrive, c'est cette ligne qui s'élargit — rien d'autre, puisque
+	// plus rien ici ne connaît de type d'adaptateur.
+	subs, err := h.subscriptionRepo.ByProvider("payzen")
 	if err != nil {
 		h.logger.Error("api_list_subscriptions_failed", "err", err)
 		http.Error(w, "erreur de lecture", http.StatusInternalServerError)
@@ -765,51 +791,17 @@ func (h *Handler) listSubscriptions(w http.ResponseWriter, r *http.Request) {
 	// ce moyen ». Un alias révoqué dont il reste un abonnement actif est
 	// précisément ce qu'on veut voir d'un coup d'œil.
 	token := r.URL.Query().Get("paymentMethodToken")
+	counts := h.billingCounts()
 	out := make([]SubscriptionOutput, 0, len(subs))
 	for _, s := range subs {
 		if token != "" && s.PaymentMethodToken != token {
 			continue
 		}
-		out = append(out, subscriptionToOutput(s, "payzen"))
+		out = append(out, subscriptionToOutput(s, counts[s.ID]))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-// payzenSubscriptions liste tous les abonnements PayZen via le
-// SubscriptionRepository si dispo (mode SQLite) ; en mode mémoire
-// aucun listing global n'existe côté payzen.Store — on retourne vide.
-// Le converter recordToPayzenSub vit dans internal/providers/payzen
-// mais n'est pas exposé publiquement, on reconstruit une Subscription
-// depuis le SubscriptionRecord ici (structures alignées).
-func (h *Handler) payzenSubscriptions() ([]*payzen.Subscription, error) {
-	if h.subscriptionRepo == nil {
-		return nil, nil
-	}
-	recs, err := h.subscriptionRepo.ByProvider("payzen")
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*payzen.Subscription, 0, len(recs))
-	for _, rec := range recs {
-		var metadata map[string]string
-		if rec.MetadataJSON != "" {
-			_ = json.Unmarshal([]byte(rec.MetadataJSON), &metadata)
-		}
-		out = append(out, &payzen.Subscription{
-			ID:                 rec.ID,
-			OrderID:            rec.OrderID,
-			Amount:             rec.Amount,
-			Currency:           rec.Currency,
-			PaymentMethodToken: rec.PaymentMethodToken,
-			EffectDate:         rec.EffectDate,
-			Rrule:              rec.Rrule,
-			Metadata:           metadata,
-			CreatedAt:          rec.CreatedAt,
-			Cancelled:          rec.Cancelled,
-		})
-	}
-	return out, nil
-}
 
 // triggerBilling traite POST /paysim/api/v1/subscriptions/{id}/trigger-billing.
 // Déclenche manuellement une échéance : Paysim crée une Transaction, applique
@@ -858,22 +850,63 @@ func (h *Handler) cancelSubscription(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// subscriptionToOutput sérialise pour l'API — miroir plus étroit du
-// type payzen.Subscription, expose ce qui compte au marchand.
-func subscriptionToOutput(sub *payzen.Subscription, provider string) SubscriptionOutput {
-	return SubscriptionOutput{
-		ID:                 sub.ID,
-		Provider:           provider,
-		PaymentMethodToken: sub.PaymentMethodToken,
-		Amount:             sub.Amount,
-		Currency:           sub.Currency,
-		OrderID:            sub.OrderID,
-		EffectDate:         sub.EffectDate,
-		Rrule:              sub.Rrule,
-		Metadata:           sub.Metadata,
-		Cancelled:          sub.Cancelled,
-		CreatedAt:          sub.CreatedAt,
+// subscriptionToOutput sérialise un abonnement pour l'API.
+//
+// Part du SubscriptionRecord cross-provider, pas du type d'un
+// adaptateur. L'API convertissait auparavant le générique en
+// payzen.Subscription pour le reconvertir en générique : ce détour
+// n'apportait rien et aurait imposé un second convertisseur le jour où
+// Stripe arrive. Le stockage fournit déjà la forme neutre, autant s'en
+// servir.
+//
+// billingCount vient de l'appelant plutôt que d'être calculé ici : il
+// suppose de parcourir les paiements, et le faire par abonnement
+// relirait tout le stockage à chaque ligne d'une liste.
+func subscriptionToOutput(rec *store.SubscriptionRecord, billingCount int) SubscriptionOutput {
+	// Métadonnées illisibles : on rend l'abonnement sans elles plutôt
+	// que de faire échouer la lecture. Elles sont du contexte marchand,
+	// pas une donnée dont dépend l'affichage.
+	var metadata map[string]string
+	if rec.MetadataJSON != "" {
+		_ = json.Unmarshal([]byte(rec.MetadataJSON), &metadata)
 	}
+	return SubscriptionOutput{
+		ID:                 rec.ID,
+		Provider:           rec.Provider,
+		PaymentMethodToken: rec.PaymentMethodToken,
+		Amount:             rec.Amount,
+		Currency:           rec.Currency,
+		OrderID:            rec.OrderID,
+		EffectDate:         rec.EffectDate,
+		Rrule:              rec.Rrule,
+		Metadata:           metadata,
+		Cancelled:          rec.Cancelled,
+		BillingCount:       billingCount,
+		CreatedAt:          rec.CreatedAt,
+	}
+}
+
+// billingCounts compte les échéances de chaque abonnement.
+//
+// Un seul parcours des paiements, quel que soit le nombre
+// d'abonnements : compter abonnement par abonnement relirait tout le
+// stockage à chaque ligne, et une liste de cinquante abonnements ferait
+// cinquante lectures complètes pour un résultat identique.
+func (h *Handler) billingCounts() map[string]int {
+	txs, err := h.store.AllTransactions()
+	if err != nil {
+		// Un décompte manquant vaut mieux qu'une liste en erreur : la
+		// page reste utilisable, le compteur affiche zéro.
+		h.logger.Error("api_store_failure", "op", "AllTransactions/billingCounts", "err", err)
+		return nil
+	}
+	counts := make(map[string]int)
+	for _, tx := range txs {
+		if id := tx.Metadata["subscriptionId"]; id != "" {
+			counts[id]++
+		}
+	}
+	return counts
 }
 
 // PaymentMethodOutput est la vue exposée d'un moyen de paiement
@@ -1048,15 +1081,21 @@ func isDomainErr(err error) bool {
 
 // listPayments traite GET /paysim/api/v1/payments.
 //
-// Filtre optionnel ?paymentMethodToken= : retourne les paiements liés à
-// un moyen enregistré — celui qui l'a enrôlé comme ceux qui l'ont
-// débité. C'est la lecture inverse de PaymentSummary.PaymentMethodToken,
-// celle qui répond à « qu'a-t-on fait avec cet alias ».
+// Deux filtres optionnels et cumulables : ?paymentMethodToken= pour
+// « qu'a-t-on débité avec cet alias » — l'enrôlement comme les débits,
+// lecture inverse de PaymentSummary.PaymentMethodToken — et
+// ?subscriptionId= pour « quelles échéances a produit cet abonnement ».
+//
+// Le second lit la métadonnée plutôt qu'une colonne : le rattachement à
+// un abonnement vit là depuis l'origine, sans table dédiée. Filtrer ici
+// et non côté client est ce qui rend la réponse fiable — le sommaire
+// n'expose pas les métadonnées, un front ne pourrait donc pas trancher
+// lui-même, et le lui faire faire supposerait de les lui envoyer toutes.
 //
 // Filtrage en mémoire plutôt qu'en base : le plafond de rétention borne
-// déjà le nombre de transactions, et un index par token n'existe pas
-// dans le contrat de store. Le jour où ça pèse, c'est le store qu'on
-// étend, pas ce handler.
+// déjà le nombre de transactions, et aucun index par token ou par
+// abonnement n'existe dans le contrat de store. Le jour où ça pèse,
+// c'est le store qu'on étend, pas ce handler.
 func (h *Handler) listPayments(w http.ResponseWriter, r *http.Request) {
 	txs, err := h.store.AllTransactions()
 	if err != nil {
@@ -1065,9 +1104,13 @@ func (h *Handler) listPayments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := r.URL.Query().Get("paymentMethodToken")
+	subID := r.URL.Query().Get("subscriptionId")
 	out := make([]PaymentSummary, 0, len(txs))
 	for _, tx := range txs {
 		if token != "" && tx.PaymentMethodToken != token {
+			continue
+		}
+		if subID != "" && tx.Metadata["subscriptionId"] != subID {
 			continue
 		}
 		out = append(out, toPaymentSummary(tx))

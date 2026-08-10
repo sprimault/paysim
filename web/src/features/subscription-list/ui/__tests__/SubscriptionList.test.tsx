@@ -19,6 +19,7 @@ function makeSub(overrides: Partial<SubscriptionOutput> = {}): SubscriptionOutpu
     effectDate: '2026-09-01',
     rrule: 'RRULE:FREQ=MONTHLY;INTERVAL=1',
     cancelled: false,
+    billingCount: 0,
     createdAt: '2026-08-02T10:00:00Z',
     ...overrides,
   };
@@ -75,6 +76,25 @@ describe('<SubscriptionList />', () => {
       </MemoryRouter>,
     );
     expect(screen.getByText('Annulé')).toBeInTheDocument();
+  });
+
+  // Le compteur répond en liste à « celui-là prélève-t-il ? » — la
+  // question qu'on se pose quand une facturation récurrente ne tombe pas.
+  it('affiche le compteur d\'échéances', () => {
+    useSubscriptionStore.setState({
+      subscriptions: {
+        'sub-1': makeSub({ billingCount: 7 }),
+        'sub-2': makeSub({ id: 'sub-2', orderId: 'SUB-VIDE', billingCount: 0 }),
+      },
+      listLoaded: true,
+    });
+    render(
+      <MemoryRouter>
+        <SubscriptionList />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('7')).toBeInTheDocument();
+    expect(screen.getByText('0')).toBeInTheDocument();
   });
 
   it('trie par createdAt décroissant', () => {

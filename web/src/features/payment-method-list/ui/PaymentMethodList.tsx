@@ -40,6 +40,9 @@ export function PaymentMethodList() {
   const columns: Column<PaymentMethodOutput>[] = [
     {
       header: t('paymentMethod.list.column.state'),
+      // Actifs d'abord : les moyens inexploitables sont ce qu'on écarte,
+      // pas ce qu'on cherche.
+      sortValue: (m) => paymentMethodStatus(m),
       cell: (m) => {
         // Trois états visuels — cf. entities/payment-method/lib/status.
         // Révoqué prime sur expiré ; les deux empêchent un charge_token
@@ -52,12 +55,14 @@ export function PaymentMethodList() {
     },
     {
       header: t('paymentMethod.list.column.provider'),
+      sortValue: (m) => m.provider,
       cell: (m) => (
         <span className="text-xs text-zinc-500 dark:text-zinc-400">{m.provider}</span>
       ),
     },
     {
       header: t('paymentMethod.list.column.brand'),
+      sortValue: (m) => m.brand ?? '',
       cell: (m) => (
         <span className="text-sm text-zinc-700 dark:text-zinc-300">{m.brand || '—'}</span>
       ),
@@ -72,6 +77,9 @@ export function PaymentMethodList() {
     },
     {
       header: t('paymentMethod.list.column.expiry'),
+      // Année puis mois : trier sur « 12/2026 » comme une chaîne mettrait
+      // décembre avant janvier de l'année suivante.
+      sortValue: (m) => m.expiryYear * 100 + m.expiryMonth,
       cell: (m) => (
         <span className="text-sm text-zinc-700 dark:text-zinc-300 tabular">
           {String(m.expiryMonth).padStart(2, '0')}/{m.expiryYear}
@@ -91,6 +99,7 @@ export function PaymentMethodList() {
     },
     {
       header: t('paymentMethod.list.column.created'),
+      sortValue: (m) => m.createdAt,
       cell: (m) => (
         <span
           className="text-xs text-zinc-500 dark:text-zinc-400"
@@ -150,6 +159,7 @@ export function PaymentMethodList() {
         rows={filtered}
         rowKey={(m) => m.token}
         loading={loading}
+        pageSize={10}
         emptyState={
           <EmptyState
             icon={CreditCard}

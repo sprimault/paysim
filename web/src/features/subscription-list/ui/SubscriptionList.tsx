@@ -39,6 +39,9 @@ export function SubscriptionList() {
   const columns: Column<SubscriptionOutput>[] = [
     {
       header: t('subscription.list.column.state'),
+      // Les annulés au bout du tri croissant : ce qu'on cherche dans
+      // cette liste, c'est ce qui prélève encore.
+      sortValue: (s) => (s.cancelled ? 1 : 0),
       cell: (s) =>
         s.cancelled ? (
           <Badge tone="unpaid">{t('subscription.state.cancelled')}</Badge>
@@ -48,6 +51,7 @@ export function SubscriptionList() {
     },
     {
       header: t('subscription.list.column.provider'),
+      sortValue: (s) => s.provider,
       cell: (s) => (
         <span className="text-xs text-zinc-500 dark:text-zinc-400">{s.provider}</span>
       ),
@@ -55,6 +59,7 @@ export function SubscriptionList() {
     {
       header: t('subscription.list.column.amount'),
       align: 'right',
+      sortValue: (s) => s.amount,
       cell: (s) => (
         <span className="font-mono text-sm tabular text-zinc-900 dark:text-zinc-100">
           {formatAmount(s.amount)}
@@ -66,8 +71,30 @@ export function SubscriptionList() {
     },
     {
       header: t('subscription.list.column.order'),
+      sortValue: (s) => s.orderId ?? '',
       cell: (s) => (
         <span className="text-sm text-zinc-700 dark:text-zinc-300">{s.orderId || '—'}</span>
+      ),
+    },
+    {
+      header: t('subscription.list.column.billings'),
+      align: 'right',
+      sortValue: (s) => s.billingCount,
+      // Un abonnement à zéro échéance n'a encore rien prélevé : c'est
+      // l'information la plus utile de la ligne quand on cherche
+      // pourquoi une facturation récurrente ne tombe pas. Le zéro est
+      // donc grisé plutôt que masqué.
+      cell: (s) => (
+        <span
+          className={
+            'font-mono text-sm tabular ' +
+            (s.billingCount === 0
+              ? 'text-zinc-400 dark:text-zinc-600'
+              : 'text-zinc-900 dark:text-zinc-100')
+          }
+        >
+          {s.billingCount}
+        </span>
       ),
     },
     {
@@ -91,6 +118,7 @@ export function SubscriptionList() {
     },
     {
       header: t('subscription.list.column.created'),
+      sortValue: (s) => s.createdAt,
       cell: (s) => (
         <span
           className="text-xs text-zinc-500 dark:text-zinc-400"
@@ -150,6 +178,7 @@ export function SubscriptionList() {
         rows={filtered}
         rowKey={(s) => s.id}
         loading={loading}
+        pageSize={10}
         emptyState={
           <EmptyState
             icon={Repeat}

@@ -17,8 +17,26 @@ import type {
 
 const BASE = '/paysim/api/v1/payments';
 
+/** Tous les paiements, plus récemment modifié d'abord. */
 export function fetchPayments(signal?: AbortSignal): Promise<PaymentSummary[]> {
   return apiGetJson<PaymentSummary[]>(BASE, signal);
+}
+
+/**
+ * Échéances produites par un abonnement, réussies comme refusées.
+ *
+ * Le filtre est côté serveur : le rattachement vit dans les métadonnées
+ * du paiement, que le sommaire n'expose pas. Un tri local serait donc
+ * impossible sans transporter toutes les métadonnées de toute la liste.
+ */
+export function fetchPaymentsBySubscription(
+  subscriptionId: string,
+  signal?: AbortSignal,
+): Promise<PaymentSummary[]> {
+  return apiGetJson<PaymentSummary[]>(
+    `${BASE}?subscriptionId=${encodeURIComponent(subscriptionId)}`,
+    signal,
+  );
 }
 
 /**

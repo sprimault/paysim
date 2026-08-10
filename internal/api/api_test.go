@@ -831,6 +831,55 @@ func setupWithSQLite(t *testing.T) *httptest.Server {
 // setupWithPayzen construit un handler API avec un PayzenHandler câblé —
 // nécessaire pour tester les endpoints qui délèguent à payzen (create
 // générique, simulate). Extrait ici pour partager la mécanique entre tests.
+// setupWithRepos monte l'API comme le fait cmd/paysim : store et depots
+// construits ensemble, et les depots passes au handler.
+//
+// Distinct de setupWithPayzen, qui n'en cable aucun — celui-la sert aux
+// tests qui verifient justement le 501 d'un depot absent. Les endpoints
+// qui lisent un depot ont besoin de ce montage-ci, faute de quoi ils
+// testeraient une configuration que la production n'emprunte pas.
+func setupWithRepos(t *testing.T, token string) (*httptest.Server, payzen.Store) {
+	t.Helper()
+	logger := discardLogger()
+	paymentRepo := inmem.NewPaymentsRepository()
+	subsRepo := inmem.NewSubscriptionsRepository()
+	methodsRepo := inmem.NewPaymentMethodsRepository()
+	store := payzen.NewRepoStore(paymentRepo, subsRepo, methodsRepo)
+
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	b := bus.New()
+	queue.SetPublisher(b)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); _ = queue.Run(ctx) }()
+	t.Cleanup(func() { cancel(); wg.Wait() })
+
+	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{
+		HMACKey:   "test-hmac",
+		Publisher: b,
+	})
+	handler := NewHandler(Deps{
+		Store:             store,
+		PaymentRepo:       paymentRepo,
+		SubscriptionRepo:  subsRepo,
+		PaymentMethodRepo: methodsRepo,
+		Queue:             queue,
+		Publisher:         b,
+		Logger:            logger,
+		Token:             token,
+		PayzenHandler:     ph,
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return server, store
+}
+
+// setupWithPayzen monte l'API sans aucun depot cable.
+//
+// Conserve pour les tests qui verifient le refus explicite dans cette
+// configuration ; tout le reste doit passer par setupWithRepos.
 func setupWithPayzen(t *testing.T, token string) (*httptest.Server, payzen.Store) {
 	t.Helper()
 	logger := discardLogger()
@@ -2085,5 +2134,133 @@ func TestPaymentSummaryPorteLeToken(t *testing.T) {
 
 	if len(liste) != 1 || liste[0].PaymentMethodToken != out.PaymentMethodToken {
 		t.Errorf("token absent du resume : %+v", liste)
+	}
+}
+
+// Le filtre par abonnement repond a « qu'a prelevé cette souscription ».
+// Le rattachement vit dans les metadonnees du paiement, que le resume
+// n'expose pas : sans filtre serveur, la fiche d'un abonnement ne peut
+// pas retrouver ses echeances.
+func TestListPaymentsFiltreParSubscription(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithRepos(t, "")
+
+	creer := func(orderID, subID string) {
+		in := CreatePaymentInput{
+			Provider: "payzen", Amount: 1990, Currency: "EUR", OrderID: orderID,
+		}
+		if subID != "" {
+			in.Metadata = map[string]string{"subscriptionId": subID}
+		}
+		body, _ := json.Marshal(in)
+		r, err := http.Post(server.URL+"/paysim/api/v1/payments",
+			"application/json", bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = r.Body.Close()
+	}
+	creer("ECH-1", "sub-A")
+	creer("ECH-2", "sub-A")
+	creer("AUTRE-SUB", "sub-B")
+	creer("HORS-ABO", "")
+
+	resp, err := http.Get(server.URL + "/paysim/api/v1/payments?subscriptionId=sub-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var filtres []PaymentSummary
+	if err := json.NewDecoder(resp.Body).Decode(&filtres); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(filtres) != 2 {
+		t.Fatalf("%d paiements, veut 2 (les deux echeances de sub-A)", len(filtres))
+	}
+	for _, p := range filtres {
+		if p.OrderID != "ECH-1" && p.OrderID != "ECH-2" {
+			t.Errorf("%s a franchi le filtre", p.OrderID)
+		}
+	}
+}
+
+// Un identifiant inconnu ne doit pas se comporter comme un filtre absent :
+// repondre la liste entiere ferait passer tous les paiements pour les
+// echeances de cet abonnement.
+func TestListPaymentsSubscriptionInconnue(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithRepos(t, "")
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 100, Currency: "EUR", OrderID: "SEUL",
+	})
+	r, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	_ = r.Body.Close()
+
+	resp, _ := http.Get(server.URL + "/paysim/api/v1/payments?subscriptionId=sub-fantome")
+	defer func() { _ = resp.Body.Close() }()
+	var filtres []PaymentSummary
+	_ = json.NewDecoder(resp.Body).Decode(&filtres)
+	if len(filtres) != 0 {
+		t.Errorf("%d paiements, veut 0", len(filtres))
+	}
+}
+
+// Le compteur d'echeances distingue en liste un abonnement qui preleve
+// d'un abonnement qui n'a encore rien produit — la question qu'on se pose
+// justement quand une facturation recurrente ne tombe pas.
+func TestSubscriptionBillingCount(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithRepos(t, "")
+
+	enrol, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 100, Currency: "EUR", OrderID: "INIT",
+		FormAction: "REGISTER_PAY",
+		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	r, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(enrol))
+	var created CreatePaymentOutput
+	_ = json.NewDecoder(r.Body).Decode(&created)
+	_ = r.Body.Close()
+
+	subBody, _ := json.Marshal(CreateSubscriptionInput{
+		PaymentMethodToken: created.PaymentMethodToken,
+		Amount:             2990, Currency: "EUR", OrderID: "SUB",
+		EffectDate: "2026-09-01", Rrule: "RRULE:FREQ=MONTHLY",
+	})
+	subResp, _ := http.Post(server.URL+"/paysim/api/v1/subscriptions",
+		"application/json", bytes.NewReader(subBody))
+	var sub SubscriptionOutput
+	_ = json.NewDecoder(subResp.Body).Decode(&sub)
+	_ = subResp.Body.Close()
+
+	if sub.BillingCount != 0 {
+		t.Errorf("a la creation, billingCount = %d, veut 0", sub.BillingCount)
+	}
+
+	for _, ord := range []string{"ECH-1", "ECH-2", "ECH-3"} {
+		body, _ := json.Marshal(CreatePaymentInput{
+			Provider: "payzen", Amount: 2990, Currency: "EUR", OrderID: ord,
+			Metadata: map[string]string{"subscriptionId": sub.ID},
+		})
+		p, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+			"application/json", bytes.NewReader(body))
+		_ = p.Body.Close()
+	}
+
+	resp, _ := http.Get(server.URL + "/paysim/api/v1/subscriptions")
+	defer func() { _ = resp.Body.Close() }()
+	var liste []SubscriptionOutput
+	if err := json.NewDecoder(resp.Body).Decode(&liste); err != nil {
+		t.Fatal(err)
+	}
+	if len(liste) != 1 {
+		t.Fatalf("%d abonnements, veut 1", len(liste))
+	}
+	if liste[0].BillingCount != 3 {
+		t.Errorf("billingCount = %d, veut 3", liste[0].BillingCount)
 	}
 }

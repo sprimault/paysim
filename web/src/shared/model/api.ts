@@ -535,6 +535,16 @@ export interface SubscriptionOutput {
    */
   cancelled: boolean;
   /**
+   * BillingCount est le nombre d'échéances déjà produites par cet
+   * abonnement, réussies comme refusées.
+   * Compté à la volée en balayant les métadonnées des paiements : le
+   * rattachement vit là, sans table dédiée ni compteur persisté. Un
+   * compteur stocké serait à maintenir à chaque échéance et pourrait
+   * diverger du réel, ce qu'un simulateur ne doit pas faire — mieux
+   * vaut recompter que mentir.
+   */
+  billingCount: number /* int */;
+  /**
    * CreatedAt en UTC.
    */
   createdAt: string /* RFC 3339 */;
