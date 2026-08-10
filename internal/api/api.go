@@ -699,7 +699,23 @@ func (h *Handler) createSubscription(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "erreur de creation", http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusCreated, subscriptionToOutput(sub, provider))
+		// Relu depuis le dépôt plutôt que converti depuis le type de
+		// l'adaptateur : la réponse décrit alors ce qui est réellement
+		// persisté, et l'API n'a pas à connaître la forme interne de
+		// PayZen.
+		//
+		// Un abonnement qui vient d'être créé n'a pas d'échéance.
+		if h.subscriptionRepo == nil {
+			h.repoManquant(w, "subscriptions")
+			return
+		}
+		rec, err := h.subscriptionRepo.ByID(sub.ID)
+		if err != nil || rec == nil {
+			h.logger.Error("api_create_subscription_reread_failed", "id", sub.ID, "err", err)
+			http.Error(w, "erreur de lecture", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusCreated, subscriptionToOutput(rec))
 	default:
 		http.Error(w, fmt.Sprintf("provider %q inconnu", provider), http.StatusBadRequest)
 	}
@@ -707,21 +723,21 @@ func (h *Handler) createSubscription(w http.ResponseWriter, r *http.Request) {
 
 // getSubscription traite GET /paysim/api/v1/subscriptions/{id}.
 func (h *Handler) getSubscription(w http.ResponseWriter, r *http.Request) {
-	if h.payzenHandler == nil {
-		http.Error(w, "payzen handler non configure", http.StatusServiceUnavailable)
+	if h.subscriptionRepo == nil {
+		h.repoManquant(w, "subscriptions")
 		return
 	}
-	sub, err := h.payzenHandler.SubscriptionByID(r.PathValue("id"))
+	rec, err := h.subscriptionRepo.ByID(r.PathValue("id"))
 	if err != nil {
 		h.logger.Error("api_get_subscription_failed", "err", err)
 		http.Error(w, "erreur de lecture", http.StatusInternalServerError)
 		return
 	}
-	if sub == nil {
+	if rec == nil {
 		http.Error(w, "abonnement inconnu", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, subscriptionToOutput(sub, "payzen"))
+	writeJSON(w, http.StatusOK, subscriptionToOutput(rec))
 }
 
 // repoManquant répond quand un dépôt n'est pas câblé.
@@ -751,11 +767,11 @@ func (h *Handler) listSubscriptions(w http.ResponseWriter, r *http.Request) {
 		h.repoManquant(w, "subscriptions")
 		return
 	}
-	// L'accès direct au store passe par le handler payzen — pas d'API
-	// listSubscriptions publique dessus car listage cross-provider viendra
-	// avec Stripe (phase 5) via un repo générique. Pour l'instant on
-	// n'expose que payzen (unique provider câblé).
-	subs, err := h.payzenSubscriptions()
+	// Lu directement depuis le dépôt cross-provider. Seul PayZen est
+	// câblé aujourd'hui, d'où le filtre par nom ; le jour où Stripe
+	// arrive, c'est cette ligne qui s'élargit — rien d'autre, puisque
+	// plus rien ici ne connaît de type d'adaptateur.
+	subs, err := h.subscriptionRepo.ByProvider("payzen")
 	if err != nil {
 		h.logger.Error("api_list_subscriptions_failed", "err", err)
 		http.Error(w, "erreur de lecture", http.StatusInternalServerError)
@@ -770,46 +786,11 @@ func (h *Handler) listSubscriptions(w http.ResponseWriter, r *http.Request) {
 		if token != "" && s.PaymentMethodToken != token {
 			continue
 		}
-		out = append(out, subscriptionToOutput(s, "payzen"))
+		out = append(out, subscriptionToOutput(s))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-// payzenSubscriptions liste tous les abonnements PayZen via le
-// SubscriptionRepository si dispo (mode SQLite) ; en mode mémoire
-// aucun listing global n'existe côté payzen.Store — on retourne vide.
-// Le converter recordToPayzenSub vit dans internal/providers/payzen
-// mais n'est pas exposé publiquement, on reconstruit une Subscription
-// depuis le SubscriptionRecord ici (structures alignées).
-func (h *Handler) payzenSubscriptions() ([]*payzen.Subscription, error) {
-	if h.subscriptionRepo == nil {
-		return nil, nil
-	}
-	recs, err := h.subscriptionRepo.ByProvider("payzen")
-	if err != nil {
-		return nil, err
-	}
-	out := make([]*payzen.Subscription, 0, len(recs))
-	for _, rec := range recs {
-		var metadata map[string]string
-		if rec.MetadataJSON != "" {
-			_ = json.Unmarshal([]byte(rec.MetadataJSON), &metadata)
-		}
-		out = append(out, &payzen.Subscription{
-			ID:                 rec.ID,
-			OrderID:            rec.OrderID,
-			Amount:             rec.Amount,
-			Currency:           rec.Currency,
-			PaymentMethodToken: rec.PaymentMethodToken,
-			EffectDate:         rec.EffectDate,
-			Rrule:              rec.Rrule,
-			Metadata:           metadata,
-			CreatedAt:          rec.CreatedAt,
-			Cancelled:          rec.Cancelled,
-		})
-	}
-	return out, nil
-}
 
 // triggerBilling traite POST /paysim/api/v1/subscriptions/{id}/trigger-billing.
 // Déclenche manuellement une échéance : Paysim crée une Transaction, applique
@@ -858,21 +839,34 @@ func (h *Handler) cancelSubscription(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// subscriptionToOutput sérialise pour l'API — miroir plus étroit du
-// type payzen.Subscription, expose ce qui compte au marchand.
-func subscriptionToOutput(sub *payzen.Subscription, provider string) SubscriptionOutput {
+// subscriptionToOutput sérialise un abonnement pour l'API.
+//
+// Part du SubscriptionRecord cross-provider, pas du type d'un
+// adaptateur. L'API convertissait auparavant le générique en
+// payzen.Subscription pour le reconvertir en générique : ce détour
+// n'apportait rien et aurait imposé un second convertisseur le jour où
+// Stripe arrive. Le stockage fournit déjà la forme neutre, autant s'en
+// servir.
+func subscriptionToOutput(rec *store.SubscriptionRecord) SubscriptionOutput {
+	// Métadonnées illisibles : on rend l'abonnement sans elles plutôt
+	// que de faire échouer la lecture. Elles sont du contexte marchand,
+	// pas une donnée dont dépend l'affichage.
+	var metadata map[string]string
+	if rec.MetadataJSON != "" {
+		_ = json.Unmarshal([]byte(rec.MetadataJSON), &metadata)
+	}
 	return SubscriptionOutput{
-		ID:                 sub.ID,
-		Provider:           provider,
-		PaymentMethodToken: sub.PaymentMethodToken,
-		Amount:             sub.Amount,
-		Currency:           sub.Currency,
-		OrderID:            sub.OrderID,
-		EffectDate:         sub.EffectDate,
-		Rrule:              sub.Rrule,
-		Metadata:           sub.Metadata,
-		Cancelled:          sub.Cancelled,
-		CreatedAt:          sub.CreatedAt,
+		ID:                 rec.ID,
+		Provider:           rec.Provider,
+		PaymentMethodToken: rec.PaymentMethodToken,
+		Amount:             rec.Amount,
+		Currency:           rec.Currency,
+		OrderID:            rec.OrderID,
+		EffectDate:         rec.EffectDate,
+		Rrule:              rec.Rrule,
+		Metadata:           metadata,
+		Cancelled:          rec.Cancelled,
+		CreatedAt:          rec.CreatedAt,
 	}
 }
 

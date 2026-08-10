@@ -831,6 +831,55 @@ func setupWithSQLite(t *testing.T) *httptest.Server {
 // setupWithPayzen construit un handler API avec un PayzenHandler câblé —
 // nécessaire pour tester les endpoints qui délèguent à payzen (create
 // générique, simulate). Extrait ici pour partager la mécanique entre tests.
+// setupWithRepos monte l'API comme le fait cmd/paysim : store et depots
+// construits ensemble, et les depots passes au handler.
+//
+// Distinct de setupWithPayzen, qui n'en cable aucun — celui-la sert aux
+// tests qui verifient justement le 501 d'un depot absent. Les endpoints
+// qui lisent un depot ont besoin de ce montage-ci, faute de quoi ils
+// testeraient une configuration que la production n'emprunte pas.
+func setupWithRepos(t *testing.T, token string) (*httptest.Server, payzen.Store) {
+	t.Helper()
+	logger := discardLogger()
+	paymentRepo := inmem.NewPaymentsRepository()
+	subsRepo := inmem.NewSubscriptionsRepository()
+	methodsRepo := inmem.NewPaymentMethodsRepository()
+	store := payzen.NewRepoStore(paymentRepo, subsRepo, methodsRepo)
+
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	b := bus.New()
+	queue.SetPublisher(b)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() { defer wg.Done(); _ = queue.Run(ctx) }()
+	t.Cleanup(func() { cancel(); wg.Wait() })
+
+	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{
+		HMACKey:   "test-hmac",
+		Publisher: b,
+	})
+	handler := NewHandler(Deps{
+		Store:             store,
+		PaymentRepo:       paymentRepo,
+		SubscriptionRepo:  subsRepo,
+		PaymentMethodRepo: methodsRepo,
+		Queue:             queue,
+		Publisher:         b,
+		Logger:            logger,
+		Token:             token,
+		PayzenHandler:     ph,
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return server, store
+}
+
+// setupWithPayzen monte l'API sans aucun depot cable.
+//
+// Conserve pour les tests qui verifient le refus explicite dans cette
+// configuration ; tout le reste doit passer par setupWithRepos.
 func setupWithPayzen(t *testing.T, token string) (*httptest.Server, payzen.Store) {
 	t.Helper()
 	logger := discardLogger()

@@ -41,7 +41,7 @@ func createSubHelper(t *testing.T, server *httptest.Server, token string, amount
 
 func TestCreateSubscription_nominal(t *testing.T) {
 	t.Parallel()
-	server, _ := setupWithPayzen(t, "")
+	server, _ := setupWithRepos(t, "")
 	token := enroll(t, server, "4111111111111111", 12, 2028)
 
 	body, _ := json.Marshal(CreateSubscriptionInput{
@@ -80,7 +80,7 @@ func TestCreateSubscription_nominal(t *testing.T) {
 
 func TestCreateSubscription_tokenInconnu(t *testing.T) {
 	t.Parallel()
-	server, _ := setupWithPayzen(t, "")
+	server, _ := setupWithRepos(t, "")
 
 	body, _ := json.Marshal(CreateSubscriptionInput{
 		PaymentMethodToken: "does-not-exist",
@@ -96,7 +96,7 @@ func TestCreateSubscription_tokenInconnu(t *testing.T) {
 
 func TestCreateSubscription_amountInvalide(t *testing.T) {
 	t.Parallel()
-	server, _ := setupWithPayzen(t, "")
+	server, _ := setupWithRepos(t, "")
 
 	token := enroll(t, server, "4111111111111111", 12, 2028)
 	body, _ := json.Marshal(CreateSubscriptionInput{
@@ -112,7 +112,7 @@ func TestCreateSubscription_amountInvalide(t *testing.T) {
 
 func TestCreateSubscription_providerDefautPayzen(t *testing.T) {
 	t.Parallel()
-	server, _ := setupWithPayzen(t, "")
+	server, _ := setupWithRepos(t, "")
 	token := enroll(t, server, "4111111111111111", 12, 2028)
 
 	body := []byte(`{
@@ -135,7 +135,7 @@ func TestCreateSubscription_providerDefautPayzen(t *testing.T) {
 
 func TestGetSubscription_nominal(t *testing.T) {
 	t.Parallel()
-	server, _ := setupWithPayzen(t, "")
+	server, _ := setupWithRepos(t, "")
 	token := enroll(t, server, "4111111111111111", 12, 2028)
 	id := createSubHelper(t, server, token, 1500)
 
@@ -156,7 +156,7 @@ func TestGetSubscription_nominal(t *testing.T) {
 
 func TestGetSubscription_inconnu(t *testing.T) {
 	t.Parallel()
-	server, _ := setupWithPayzen(t, "")
+	server, _ := setupWithRepos(t, "")
 
 	resp, _ := http.Get(server.URL + "/paysim/api/v1/subscriptions/does-not-exist")
 	defer func() { _ = resp.Body.Close() }()
@@ -167,7 +167,7 @@ func TestGetSubscription_inconnu(t *testing.T) {
 
 func TestTriggerBilling_captureNominal(t *testing.T) {
 	t.Parallel()
-	server, store := setupWithPayzen(t, "")
+	server, store := setupWithRepos(t, "")
 	token := enroll(t, server, "4111111111111111", 12, 2028)
 	id := createSubHelper(t, server, token, 2000)
 
@@ -197,7 +197,7 @@ func TestTriggerBilling_captureNominal(t *testing.T) {
 
 func TestTriggerBilling_refusMagicPAN(t *testing.T) {
 	t.Parallel()
-	server, _ := setupWithPayzen(t, "")
+	server, _ := setupWithRepos(t, "")
 	token := enroll(t, server, "4000000000000002", 12, 2028)
 	id := createSubHelper(t, server, token, 1000)
 
@@ -216,7 +216,7 @@ func TestTriggerBilling_refusMagicPAN(t *testing.T) {
 
 func TestTriggerBilling_refusExpiration(t *testing.T) {
 	t.Parallel()
-	server, _ := setupWithPayzen(t, "")
+	server, _ := setupWithRepos(t, "")
 	token := enroll(t, server, "4111111111111111", 1, 2020)
 	id := createSubHelper(t, server, token, 1000)
 
@@ -232,7 +232,7 @@ func TestTriggerBilling_refusExpiration(t *testing.T) {
 
 func TestTriggerBilling_apresCancel(t *testing.T) {
 	t.Parallel()
-	server, _ := setupWithPayzen(t, "")
+	server, _ := setupWithRepos(t, "")
 	token := enroll(t, server, "4111111111111111", 12, 2028)
 	id := createSubHelper(t, server, token, 1000)
 
@@ -252,7 +252,7 @@ func TestTriggerBilling_apresCancel(t *testing.T) {
 
 func TestTriggerBilling_subscriptionInconnue(t *testing.T) {
 	t.Parallel()
-	server, _ := setupWithPayzen(t, "")
+	server, _ := setupWithRepos(t, "")
 
 	resp, _ := http.Post(server.URL+"/paysim/api/v1/subscriptions/does-not-exist/trigger-billing",
 		"application/json", nil)
@@ -264,7 +264,7 @@ func TestTriggerBilling_subscriptionInconnue(t *testing.T) {
 
 func TestCancelSubscription_idempotent(t *testing.T) {
 	t.Parallel()
-	server, _ := setupWithPayzen(t, "")
+	server, _ := setupWithRepos(t, "")
 
 	// Sur ID inconnu : 204 (idempotent).
 	resp, _ := http.Post(server.URL+"/paysim/api/v1/subscriptions/unknown/cancel",
