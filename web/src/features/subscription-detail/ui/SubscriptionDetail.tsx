@@ -7,6 +7,7 @@ import { Link, useParams } from 'react-router';
 import { Badge } from '@/shared/ui/Badge';
 import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
+import { SubscriptionBillings } from './SubscriptionBillings';
 import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
 import { CopyButton } from '@/shared/ui/CopyButton';
 import { toast } from '@/shared/ui/toastStore';
@@ -189,6 +190,8 @@ export function SubscriptionDetail() {
           )}
         </dl>
       </Card>
+
+      <SubscriptionBillings subscriptionId={subscription.id} />
 
       <ConfirmDialog
         open={cancelOpen}

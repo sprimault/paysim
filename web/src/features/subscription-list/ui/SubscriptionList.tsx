@@ -77,6 +77,27 @@ export function SubscriptionList() {
       ),
     },
     {
+      header: t('subscription.list.column.billings'),
+      align: 'right',
+      sortValue: (s) => s.billingCount,
+      // Un abonnement à zéro échéance n'a encore rien prélevé : c'est
+      // l'information la plus utile de la ligne quand on cherche
+      // pourquoi une facturation récurrente ne tombe pas. Le zéro est
+      // donc grisé plutôt que masqué.
+      cell: (s) => (
+        <span
+          className={
+            'font-mono text-sm tabular ' +
+            (s.billingCount === 0
+              ? 'text-zinc-400 dark:text-zinc-600'
+              : 'text-zinc-900 dark:text-zinc-100')
+          }
+        >
+          {s.billingCount}
+        </span>
+      ),
+    },
+    {
       header: t('subscription.list.column.rrule'),
       cell: (s) => (
         <code className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
