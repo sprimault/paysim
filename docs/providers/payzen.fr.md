@@ -102,9 +102,24 @@ Valeurs `formAction` autorisées :
 - Le champ `card` **n'est pas dans le contrat PayZen réel** — en
   production, les données CB transitent par le SmartForm client
   (`kr-payment-form.min.js`), jamais par l'API marchand. Paysim
-  l'accepte par commodité d'intégration : attacher une carte
-  déclenche un enrôlement systématique (indépendamment de `formAction`)
-  et retourne un `paymentMethodToken` dans le webhook. Voir
+  l'accepte par commodité d'intégration. **L'alias n'est créé qu'une
+  fois l'autorisation acceptée**, comme chez PayZen — « L'alias (token)
+  ne sera pas créé si la demande d'autorisation ou de renseignement est
+  refusée » :
+
+  | Montant | Ce qui se passe | État du paiement | Quand l'alias apparaît |
+  | --- | --- | --- | --- |
+  | `0` | Vérification sans débit | `authorized` si acceptée, `declined` sinon | Tout de suite, dans la réponse de création |
+  | `> 0` | Débit à jouer | `initiated` jusqu'au `simulate` | Au `simulate`, si l'issue est acceptée |
+
+  La vérification est **autorisée, jamais capturée** : chez Lyra, cette
+  transaction « n'est jamais remise en banque et reste dans l'onglet
+  Transactions en cours ». Il y a eu demande d'autorisation, pas de
+  mouvement de fonds.
+
+  Un paiement refusé ne laisse donc **aucun** alias, et la réponse de
+  création d'un `REGISTER_PAY` ne porte pas encore de token — il faut
+  relire le paiement, ou le lire dans le webhook. Voir
   [testing-cards.fr.md](../testing-cards.fr.md).
 - `paymentMethodToken` en requête déclenche le mode **rejeu récurrent
   one-click** : pas de formulaire, capture directe (ou refus), issue
@@ -287,7 +302,8 @@ KrAnswer
 │   ├── amount               integer
 │   ├── currency             string
 │   ├── paymentMethodType    string
-│   ├── paymentMethodToken   string (présent après REGISTER_PAY ou rejeu)
+│   ├── paymentMethodToken   string (présent quand un alias a été créé ou rejoué)
+│   ├── paymentMethodTokenStatus  "ACTIVE" | "CANCELLED" (avec le token)
 │   ├── status               "PAID" | "UNPAID"
 │   ├── detailedStatus       "AUTHORISED" | "CAPTURED" | "REFUSED" | …
 │   ├── operationType        "DEBIT" | "CREDIT"
@@ -463,6 +479,30 @@ que contre PayZen.
 Deux leviers fixent le motif : le **montant magique** sur le parcours navigateur, le
 **PAN de test** sur le récurrent, où le montant est imposé par l'abonnement. Voir
 [testing-cards.fr.md](../testing-cards.fr.md).
+
+### Le même motif porte deux noms
+
+`detailedErrorCode` est le nom **PayZen**, celui du `kr-answer`. L'API de contrôle de
+Paysim, elle, expose la même donnée à plat sous deux champs :
+
+| Où on lit                                   | Code                | Libellé                  |
+| ------------------------------------------- | ------------------- | ------------------------ |
+| `kr-answer` PayZen (`transactions[0]`)       | `detailedErrorCode` | `detailedErrorMessage`   |
+| API de contrôle (`/paysim/api/v1/payments`)  | `declineCode`       | `declineMessage`         |
+
+Ce n'est pas une réécriture du protocole : l'API de contrôle n'est pas PayZen, et lui
+faire porter un nom PayZen laisserait croire qu'elle en imite le format. Mais coder
+d'après cette page sans connaître le second couple de noms fait chercher un champ qui
+n'existe pas — et un motif absent ne lève rien, il reste vide en silence.
+
+Les deux couples sont présents partout où un refus se lit : dans le sommaire d'un
+paiement, dans son détail, et **dès la réponse de création** quand l'issue est immédiate
+(rejeu one-click, autoplay). Aucune relecture n'est nécessaire pour connaître le motif.
+
+Un refus sans motif bancaire laisse les deux champs vides — c'est le cas d'un abandon,
+d'une expiration, ou d'un moyen révoqué : là, ce n'est pas un émetteur qui refuse, et
+inventer un code d'autorisation reviendrait à annoncer une décision bancaire qui n'a pas
+eu lieu.
 
 ## Valeurs magiques (chaos)
 

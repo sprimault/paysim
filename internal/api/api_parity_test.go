@@ -103,7 +103,7 @@ func newParityEnv(t *testing.T, backend string) *parityEnv {
 	}()
 
 	ph := payzen.NewHandler(payzenStore, queue, logger, payzen.HandlerConfig{
-		HMACKey:   "k",
+		HMACKey:   "k", RESTPassword: "pwd-rest",
 		Publisher: b,
 	})
 	handler := NewHandler(Deps{

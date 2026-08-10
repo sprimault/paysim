@@ -9,6 +9,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -57,12 +58,25 @@ type Config struct {
 	// LogLevel est le niveau minimum des logs émis via log/slog.
 	LogLevel slog.Level
 
-	// PayzenHMACKey est la clé HMAC-SHA-256 utilisée pour signer les
-	// retours navigateur et les webhooks IPN simulés (champ kr-hash).
+	// PayzenHMACKey est la clé HMAC-SHA-256 qui signe le retour
+	// navigateur (champ kr-hash, kr-hash-key = sha256_hmac).
 	// Lue depuis PAYSIM_PAYZEN_HMAC_KEY ou PAYSIM_PAYZEN_HMAC_KEY_FILE
 	// (exclusifs). Vide = signature désactivée, les endpoints de
 	// simulation retourneront une erreur claire au premier appel.
 	PayzenHMACKey string
+
+	// PayzenRESTPassword signe les notifications serveur à serveur
+	// (kr-hash-key = password). PayZen utilise deux clés distinctes
+	// selon le canal, et le SDK marchand choisit la sienne d'après
+	// kr-hash-key : signer les deux avec la même laisserait la branche
+	// « password » de son code jamais exercée avant la production.
+	//
+	// Lue depuis PAYSIM_PAYZEN_REST_PASSWORD ou son doublon _FILE.
+	// Exigée dès que PayZen est utilisable, c'est-à-dire dès que la clé
+	// HMAC est configurée : sans elle, l'IPN simulé ne peut pas être
+	// fidèle, et un simulateur infidèle sur ce point précis ne sert à
+	// rien.
+	PayzenRESTPassword string
 
 	// HTTPAddr est l'adresse d'écoute du serveur HTTP, au format Go
 	// (":8080", "127.0.0.1:8080"). Défaut ":8080". Un seul port pour
@@ -181,6 +195,22 @@ func loadFrom(
 		return nil, err
 	}
 	cfg.PayzenHMACKey = hmacKey
+
+	restPassword, err := secretValue(lookup, readFile, "PAYSIM_PAYZEN_REST_PASSWORD")
+	if err != nil {
+		return nil, err
+	}
+	cfg.PayzenRESTPassword = restPassword
+
+	// Refus au démarrage plutôt qu'au premier IPN : une instance qui
+	// signe ses notifications avec la mauvaise clé valide chez le
+	// marchand un chemin de vérification que la production n'emprunte
+	// pas. Mieux vaut ne pas démarrer que produire cette illusion.
+	if cfg.PayzenHMACKey != "" && cfg.PayzenRESTPassword == "" {
+		return nil, errors.New("configuration: PAYSIM_PAYZEN_REST_PASSWORD est requis " +
+			"des lors que PAYSIM_PAYZEN_HMAC_KEY est defini (signature des notifications " +
+			"serveur a serveur, kr-hash-key=password)")
+	}
 
 	if raw, ok := lookup("PAYSIM_HTTP_ADDR"); ok && raw != "" {
 		cfg.HTTPAddr = raw

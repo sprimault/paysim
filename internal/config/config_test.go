@@ -77,6 +77,9 @@ func TestLoadNominalComplet(t *testing.T) {
 		"PAYSIM_MAX_PAYMENTS":     "500",
 		"PAYSIM_LOG_LEVEL":        "debug",
 		"PAYSIM_PAYZEN_HMAC_KEY":  "hmac-key-test",
+		// Exigé dès que la clé HMAC est là : les deux canaux de PayZen
+		// ne signent pas avec la même clé.
+		"PAYSIM_PAYZEN_REST_PASSWORD": "rest-password-test",
 	}
 	cfg, err := loadFrom(env.lookup, mockFS{}.read)
 	if err != nil {
@@ -180,7 +183,11 @@ func TestLoadPayzenHMACKeyFromFile(t *testing.T) {
 	t.Parallel()
 	env := minEnv()
 	env["PAYSIM_PAYZEN_HMAC_KEY_FILE"] = "/run/secrets/hmac"
-	fs := mockFS{"/run/secrets/hmac": "clef-depuis-fichier\n"}
+	env["PAYSIM_PAYZEN_REST_PASSWORD_FILE"] = "/run/secrets/rest"
+	fs := mockFS{
+		"/run/secrets/hmac": "clef-depuis-fichier\n",
+		"/run/secrets/rest": "password-depuis-fichier\n",
+	}
 
 	cfg, err := loadFrom(env.lookup, fs.read)
 	if err != nil {
@@ -188,6 +195,34 @@ func TestLoadPayzenHMACKeyFromFile(t *testing.T) {
 	}
 	if cfg.PayzenHMACKey != "clef-depuis-fichier" {
 		t.Errorf("PayzenHMACKey = %q, veut clef-depuis-fichier (sans saut de ligne)", cfg.PayzenHMACKey)
+	}
+	if cfg.PayzenRESTPassword != "password-depuis-fichier" {
+		t.Errorf("PayzenRESTPassword = %q, veut password-depuis-fichier", cfg.PayzenRESTPassword)
+	}
+}
+
+// Une instance qui signe ses notifications avec la clé du navigateur
+// valide chez le marchand un chemin de vérification que la production
+// n'emprunte pas. Mieux vaut refuser de démarrer.
+func TestLoadRESTPasswordExigeAvecHMACKey(t *testing.T) {
+	t.Parallel()
+	env := minEnv()
+	env["PAYSIM_PAYZEN_HMAC_KEY"] = "hmac-seule"
+
+	_, err := loadFrom(env.lookup, mockFS{}.read)
+	if err == nil {
+		t.Fatal("demarrage accepte sans PAYSIM_PAYZEN_REST_PASSWORD")
+	}
+	if !strings.Contains(err.Error(), "PAYSIM_PAYZEN_REST_PASSWORD") {
+		t.Errorf("erreur = %v, doit nommer la variable manquante", err)
+	}
+}
+
+// Sans PayZen, l'exigence n'a pas lieu d'être : rien ne signe.
+func TestLoadSansPayzenNExigeRien(t *testing.T) {
+	t.Parallel()
+	if _, err := loadFrom(minEnv().lookup, mockFS{}.read); err != nil {
+		t.Errorf("demarrage refuse sans payzen : %v", err)
 	}
 }
 

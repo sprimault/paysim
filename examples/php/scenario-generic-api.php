@@ -58,12 +58,12 @@ if (empty($createResp['uuid'])) {
     fwrite(STDERR, "POST /payments a échoué : $create\n");
     exit(1);
 }
-$uuid  = $createResp['uuid'];
-$token = $createResp['paymentMethodToken'] ?? '';
+$uuid = $createResp['uuid'];
 echo "✔ paiement créé — uuid=$uuid, state={$createResp['state']}, provider={$createResp['provider']}\n";
-if ($token !== '') {
-    echo "✔ paymentMethodToken retourné : " . substr($token, 0, 12) . "…\n";
-}
+
+// Aucun alias à ce stade, et c'est normal : PayZen ne le crée qu'après
+// une autorisation acceptée. Il apparaîtra à l'étape 2, quand le porteur
+// aura payé.
 
 // -------- Étape 2 : simulate via l'API générique -----------------------
 
@@ -79,6 +79,19 @@ $simBody = json_encode([
 ]);
 $sim = curlJSON(PAYSIM_URL . '/paysim/api/v1/payments/' . $uuid . '/simulate', 'POST', $simBody);
 echo "✔ simulate déclenché ($sim)\n";
+
+// L'alias existe maintenant : on le relit sur le paiement. Le chercher
+// dans la réponse de création ne rendait rien — l'autorisation n'avait
+// pas encore eu lieu, et « L'alias (token) ne sera pas créé si la
+// demande d'autorisation ou de renseignement est refusée ».
+$detail = json_decode(
+    curlJSON(PAYSIM_URL . '/paysim/api/v1/payments/' . $uuid, 'GET', null),
+    true
+);
+$token = $detail['paymentMethodToken'] ?? '';
+if ($token !== '') {
+    echo "✔ paymentMethodToken après paiement : " . substr($token, 0, 12) . "…\n";
+}
 
 // -------- Étape 3 : rejeu one-click via paymentMethodToken -------------
 
@@ -111,11 +124,11 @@ echo "\nParcours API générique complet.\n";
 
 // ---------------------------------------------------------------------
 
-function curlJSON(string $url, string $method, string $body): string {
+function curlJSON(string $url, string $method, ?string $body = null): string {
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_CUSTOMREQUEST  => $method,
-        CURLOPT_POSTFIELDS     => $body,
+        CURLOPT_POSTFIELDS     => $body ?? '',
         CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT        => 5,

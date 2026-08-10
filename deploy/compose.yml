@@ -39,9 +39,16 @@ services:
       # réel.
       PAYSIM_CALLBACK_URL: "http://merchant:80/return.php"
 
-      # Clé HMAC-SHA-256 pour signer les kr-answer. La même valeur doit
-      # être configurée côté marchand pour vérifier la signature.
+      # PayZen signe avec deux clés selon le destinataire, et annonce
+      # laquelle dans kr-hash-key. Les deux sont obligatoires : sans la
+      # seconde, Paysim refuse de démarrer plutôt que de signer les
+      # notifications avec la clé du navigateur — un marchand testerait
+      # alors un chemin de vérification que la production n'emprunte pas.
+      #
+      #   sha256_hmac → retour navigateur       → PAYSIM_PAYZEN_HMAC_KEY
+      #   password    → notification serveur    → PAYSIM_PAYZEN_REST_PASSWORD
       PAYSIM_PAYZEN_HMAC_KEY: "cle-hmac-de-test"
+      PAYSIM_PAYZEN_REST_PASSWORD: "mot-de-passe-rest-de-test"
 
       # Backend SQLite activé par défaut : les subscriptions et moyens
       # de paiement ont besoin d'un repository partagé pour être listés

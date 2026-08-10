@@ -51,7 +51,7 @@ paiement accepté.
 | ----------------- | ----------------- | ---------------------------------------------- |
 | Montant magique     | au `simulate`                            | Refus bancaire pendant le parcours utilisateur   |
 | PAN magique         | au `simulate` **et** au `charge_token`   | Refus bancaire sur tout paiement d'une CB donnée |
-| Carte expirée       | au `simulate` **et** au `charge_token`   | Carte expirée présentée (fidèle au PSP réel)     |
+| Alias périmé        | au `simulate` **et** au `charge_token`   | Échéance qui tombe après la date d'expiration    |
 | Révocation manuelle | au `simulate` **et** au `charge_token`   | Moyen de paiement supprimé après l'enrôlement    |
 
 ### Montant magique — refus au simulate
@@ -78,11 +78,26 @@ préalable.
 
 ### Carte expirée — refus dès la présentation
 
-Attacher une carte avec une date d'expiration passée (par exemple
-`expiryMonth: 1, expiryYear: 2020`). Tout `simulate` ou `charge_token`
-ultérieur refuse, conforme au comportement PSP réel : une carte est
-refusée dès qu'elle est présentée, pas seulement au moment d'un
-prélèvement récurrent.
+Une carte déjà expirée **ne s'enrôle pas** : la demande d'autorisation
+est refusée, et « L'alias (token) ne sera pas créé si la demande
+d'autorisation ou de renseignement est refusée ». Présentée à un
+paiement, elle le fait refuser sans laisser d'alias derrière elle.
+
+Le cas qu'on veut reproduire est l'autre : un alias valide que le temps
+a rattrapé, et dont la prochaine échéance tombe en impayé sans que le
+porteur ait rien fait. On enrôle donc une carte saine, puis on la fait
+vieillir :
+
+```bash
+curl -X POST http://localhost:30880/paysim/api/v1/payment-methods/{token}/expire
+```
+
+Idempotent, comme `revoke`. Tout `simulate` ou `charge_token` ultérieur
+sur ce moyen refuse alors pour `moyen de paiement expire`, sans code
+bancaire : c'est Paysim qui refuse, pas un émetteur.
+
+Cette action est propre à Paysim et n'existe pas chez PayZen — elle vit
+dans l'API de contrôle, jamais dans les routes du fournisseur.
 
 **Sémantique d'expiration** (convention bancaire française) : une
 carte est valide jusqu'au dernier jour du mois d'expiration inclus.

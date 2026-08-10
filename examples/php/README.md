@@ -39,6 +39,7 @@ In three separate terminals:
 export PAYSIM_PUBLIC_URL="http://localhost:30880"
 export PAYSIM_CALLBACK_URL="http://localhost:9000"
 export PAYSIM_PAYZEN_HMAC_KEY="cle-hmac-de-test"
+export PAYSIM_PAYZEN_REST_PASSWORD="mot-de-passe-rest-de-test"
 ./paysim
 ```
 
@@ -84,8 +85,19 @@ This is the exact logic a production merchant must implement — Paysim
 mirrors it faithfully, an integrator can switch between Paysim (test)
 and PayZen (production) without touching this code.
 
-## HMAC key
+## The two keys
 
-The test key in the scripts (`cle-hmac-de-test`) must match
-`PAYSIM_PAYZEN_HMAC_KEY` on the Paysim server side, otherwise
-`kr-hash` verification fails every time.
+PayZen does not sign both channels with the same key, and states which
+one it used in the `kr-hash-key` field:
+
+| Channel | `kr-hash-key` | Script | Key |
+| --- | --- | --- | --- |
+| Browser return | `sha256_hmac` | `return.php` | `PAYSIM_PAYZEN_HMAC_KEY` |
+| Server notification | `password` | `notification.php` | `PAYSIM_PAYZEN_REST_PASSWORD` |
+
+The values in the scripts must match those on the Paysim server side,
+otherwise `kr-hash` verification fails every time.
+
+`return.php` picks its key from `kr-hash-key`, like the official SDK;
+`notification.php` rejects anything other than `password`, because an
+IPN signed otherwise is not one.

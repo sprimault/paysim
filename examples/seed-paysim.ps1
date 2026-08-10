@@ -63,13 +63,12 @@ Write-Host "  $($p.uuid) — authorized"
 
 Write-Host '==> 4. Enrolement Visa valide (long-terme, dates 2028)'
 $p = Invoke-JsonPost '/payments' @{
-    amount     = 2990; currency = 'EUR'; orderId = 'SUB-INIT-VISA'
-    formAction = 'REGISTER_PAY'
+    amount     = 0; currency = 'EUR'; orderId = 'SUB-INIT-VISA'
+    formAction = 'REGISTER'
     card       = @{ pan = '4111111111111111'; expiryMonth = 12; expiryYear = 2028; brand = 'VISA' }
 }
 $tokenVisa = $p.paymentMethodToken
-Invoke-Simulate $p.uuid
-Write-Host "  $($p.uuid) — captured, token Visa = $tokenVisa"
+Write-Host "  token Visa = $tokenVisa"
 
 Write-Host '==> 5. Subscription mensuelle active + 2 renewals réussis'
 $s = Invoke-JsonPost '/subscriptions' @{
@@ -87,13 +86,12 @@ Write-Host "  subscription $($s.id)"
 
 Write-Host '==> 6. Enrolement magic PAN Visa 4000...02 (refus systématique)'
 $p = Invoke-JsonPost '/payments' @{
-    amount     = 1500; currency = 'EUR'; orderId = 'CARD-MAGIC-DECLINE'
-    formAction = 'REGISTER_PAY'
+    amount     = 0; currency = 'EUR'; orderId = 'CARD-MAGIC-DECLINE'
+    formAction = 'REGISTER'
     card       = @{ pan = '4000000000000002'; expiryMonth = 12; expiryYear = 2028; brand = 'VISA' }
 }
 $tokenMagic = $p.paymentMethodToken
-Invoke-Simulate $p.uuid
-Write-Host "  $($p.uuid) — declined (magic PAN au simulate), token = $tokenMagic"
+Write-Host "  token = $tokenMagic — refusera a chaque debit"
 
 Write-Host '==> 7. Subscription sur CB magic PAN → renewal declined'
 $s = Invoke-JsonPost '/subscriptions' @{
@@ -122,26 +120,28 @@ $p = Invoke-JsonPost '/payments' @{
 Invoke-Simulate $p.uuid
 Write-Host "  $($p.uuid) — captured"
 
-Write-Host '==> 10. Enrolement CB expirée (01/2020) — état « Expiré » côté UI'
+Write-Host '==> 10. Moyen périmé — état « Expiré » côté UI'
+# Une carte ne s'enrole jamais deja expiree : PayZen refuserait
+# l'autorisation et ne creerait aucun alias. On l'enregistre saine, puis
+# on la fait vieillir — le cas reel.
 $p = Invoke-JsonPost '/payments' @{
-    amount     = 1200; currency = 'EUR'; orderId = 'CARD-EXPIRED'
-    formAction = 'REGISTER_PAY'
-    card       = @{ pan = '4242424242424242'; expiryMonth = 1; expiryYear = 2020; brand = 'VISA' }
+    amount     = 0; currency = 'EUR'; orderId = 'CARD-EXPIRED'
+    formAction = 'REGISTER'
+    card       = @{ pan = '4242424242424242'; expiryMonth = 12; expiryYear = 2030; brand = 'VISA' }
 }
 $tokenExp = $p.paymentMethodToken
-Invoke-Simulate $p.uuid
-Write-Host "  $($p.uuid) — declined (CB expirée au simulate), token = $tokenExp"
+$null = Invoke-RestMethod -Method Post -Uri "$Api/payment-methods/$tokenExp/expire"
+Write-Host "  token = $tokenExp — perime"
 
 Write-Host '==> 11. Enrolement Mastercard série 2 (nouveau BIN) puis révocation'
 $p = Invoke-JsonPost '/payments' @{
-    amount     = 2200; currency = 'EUR'; orderId = 'MC2-CHECKOUT'
-    formAction = 'REGISTER_PAY'
+    amount     = 0; currency = 'EUR'; orderId = 'MC2-CHECKOUT'
+    formAction = 'REGISTER'
     card       = @{ pan = '2223000048400011'; expiryMonth = 10; expiryYear = 2030 }
 }
 $tokenMc2 = $p.paymentMethodToken
-Invoke-Simulate $p.uuid
 $null = Invoke-RestMethod -Method Post -Uri "$Api/payment-methods/$tokenMc2/revoke"
-Write-Host "  $($p.uuid) — captured + moyen révoqué manuellement"
+Write-Host "  token = $tokenMc2 — moyen révoqué manuellement"
 
 Write-Host ''
 Write-Host '==> Résumé'

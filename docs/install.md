@@ -32,7 +32,8 @@ mounts.
 | `PAYSIM_CALLBACK_URL` | Default merchant callback URL for webhooks — used as fallback when a payment has no `returnUrl`. |
 | `PAYSIM_BASE_PATH` | Prefix when Paysim is served under a sub-path (e.g. `/paysim`). Empty when served at root. |
 | `PAYSIM_API_TOKEN` (+ `_FILE`) | Bearer token that protects the control API for **server-to-server calls** (CI, scripts, tests). **Disables the web UI** if set — the SPA has no login flow and does not inject a Bearer token in its fetch calls. To protect the UI in a shared environment, use ingress-level basic auth (see [Option 3 — Ingress](#option-3--kubernetes-behind-an-ingress-domain--tls--auth)). Empty = open. |
-| `PAYSIM_PAYZEN_HMAC_KEY` (+ `_FILE`) | HMAC-SHA-256 key used to sign PayZen `kr-answer` payloads. |
+| `PAYSIM_PAYZEN_HMAC_KEY` (+ `_FILE`) | HMAC-SHA-256 key signing the **browser return** (`kr-hash-key: sha256_hmac`). |
+| `PAYSIM_PAYZEN_REST_PASSWORD` (+ `_FILE`) | REST API password signing **server-to-server notifications** (`kr-hash-key: password`). **Required** as soon as the HMAC key is set — see below. |
 | `PAYSIM_MAX_PAYMENTS` | Retention cap for in-memory storage. Default 10000. |
 | `PAYSIM_LOG_LEVEL` | Log level (`debug`, `info`, `warn`, `error`). Default `info`. |
 | `PAYSIM_STORE` | Storage backend: `memory` (default, stateless) or `sqlite`. |
@@ -40,6 +41,33 @@ mounts.
 | `PAYSIM_AUTOPLAY` | Play every payment as soon as it is created, without waiting for a simulation call. Default `false`. See below. |
 | `PAYSIM_CHAOS_LATENCY_MS` | Injected latency on every REST V4 request. `0` disables. |
 | `PAYSIM_CHAOS_ERROR_RATE` | Percentage of REST V4 requests returning a 500. `0-100`. |
+
+## The two PayZen keys
+
+PayZen does not sign both of its channels with the same key, and it
+states which one it used in the `kr-hash-key` POST field:
+
+| `kr-hash-key` | Channel | Paysim variable | Merchant-side key |
+| --- | --- | --- | --- |
+| `sha256_hmac` | Browser return | `PAYSIM_PAYZEN_HMAC_KEY` | shop HMAC key |
+| `password` | Server notification (IPN) | `PAYSIM_PAYZEN_REST_PASSWORD` | REST API password |
+
+The merchant SDK picks its key from that field — the official PHP SDK
+does it explicitly:
+
+```php
+if ($_POST['kr-hash-key'] == "sha256_hmac") { $key = $this->_hashKey; }
+elseif ($_POST['kr-hash-key'] == "password") { $key = $this->_password; }
+```
+
+**Both variables are therefore required**, and Paysim refuses to start
+if the second one is missing. Signing everything with the browser key
+would "work" here, but would leave the `password` branch of the merchant
+code unexercised until production — where its IPN would fail although it
+passed in testing. That is exactly the kind of fake worth not having.
+
+Both values may be identical locally; what matters is that the merchant
+takes the right verification path.
 
 ## `PAYSIM_AUTOPLAY` — end-to-end tests without a cardholder
 
@@ -173,13 +201,16 @@ images:
 
 ### 3. Fill in the Secret
 
-Edit [`deploy/k8s/base/secret.yaml`](../deploy/k8s/base/secret.yaml) with your HMAC key:
+Edit [`deploy/k8s/base/secret.yaml`](../deploy/k8s/base/secret.yaml) with both PayZen keys:
 
 ```yaml
 stringData:
   PAYSIM_PAYZEN_HMAC_KEY: "your-hmac-secret-here"
+  PAYSIM_PAYZEN_REST_PASSWORD: "your-rest-password-here"
   PAYSIM_API_TOKEN: ""  # empty = open
 ```
+
+Both are required: the pod refuses to start if the second one is missing.
 
 For production, use sealed-secrets, SOPS or external-secrets rather than committing the plain file.
 

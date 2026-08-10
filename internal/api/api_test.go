@@ -534,7 +534,7 @@ func TestSimulatePaymentBrowserReturn(t *testing.T) {
 	t.Cleanup(func() { cancel(); wg.Wait() })
 
 	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{
-		HMACKey:   "test-hmac",
+		HMACKey:   "test-hmac", RESTPassword: "pwd-rest",
 		Publisher: b,
 	})
 
@@ -582,7 +582,7 @@ func TestSimulatePaymentUnknownUUID(t *testing.T) {
 	store := newMemStore()
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
 	b := bus.New()
-	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{HMACKey: "k", Publisher: b})
+	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", Publisher: b})
 	handler := NewHandler(Deps{
 		Store: store, Queue: queue, Publisher: b, Logger: logger, PayzenHandler: ph,
 	})
@@ -605,7 +605,7 @@ func TestSimulatePaymentInvalidChannel(t *testing.T) {
 	store := newMemStore()
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
 	b := bus.New()
-	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{HMACKey: "k", Publisher: b})
+	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", Publisher: b})
 	handler := NewHandler(Deps{
 		Store: store, Queue: queue, Publisher: b, Logger: logger, PayzenHandler: ph,
 	})
@@ -634,7 +634,7 @@ func TestSimulatePaymentUnknownOutcomeListsAccepted(t *testing.T) {
 	store := newMemStore()
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
 	b := bus.New()
-	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{HMACKey: "k", Publisher: b})
+	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", Publisher: b})
 	handler := NewHandler(Deps{
 		Store: store, Queue: queue, Publisher: b, Logger: logger, PayzenHandler: ph,
 	})
@@ -811,7 +811,7 @@ func setupWithSQLite(t *testing.T) *httptest.Server {
 	t.Cleanup(func() { cancel(); wg.Wait() })
 
 	ph := payzen.NewHandler(pzStore, queue, logger, payzen.HandlerConfig{
-		HMACKey: "test-hmac", Publisher: b,
+		HMACKey: "test-hmac", RESTPassword: "pwd-rest", Publisher: b,
 	})
 	handler := NewHandler(Deps{
 		Store:             pzStore,
@@ -857,7 +857,7 @@ func setupWithRepos(t *testing.T, token string) (*httptest.Server, payzen.Store)
 	t.Cleanup(func() { cancel(); wg.Wait() })
 
 	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{
-		HMACKey:   "test-hmac",
+		HMACKey:   "test-hmac", RESTPassword: "pwd-rest",
 		Publisher: b,
 	})
 	handler := NewHandler(Deps{
@@ -895,7 +895,7 @@ func setupWithPayzen(t *testing.T, token string) (*httptest.Server, payzen.Store
 	t.Cleanup(func() { cancel(); wg.Wait() })
 
 	ph := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{
-		HMACKey:   "test-hmac",
+		HMACKey:   "test-hmac", RESTPassword: "pwd-rest",
 		Publisher: b,
 	})
 	handler := NewHandler(Deps{
@@ -1083,21 +1083,52 @@ func TestCreatePaymentEnrollment(t *testing.T) {
 	var out CreatePaymentOutput
 	_ = json.NewDecoder(resp.Body).Decode(&out)
 
-	if out.PaymentMethodToken == "" {
-		t.Fatalf("PaymentMethodToken vide — l'enrolement n'a pas produit de token")
+	// Rien encore : l'autorisation n'a pas eu lieu, donc pas d'alias.
+	// « L'alias (token) ne sera pas cree si la demande d'autorisation ou
+	// de renseignement est refusee » — et tant qu'elle n'a pas eu lieu,
+	// il n'y a rien a annoncer non plus.
+	if out.PaymentMethodToken != "" {
+		t.Errorf("token annonce des la creation (%q) : l'autorisation n'a pas encore eu lieu",
+			out.PaymentMethodToken)
 	}
-	// Le PaymentMethod doit exister côté store.
-	pm, _ := store.MethodByToken(out.PaymentMethodToken)
+	if tx, _ := store.ByUUID(out.UUID); tx != nil && tx.PaymentMethodToken != "" {
+		t.Errorf("la transaction porte deja un token (%q) avant le paiement",
+			tx.PaymentMethodToken)
+	}
+
+	// Le porteur paie : l'alias nait maintenant.
+	simulerPaiement(t, server, out.UUID, payzen.OutcomePaid)
+
+	tx, _ := store.ByUUID(out.UUID)
+	if tx == nil || tx.PaymentMethodToken == "" {
+		t.Fatal("aucun token apres un paiement accepte")
+	}
+	pm, _ := store.MethodByToken(tx.PaymentMethodToken)
 	if pm == nil {
 		t.Fatalf("PaymentMethod absent du store apres enrolement")
 	}
 	if pm.Brand != "VISA" || pm.PANMasked != "411111XXXXXX1111" {
 		t.Errorf("Brand/PANMasked = %q/%q", pm.Brand, pm.PANMasked)
 	}
-	// La Transaction doit porter le token pour propagation dans le webhook ultérieur.
-	tx, _ := store.ByUUID(out.UUID)
-	if tx == nil || tx.PaymentMethodToken != out.PaymentMethodToken {
-		t.Errorf("tx.PaymentMethodToken = %q, veut %q", tx.PaymentMethodToken, out.PaymentMethodToken)
+}
+
+// simulerPaiement joue l'acte du porteur sur un paiement en attente.
+func simulerPaiement(t *testing.T, server *httptest.Server, uuid, outcome string) {
+	t.Helper()
+	body, _ := json.Marshal(SimulatePaymentRequest{
+		Channel: "ipn", Outcome: outcome,
+		NotificationURL: "http://127.0.0.1:1/sink",
+	})
+	resp, err := http.Post(server.URL+"/paysim/api/v1/payments/"+uuid+"/simulate",
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	// 202 : la livraison est enfilee, la transition est deja faite.
+	if resp.StatusCode != http.StatusAccepted {
+		corps, _ := io.ReadAll(resp.Body)
+		t.Fatalf("simulate status = %d : %s", resp.StatusCode, corps)
 	}
 }
 
@@ -1105,9 +1136,9 @@ func TestCreatePaymentCardSansFormActionEnroleQuandMeme(t *testing.T) {
 	t.Parallel()
 	server, store := setupWithPayzen(t, "")
 
-	// Card fournie sans REGISTER_PAY : Paysim enrôle quand même — le
-	// simulateur stocke tout moyen fourni. Le formAction reste une
-	// info métadata sur la Transaction, sans effet sur l'enrôlement.
+	// Card fournie sans formAction, avec un montant a debiter : c'est le
+	// montant qui tranche, pas l'etiquette. L'alias attend donc l'issue
+	// du paiement, comme n'importe quel REGISTER_PAY.
 	body, _ := json.Marshal(CreatePaymentInput{
 		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "O",
 		Card: &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
@@ -1117,12 +1148,18 @@ func TestCreatePaymentCardSansFormActionEnroleQuandMeme(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	var out CreatePaymentOutput
 	_ = json.NewDecoder(resp.Body).Decode(&out)
-	if out.PaymentMethodToken == "" {
-		t.Fatalf("PaymentMethodToken vide, veut renseigne (enrolement systematique quand Card fournie)")
+	if out.PaymentMethodToken != "" {
+		t.Fatalf("token annonce avant tout paiement : %q", out.PaymentMethodToken)
 	}
-	pm, _ := store.MethodByToken(out.PaymentMethodToken)
-	if pm == nil {
-		t.Errorf("PaymentMethod absent du store apres create")
+
+	simulerPaiement(t, server, out.UUID, payzen.OutcomePaid)
+
+	tx, _ := store.ByUUID(out.UUID)
+	if tx == nil || tx.PaymentMethodToken == "" {
+		t.Fatal("aucun alias apres un paiement accepte, malgre une carte fournie")
+	}
+	if pm, _ := store.MethodByToken(tx.PaymentMethodToken); pm == nil {
+		t.Errorf("PaymentMethod absent du store apres enrolement")
 	}
 }
 
@@ -1161,21 +1198,25 @@ func TestSimulateRefusDirectSurCarteRevoquee(t *testing.T) {
 	t.Parallel()
 	server, store := setupWithPayzen(t, "")
 
-	// Enrolement + révocation avant simulate → refus au 1er paiement.
+	// Une révocation suppose un alias : on enrôle d'abord, on révoque,
+	// puis on présente ce moyen à un paiement. C'est l'ordre réel — on
+	// ne révoque pas une carte qui n'a jamais été enregistrée.
+	token := enroll(t, server, "4111111111111111", 12, 2028)
+
+	req, _ := http.NewRequest(http.MethodPost,
+		server.URL+"/paysim/api/v1/payment-methods/"+token+"/revoke", nil)
+	revResp, _ := http.DefaultClient.Do(req)
+	_ = revResp.Body.Close()
+
 	body, _ := json.Marshal(CreatePaymentInput{
 		Provider: "payzen", Amount: 5000, Currency: "EUR", OrderID: "DIRECT-REV",
-		Card: &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
+		PaymentMethodToken: token,
 	})
 	createResp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
 		"application/json", bytes.NewReader(body))
 	defer func() { _ = createResp.Body.Close() }()
 	var out CreatePaymentOutput
 	_ = json.NewDecoder(createResp.Body).Decode(&out)
-
-	req, _ := http.NewRequest(http.MethodPost,
-		server.URL+"/paysim/api/v1/payment-methods/"+out.PaymentMethodToken+"/revoke", nil)
-	revResp, _ := http.DefaultClient.Do(req)
-	_ = revResp.Body.Close()
 
 	simBody, _ := json.Marshal(SimulatePaymentRequest{
 		Outcome: "PAID", Channel: "ipn",
@@ -1261,8 +1302,12 @@ func TestChargeTokenCarteExpiree(t *testing.T) {
 	t.Parallel()
 	server, _ := setupWithPayzen(t, "")
 
-	// Carte expirée dans le passé : refus immédiat au rejeu.
-	token := enroll(t, server, "4111111111111111", 3, 2020)
+	// Une carte ne s'enrôle jamais déjà expirée — PayZen refuserait
+	// l'autorisation et ne créerait pas d'alias. Le cas réel est un
+	// alias valide que le temps a rattrapé : on l'enrôle sain, puis on
+	// le périme.
+	token := enroll(t, server, "4111111111111111", 12, 2030)
+	expireMethod(t, server, token)
 
 	body, _ := json.Marshal(CreatePaymentInput{
 		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "R-EXP",
@@ -1366,14 +1411,33 @@ func TestRevokePaymentMethodInconnuRetourne204(t *testing.T) {
 
 // enroll est un helper : crée un paiement avec Card + REGISTER_PAY et
 // retourne le paymentMethodToken produit par Paysim.
+// expireMethod fait vieillir un alias jusqu'a le perimer, via l'action
+// de controle prevue pour ca.
+func expireMethod(t *testing.T, server *httptest.Server, token string) {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodPost,
+		server.URL+"/paysim/api/v1/payment-methods/"+token+"/expire", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expire status = %d, veut 204", resp.StatusCode)
+	}
+}
+
 func enroll(t *testing.T, server *httptest.Server, pan string, expM, expY int) string {
 	t.Helper()
+	// REGISTER pur : l'alias est ce qu'on veut, pas un paiement. Un
+	// REGISTER_PAY resterait suspendu au parcours du porteur et ne
+	// rendrait aucun token avant la simulation — comme chez PayZen.
 	body, _ := json.Marshal(CreatePaymentInput{
 		Provider:   "payzen",
-		Amount:     1000,
+		Amount:     0,
 		Currency:   "EUR",
 		OrderID:    "ENROLL",
-		FormAction: "REGISTER_PAY",
+		FormAction: "REGISTER",
 		Card:       &payzen.Card{PAN: pan, ExpiryMonth: expM, ExpiryYear: expY},
 	})
 	resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
@@ -1425,8 +1489,8 @@ func TestListPaymentMethods_afterEnrollWithSQLite(t *testing.T) {
 	// Enroll une CB.
 	body, _ := json.Marshal(CreatePaymentInput{
 		Provider:   "payzen",
-		Amount:     1000, Currency: "EUR", OrderID: "O",
-		FormAction: "REGISTER_PAY",
+		Amount:     0, Currency: "EUR", OrderID: "O",
+		FormAction: "REGISTER",
 		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
 	})
 	createResp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
@@ -1463,7 +1527,7 @@ func TestPaymentMethods_listeEtDetailConcordent(t *testing.T) {
 
 	body, _ := json.Marshal(CreatePaymentInput{
 		Provider: "payzen",
-		Amount:   1000, Currency: "EUR", OrderID: "O",
+		Amount:   0, Currency: "EUR", OrderID: "O",
 		Card: &payzen.Card{
 			PAN: "4111111111111111", ExpiryMonth: 8, ExpiryYear: 2029,
 			HolderName: "DUPONT JEAN-EMILLE", Country: "US",
@@ -1523,8 +1587,10 @@ func TestPaymentMethods_verdictExploitabilite(t *testing.T) {
 		{"PAN de refus", payzen.Card{
 			PAN: "4000000000000002", ExpiryMonth: 12, ExpiryYear: 2030,
 		}, false, "carte de test refusee"},
+		// Une carte ne s'enrole jamais deja expiree : on l'enregistre
+		// saine, puis on la fait vieillir — le cas reel.
 		{"carte expiree", payzen.Card{
-			PAN: "4111111111111111", ExpiryMonth: 1, ExpiryYear: 2020,
+			PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030,
 		}, false, "moyen de paiement expire"},
 	}
 	for _, c := range cases {
@@ -1532,15 +1598,20 @@ func TestPaymentMethods_verdictExploitabilite(t *testing.T) {
 			t.Parallel()
 			server := setupWithSQLite(t)
 			body, _ := json.Marshal(CreatePaymentInput{
-				Provider: "payzen", Amount: 1000, Currency: "EUR",
-				OrderID: "O", Card: &c.card,
+				Provider: "payzen", Amount: 0, Currency: "EUR",
+				FormAction: "REGISTER", OrderID: "O", Card: &c.card,
 			})
 			resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
 				"application/json", bytes.NewReader(body))
 			if err != nil {
 				t.Fatal(err)
 			}
+			var cree CreatePaymentOutput
+			_ = json.NewDecoder(resp.Body).Decode(&cree)
 			_ = resp.Body.Close()
+			if c.wantReason == "moyen de paiement expire" {
+				expireMethod(t, server, cree.PaymentMethodToken)
+			}
 
 			listResp, err := http.Get(server.URL + "/paysim/api/v1/payment-methods")
 			if err != nil {
@@ -1574,8 +1645,8 @@ func TestListPaymentMethods_afterRevoke(t *testing.T) {
 	// Enroll puis revoke → la liste doit refléter revoked=true.
 	body, _ := json.Marshal(CreatePaymentInput{
 		Provider:   "payzen",
-		Amount:     1000, Currency: "EUR", OrderID: "O",
-		FormAction: "REGISTER_PAY",
+		Amount:     0, Currency: "EUR", OrderID: "O",
+		FormAction: "REGISTER",
 		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
 	})
 	createResp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
@@ -1605,8 +1676,8 @@ func TestListSubscriptions_afterCreateWithSQLite(t *testing.T) {
 	// Enroll une CB puis crée un abonnement.
 	body, _ := json.Marshal(CreatePaymentInput{
 		Provider:   "payzen",
-		Amount:     100, Currency: "EUR", OrderID: "INIT",
-		FormAction: "REGISTER_PAY",
+		Amount:     0, Currency: "EUR", OrderID: "INIT",
+		FormAction: "REGISTER",
 		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
 	})
 	createResp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
@@ -1647,8 +1718,8 @@ func TestGetPaymentMethod_afterEnroll(t *testing.T) {
 	// Enroll une CB.
 	body, _ := json.Marshal(CreatePaymentInput{
 		Provider:   "payzen",
-		Amount:     1000, Currency: "EUR", OrderID: "O",
-		FormAction: "REGISTER_PAY",
+		Amount:     0, Currency: "EUR", OrderID: "O",
+		FormAction: "REGISTER",
 		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2028},
 	})
 	createResp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
@@ -1709,7 +1780,7 @@ func TestCreatePayment_refusNeRendPasDeToken(t *testing.T) {
 	server := setupWithSQLite(t)
 
 	body, _ := json.Marshal(CreatePaymentInput{
-		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "REFUS",
+		Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "REFUS",
 		Card: &payzen.Card{PAN: "4000000000000002", ExpiryMonth: 12, ExpiryYear: 2030},
 	})
 	resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
@@ -1750,7 +1821,7 @@ func TestReset_videToutesLesTables(t *testing.T) {
 	// Un enrolement produit un paiement et un moyen ; on y ajoute un
 	// abonnement pour couvrir les trois collections persistees.
 	body, _ := json.Marshal(CreatePaymentInput{
-		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "O",
+		Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "O",
 		Card: &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030},
 	})
 	resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
@@ -1837,8 +1908,8 @@ func TestCreatePaymentRetourneLaMarqueAvecLeToken(t *testing.T) {
 	server, _ := setupWithPayzen(t, "")
 
 	body, _ := json.Marshal(CreatePaymentInput{
-		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "BRAND-MC",
-		FormAction: "REGISTER_PAY",
+		Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "BRAND-MC",
+		FormAction: "REGISTER",
 		Card:       &payzen.Card{PAN: "5555555555554444", ExpiryMonth: 12, ExpiryYear: 2030},
 	})
 	resp, _ := http.Post(server.URL+"/paysim/api/v1/payments",
@@ -1884,8 +1955,8 @@ func TestCreatePaymentRefuseNAnnonceNiTokenNiMarque(t *testing.T) {
 
 	// Enrôlement d'un PAN de test réservé au refus systématique.
 	enrol, _ := json.Marshal(CreatePaymentInput{
-		Provider: "payzen", Amount: 1000, Currency: "EUR", OrderID: "ENROL-KO",
-		FormAction: "REGISTER_PAY",
+		Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "ENROL-KO",
+		FormAction: "REGISTER",
 		Card:       &payzen.Card{PAN: "5105105105105100", ExpiryMonth: 12, ExpiryYear: 2030},
 	})
 	r1, _ := http.Post(server.URL+"/paysim/api/v1/payments",
@@ -2216,8 +2287,8 @@ func TestSubscriptionBillingCount(t *testing.T) {
 	server, _ := setupWithRepos(t, "")
 
 	enrol, _ := json.Marshal(CreatePaymentInput{
-		Provider: "payzen", Amount: 100, Currency: "EUR", OrderID: "INIT",
-		FormAction: "REGISTER_PAY",
+		Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "INIT",
+		FormAction: "REGISTER",
 		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030},
 	})
 	r, _ := http.Post(server.URL+"/paysim/api/v1/payments",
@@ -2264,3 +2335,275 @@ func TestSubscriptionBillingCount(t *testing.T) {
 		t.Errorf("billingCount = %d, veut 3", liste[0].BillingCount)
 	}
 }
+
+// Reproduction du cas remonte : l'expiration fournie a la creation doit
+// se retrouver sur l'alias. Sans elle, l'alias nait en 0/0 et tout ce qui
+// en derive annonce une expiration qui n'a pas eu lieu.
+func TestEnrolementConserveExpiration(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithRepos(t, "")
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "ENROL-EXP",
+		FormAction: "REGISTER",
+		Card:       &payzen.Card{PAN: "4000000000000002", ExpiryMonth: 12, ExpiryYear: 2028},
+	})
+	r, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(r.Body).Decode(&out)
+	_ = r.Body.Close()
+	t.Logf("creation : state=%s token=%q declineCode=%q", out.State, out.PaymentMethodToken, out.DeclineCode)
+
+	resp, _ := http.Get(server.URL + "/paysim/api/v1/payment-methods")
+	defer func() { _ = resp.Body.Close() }()
+	var liste []PaymentMethodOutput
+	if err := json.NewDecoder(resp.Body).Decode(&liste); err != nil {
+		t.Fatal(err)
+	}
+	if len(liste) != 1 {
+		t.Fatalf("%d moyens, veut 1", len(liste))
+	}
+	m := liste[0]
+	t.Logf("alias : pan=%s exp=%d/%d usable=%v raison=%q",
+		m.PANMasked, m.ExpiryMonth, m.ExpiryYear, m.Usable, m.UnusableReason)
+	if m.ExpiryMonth != 12 || m.ExpiryYear != 2028 {
+		t.Errorf("expiration = %d/%d, veut 12/2028", m.ExpiryMonth, m.ExpiryYear)
+	}
+	// La cause retenue doit etre le PAN de test, pas une expiration.
+	if m.UnusableReason != "carte de test refusee" {
+		t.Errorf("raison = %q, veut « carte de test refusee »", m.UnusableReason)
+	}
+}
+
+// « L'alias (token) ne sera pas cree si la demande d'autorisation ou de
+// renseignement est refusee » — guide Lyra, Paiements par token.
+//
+// Un refus ne laisse donc aucun alias derriere lui. Le masquer a
+// l'affichage ne suffisait pas : la relecture du paiement le montrait
+// quand meme, et un integrateur pouvait conserver un alias que le vrai
+// PSP n'avait jamais attribue.
+func TestPaiementRefuseNeLaisseAucunAlias(t *testing.T) {
+	t.Parallel()
+	server, store := setupWithRepos(t, "")
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 5000, Currency: "EUR", OrderID: "REFUS-ALIAS",
+		FormAction: "REGISTER_PAY",
+		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	r, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(r.Body).Decode(&out)
+	_ = r.Body.Close()
+
+	simulerPaiement(t, server, out.UUID, payzen.OutcomeUnpaid)
+
+	// Ni sur la transaction, ni dans la collection, ni dans le detail.
+	tx, _ := store.ByUUID(out.UUID)
+	if tx == nil {
+		t.Fatal("transaction introuvable")
+	}
+	if tx.PaymentMethodToken != "" {
+		t.Errorf("la transaction porte un alias apres un refus : %q", tx.PaymentMethodToken)
+	}
+
+	resp, _ := http.Get(server.URL + "/paysim/api/v1/payment-methods")
+	defer func() { _ = resp.Body.Close() }()
+	var moyens []PaymentMethodOutput
+	_ = json.NewDecoder(resp.Body).Decode(&moyens)
+	if len(moyens) != 0 {
+		t.Errorf("%d alias apres un refus, veut 0 : %+v", len(moyens), moyens)
+	}
+
+	det, _ := http.Get(server.URL + "/paysim/api/v1/payments/" + out.UUID)
+	defer func() { _ = det.Body.Close() }()
+	var detail PaymentDetail
+	_ = json.NewDecoder(det.Body).Decode(&detail)
+	if detail.PaymentMethodToken != "" {
+		t.Errorf("le detail annonce un alias apres un refus : %q", detail.PaymentMethodToken)
+	}
+}
+
+// L'enrolement sans paiement se tranche tout de suite : il n'y a pas de
+// porteur a attendre. C'est la transaction de VERIFICATION de Lyra.
+func TestEnrolementSansPaiementRendUnAliasImmediatement(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithRepos(t, "")
+
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "VERIF",
+		FormAction: "REGISTER",
+		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	r, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	defer func() { _ = r.Body.Close() }()
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(r.Body).Decode(&out)
+
+	if out.PaymentMethodToken == "" {
+		t.Fatal("aucun alias : une verification sans debit n'a personne a attendre")
+	}
+	// Chez Lyra, la transaction de VERIFICATION porte un statut —
+	// « Accepte » ou « Refuse » — et « n'est jamais remise en banque ».
+	// Autorisee, donc, jamais capturee. La laisser « initiated » ferait
+	// croire qu'on attend encore le porteur.
+	if out.State != "authorized" {
+		t.Errorf("state = %q, veut authorized (verification acceptee)", out.State)
+	}
+}
+
+// Une verification refusee est visible comme telle : c'est le role que
+// PayZen donne a cette transaction — « aider le marchand a comprendre
+// les raisons du refus de la creation de l'alias ».
+func TestEnrolementSansPaiementRefuseEstVisible(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithRepos(t, "")
+
+	token := enroll(t, server, "4111111111111111", 12, 2030)
+	expireMethod(t, server, token)
+
+	// Une carte perimee presentee a un nouvel enrolement : refus.
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "VERIF-KO",
+		FormAction: "REGISTER",
+		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 1, ExpiryYear: 2020},
+	})
+	r, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	defer func() { _ = r.Body.Close() }()
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(r.Body).Decode(&out)
+
+	if out.State != "declined" {
+		t.Errorf("state = %q, veut declined (verification refusee)", out.State)
+	}
+	if out.PaymentMethodToken != "" {
+		t.Errorf("alias rendu malgre le refus : %q", out.PaymentMethodToken)
+	}
+}
+
+// Une verification ne debite pas : elle ne peut donc pas echouer pour
+// provision insuffisante. C'est ce qui rend l'alias « qui refusera aux
+// echeances » obtenable — le levier de test du recurrent.
+func TestEnrolementSansPaiementAccepteUnPANDeRefus(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithRepos(t, "")
+
+	token := enroll(t, server, "4000000000000002", 12, 2030)
+	if token == "" {
+		t.Fatal("PAN de refus non enrole : le levier du recurrent disparait")
+	}
+
+	// Et il refuse bien au debit.
+	body, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 2990, Currency: "EUR", OrderID: "DEBIT",
+		PaymentMethodToken: token,
+	})
+	r, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(body))
+	defer func() { _ = r.Body.Close() }()
+	var out CreatePaymentOutput
+	_ = json.NewDecoder(r.Body).Decode(&out)
+	if out.State != "declined" || out.DeclineCode != "51" {
+		t.Errorf("state/code = %q/%q, veut declined/51", out.State, out.DeclineCode)
+	}
+}
+
+// Une carte sans expiration doit echouer bruyamment. Acceptee, elle
+// produisait un alias en 0/0 aussitot repute expire : le marchand
+// cherchait alors une date perimee qu'il n'avait jamais envoyee.
+func TestEnrolementCarteSansExpirationRefuse(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithRepos(t, "")
+
+	cas := []struct {
+		nom  string
+		card string
+	}{
+		{"expiration absente", `{"pan":"4111111111111111"}`},
+		{"mois hors plage", `{"pan":"4111111111111111","expiryMonth":13,"expiryYear":2030}`},
+		{"annee sur deux chiffres", `{"pan":"4111111111111111","expiryMonth":12,"expiryYear":30}`},
+		{"pan absent", `{"expiryMonth":12,"expiryYear":2030}`},
+	}
+	for _, c := range cas {
+		t.Run(c.nom, func(t *testing.T) {
+			body := []byte(`{"provider":"payzen","amount":1000,"currency":"EUR",` +
+				`"orderId":"REFUS","formAction":"REGISTER_PAY","card":` + c.card + `}`)
+			r, err := http.Post(server.URL+"/paysim/api/v1/payments",
+				"application/json", bytes.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = r.Body.Close() }()
+			if r.StatusCode != http.StatusBadRequest {
+				t.Errorf("status = %d, veut 400", r.StatusCode)
+			}
+		})
+	}
+
+	// Ni paiement ni alias : un enrolement refuse ne laisse rien derriere.
+	resp, _ := http.Get(server.URL + "/paysim/api/v1/payment-methods")
+	defer func() { _ = resp.Body.Close() }()
+	var moyens []PaymentMethodOutput
+	_ = json.NewDecoder(resp.Body).Decode(&moyens)
+	if len(moyens) != 0 {
+		t.Errorf("%d moyens crees, veut 0", len(moyens))
+	}
+
+	pResp, _ := http.Get(server.URL + "/paysim/api/v1/payments")
+	defer func() { _ = pResp.Body.Close() }()
+	var paiements []PaymentSummary
+	_ = json.NewDecoder(pResp.Body).Decode(&paiements)
+	if len(paiements) != 0 {
+		t.Errorf("%d paiements crees, veut 0", len(paiements))
+	}
+}
+
+// Le motif accompagne le refus des la creation. Sans lui, un integrateur
+// qui recoit « declined » doit relire le paiement pour savoir s'il peut
+// reconduire — un aller-retour que le protocole imite ne demande pas.
+func TestCreatePaymentPorteLeMotifDuRefus(t *testing.T) {
+	t.Parallel()
+	server, _ := setupWithRepos(t, "")
+
+	enrol, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "ENROL",
+		FormAction: "REGISTER",
+		Card:       &payzen.Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	r, _ := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(enrol))
+	var enrolled CreatePaymentOutput
+	_ = json.NewDecoder(r.Body).Decode(&enrolled)
+	_ = r.Body.Close()
+
+	// Rejeu one-click sur un montant magique : refus immediat en 51.
+	replay, _ := json.Marshal(CreatePaymentInput{
+		Provider: "payzen", Amount: 1001, Currency: "EUR", OrderID: "REPLAY-51",
+		PaymentMethodToken: enrolled.PaymentMethodToken,
+	})
+	r2, err := http.Post(server.URL+"/paysim/api/v1/payments",
+		"application/json", bytes.NewReader(replay))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = r2.Body.Close() }()
+	var out CreatePaymentOutput
+	if err := json.NewDecoder(r2.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+
+	if out.State != "declined" {
+		t.Fatalf("state = %q, veut declined", out.State)
+	}
+	if out.DeclineCode != "51" {
+		t.Errorf("declineCode = %q, veut 51", out.DeclineCode)
+	}
+	if out.DeclineMessage == "" {
+		t.Error("declineMessage vide")
+	}
+}
+

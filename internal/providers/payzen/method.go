@@ -4,6 +4,8 @@
 package payzen
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -102,6 +104,38 @@ func isExpired(expiryMonth, expiryYear int, now time.Time) bool {
 // Le brand est déduit du BIN si l'input n'en fournit pas — comportement
 // identique à ce que fait PayZen en réel. La date CreatedAt vient de now
 // (typiquement Clock.Now() de l'appelant).
+// ErrInvalidCard rejette une carte qu'on ne peut pas enrôler.
+var ErrInvalidCard = errors.New("carte invalide")
+
+// Validate contrôle ce sans quoi un alias ne veut rien dire : un numéro,
+// et une date d'expiration lisible.
+//
+// Rien de plus. Pas de Luhn, pas de longueur : le simulateur reste
+// aveugle au contenu du PAN, hormis les numéros de test réservés. On
+// vérifie ce qui a un sens ici, pas ce qu'une banque vérifierait.
+//
+// L'absence de ce contrôle produisait un alias en 0/0, aussitôt réputé
+// expiré. Tout ce qui en dérivait annonçait alors une expiration qui
+// n'avait pas eu lieu : le moyen était rendu inexploitable, le paiement
+// refusé pour « moyen de paiement expire », et le marchand cherchait une
+// date périmée qu'il n'avait jamais envoyée. Un enrôlement qu'on ne peut
+// pas honorer doit échouer bruyamment, pas produire un alias mort-né.
+func (c Card) Validate() error {
+	if c.PAN == "" {
+		return fmt.Errorf("%w: pan absent", ErrInvalidCard)
+	}
+	if c.ExpiryMonth < 1 || c.ExpiryMonth > 12 {
+		return fmt.Errorf("%w: expiryMonth = %d, attendu 1-12", ErrInvalidCard, c.ExpiryMonth)
+	}
+	// Quatre chiffres exigés : un « 28 » pour 2028 passerait pour une
+	// date de l'an 28, donc expirée, et on retomberait exactement sur le
+	// défaut qu'on corrige.
+	if c.ExpiryYear < 1000 {
+		return fmt.Errorf("%w: expiryYear = %d, attendu sur 4 chiffres", ErrInvalidCard, c.ExpiryYear)
+	}
+	return nil
+}
+
 func NewPaymentMethod(token string, card Card, customer Customer, now time.Time) *PaymentMethod {
 	brand := card.Brand
 	if brand == "" {

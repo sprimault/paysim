@@ -217,8 +217,12 @@ func TestTriggerBilling_refusMagicPAN(t *testing.T) {
 func TestTriggerBilling_refusExpiration(t *testing.T) {
 	t.Parallel()
 	server, _ := setupWithRepos(t, "")
-	token := enroll(t, server, "4111111111111111", 1, 2020)
+	// L'abonnement est souscrit sur une carte saine, qui atteint sa date
+	// d'expiration avant l'échéance suivante — le cas qui produit un
+	// impayé sans que le porteur ait rien fait.
+	token := enroll(t, server, "4111111111111111", 12, 2030)
 	id := createSubHelper(t, server, token, 1000)
+	expireMethod(t, server, token)
 
 	resp, _ := http.Post(server.URL+"/paysim/api/v1/subscriptions/"+id+"/trigger-billing",
 		"application/json", nil)

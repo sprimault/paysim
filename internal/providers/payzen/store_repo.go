@@ -236,6 +236,17 @@ type payzenProviderData struct {
 	// stocker ici évite une migration de schéma sur les deux backends.
 	DeclineCode    string `json:"declineCode,omitempty"`
 	DeclineMessage string `json:"declineMessage,omitempty"`
+
+	// Card est la carte présentée, tant que l'issue du paiement ne
+	// permet pas encore de l'enrôler. Elle doit survivre au
+	// redémarrage : entre la création et le geste du porteur, il peut
+	// s'écouler le temps qu'on veut, et la perdre ferait échouer
+	// l'enrôlement d'un paiement pourtant accepté.
+	//
+	// Le PAN y est en clair, comme dans PaymentMethod.PANFull —
+	// Paysim n'applique aucune protection PCI-DSS et ne doit jamais
+	// voir de vraie carte.
+	Card *Card `json:"card,omitempty"`
 }
 
 // payzenToRecord sérialise Transaction en PaymentRecord générique.
@@ -261,6 +272,7 @@ func payzenToRecord(tx *Transaction) (*store.PaymentRecord, error) {
 		PaymentMethodToken: tx.PaymentMethodToken,
 		DeclineCode:        tx.DeclineCode,
 		DeclineMessage:     tx.DeclineMessage,
+		Card:               tx.Card,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal provider_data: %w", err)
@@ -439,6 +451,7 @@ func recordToPayzen(rec *store.PaymentRecord) (*Transaction, error) {
 		PaymentMethodToken: provData.PaymentMethodToken,
 		DeclineCode:        provData.DeclineCode,
 		DeclineMessage:     provData.DeclineMessage,
+		Card:               provData.Card,
 		CreatedAt:          rec.CreatedAt,
 		UpdatedAt:          rec.UpdatedAt,
 	}, nil

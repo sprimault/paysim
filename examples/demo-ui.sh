@@ -76,6 +76,7 @@ docker run -d --name "$NAME" --network "$NET" -p "$PORT:8080" \
   -e PAYSIM_PUBLIC_URL="http://$IP:$PORT" \
   -e PAYSIM_CALLBACK_URL="http://$SINK" \
   -e PAYSIM_PAYZEN_HMAC_KEY=demo-hmac-key \
+  -e PAYSIM_PAYZEN_REST_PASSWORD=demo-rest-password \
   -e PAYSIM_LOG_LEVEL=warn \
   "$IMAGE" >/dev/null || { echo "docker run echoue"; exit 1; }
 

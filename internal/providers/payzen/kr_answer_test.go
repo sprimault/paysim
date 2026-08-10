@@ -208,7 +208,7 @@ func TestBuildDeliveryWebhookRattacheLePaiement(t *testing.T) {
 	opts := BrowserReturnOpts{Outcome: OutcomePaid}
 	answer := buildKrAnswer(tx, nil, opts, "", "TEST")
 
-	wh, _, err := buildDeliveryWebhook("delivery-1", "http://marchand", answer, "k", "V4/Payment", false, 0)
+	wh, _, err := buildDeliveryWebhook("delivery-1", "http://marchand", answer, "k", "sha256_hmac", "V4/Payment", false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestBuildDeliveryWebhookSansTransaction(t *testing.T) {
 	t.Parallel()
 	answer := &KrAnswer{OrderStatus: "UNPAID"}
 
-	wh, _, err := buildDeliveryWebhook("delivery-2", "http://marchand", answer, "k", "V4/Payment", false, 0)
+	wh, _, err := buildDeliveryWebhook("delivery-2", "http://marchand", answer, "k", "sha256_hmac", "V4/Payment", false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestBuildDeliveryWebhookSignsCorrectly(t *testing.T) {
 	answer := buildKrAnswer(tx, nil, opts,"", "TEST")
 
 	const key = "clef-de-test-hmac"
-	wh, hash, err := buildDeliveryWebhook("delivery-1", "http://marchand", answer, key, "V4/Payment", false, 0)
+	wh, hash, err := buildDeliveryWebhook("delivery-1", "http://marchand", answer, key, "sha256_hmac", "V4/Payment", false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

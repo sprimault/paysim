@@ -48,7 +48,7 @@ others. All are opt-in: default behaviour is a successful payment.
 | -------------- | ----------------- | ---------------------------------------------------- |
 | Magic amount   | at `simulate`                                | Bank decline during checkout                         |
 | Magic PAN      | at `simulate` **and** `charge_token`         | Bank decline on any payment using a specific card    |
-| Card expiry    | at `simulate` **and** `charge_token`         | Expired card presented (mirrors real PSP behaviour)  |
+| Expired alias  | at `simulate` **and** `charge_token`         | Installment falling after the expiry date            |
 | Manual revoke  | at `simulate` **and** `charge_token`         | Payment method deleted after enrolment               |
 
 ### Magic amount — decline at simulate
@@ -73,10 +73,25 @@ decline. Works regardless of the amount and of any prior state.
 
 ### Expired card — decline whenever presented
 
-Attach a card with an expiry date in the past (e.g. `expiryMonth: 1,
-expiryYear: 2020`). Any subsequent `simulate` or `charge_token`
-declines, matching real PSP behaviour: a card is refused the moment
-it's presented, not only at recurring-charge time.
+An already-expired card **cannot be enrolled**: the authorization
+request is declined, and "the alias (token) will not be created if the
+authorization or information request is declined". Presented to a
+payment, it makes that payment decline without leaving an alias behind.
+
+The case worth reproducing is the other one: a valid alias that time has
+caught up with, whose next installment fails although the cardholder did
+nothing. So enrol a healthy card, then age it:
+
+```bash
+curl -X POST http://localhost:30880/paysim/api/v1/payment-methods/{token}/expire
+```
+
+Idempotent, like `revoke`. Any subsequent `simulate` or `charge_token`
+on that method then declines with `moyen de paiement expire`, and no
+bank code: Paysim declines here, not an issuer.
+
+This action is Paysim's own and has no PayZen equivalent — it lives in
+the control API, never in the provider routes.
 
 **Expiry semantics** (French banking convention): a card is valid up
 to and including the last day of its expiry month. `expiryMonth: 8,

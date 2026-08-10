@@ -26,10 +26,17 @@ import (
 // struct plutot que 3 parametres positionnels dans NewHandler — plus
 // lisible et extensible sans breaking change.
 type HandlerConfig struct {
-	// HMACKey est la cle HMAC-SHA-256 utilisee pour signer kr-hash sur
-	// les retours navigateur et webhooks IPN. Vide = les endpoints de
-	// simulation retournent une erreur claire au premier appel.
+	// HMACKey signe le retour navigateur (kr-hash-key = sha256_hmac).
+	// Vide = les endpoints de simulation retournent une erreur claire
+	// au premier appel.
 	HMACKey string
+
+	// RESTPassword signe les notifications serveur a serveur
+	// (kr-hash-key = password). PayZen emploie deux cles selon le
+	// canal, et le SDK marchand choisit la sienne d'apres kr-hash-key ;
+	// tout signer avec la meme laisserait sa branche « password »
+	// inexercee jusqu'a la production.
+	RESTPassword string
 
 	// APIToken protege les endpoints de simulation via Bearer. Vide =
 	// API de controle ouverte (mode local explicite, cf. CLAUDE.md).
@@ -258,21 +265,102 @@ func (h *Handler) Create(in CreateInput) (*Transaction, error) {
 	if in.PaymentMethodToken != "" {
 		return h.createFromToken(in)
 	}
+	// Avant toute écriture : une carte inexploitable ne doit pas laisser
+	// derrière elle un paiement créé et un alias mort-né.
+	if in.Card != nil {
+		if err := in.Card.Validate(); err != nil {
+			return nil, err
+		}
+	}
 	tx, err := h.createNominal(in)
 	if err != nil {
 		return nil, err
 	}
-	var pm *PaymentMethod
-	if in.Card != nil {
-		pm, err = h.enrollCard(tx, in.Card)
-		if err != nil {
+	// L'enrôlement sans paiement se tranche tout de suite : chez PayZen
+	// il produit une transaction de VERIFICATION — « son montant est de
+	// 1.00 EUR ou 0 EUR si l'acquéreur le supporte, son statut est soit
+	// Accepté soit Refusé » — dont le seul rôle est de dire si l'alias
+	// peut être créé. Personne n'attend le porteur : il n'y a pas de
+	// paiement à jouer.
+	//
+	// Un REGISTER_PAY, lui, reste suspendu au parcours : son alias
+	// naîtra du simulate, comme le paiement qui le porte.
+	if tx.Card != nil && isRegisterOnly(tx) {
+		if err := h.verifyCard(tx); err != nil {
 			return nil, err
 		}
 	}
 	if h.cfg.Autoplay {
-		h.autoplay(tx, pm)
+		h.autoplay(tx)
 	}
 	return tx, nil
+}
+
+// isRegisterOnly reconnaît l'enrôlement sans paiement : aucun montant à
+// débiter.
+//
+// C'est le montant qui trancherait, pas l'intention déclarée. Un
+// formAction REGISTER accompagné d'un montant reste un débit, dont
+// l'alias attend l'issue ; et à zéro centime il n'y a rien à jouer, quel
+// que soit le formAction — exiger l'étiquette laisserait une carte
+// présentée à zéro sans issue possible, donc sans alias, pour toujours.
+func isRegisterOnly(tx *Transaction) bool {
+	return tx.Amount == 0
+}
+
+// verifyCard joue la vérification d'un enrôlement sans paiement :
+// accepte et enrôle, ou refuse sans laisser d'alias.
+//
+// Le refus est un vrai refus du paiement, visible comme tel : c'est le
+// rôle que PayZen donne à sa transaction de VERIFICATION, « aider le
+// marchand à comprendre, depuis son Back Office, les raisons du refus
+// de la création de l'alias ». Un enrôlement qui échoue en silence ne
+// lui apprendrait rien.
+func (h *Handler) verifyCard(tx *Transaction) error {
+	// Une vérification ne débite pas : elle contrôle que la carte est
+	// utilisable, pas qu'elle est approvisionnée. Un PAN de refus
+	// « provision insuffisante » s'enrôle donc très bien — c'est même
+	// tout l'intérêt du levier, obtenir un alias qui refusera aux
+	// échéances. Seule une carte hors d'usage, expirée, échoue ici.
+	usable, reason := MethodUsability(
+		tx.Card.PAN, tx.Card.ExpiryMonth, tx.Card.ExpiryYear, false, h.clock().Now())
+	outcome := ""
+	if !usable && reason == ReasonExpired {
+		outcome = OutcomeUnpaid
+	}
+	var decline chaos.DeclineReason
+	if outcome == OutcomeUnpaid {
+		if err := applyOutcome(tx, outcome, reason, decline); err != nil {
+			return fmt.Errorf("transition domain: %w", err)
+		}
+		tx.Card = nil
+		tx.UpdatedAt = h.clock().Now()
+		return h.store.Save(tx)
+	}
+	// Vérification acceptée : autorisée, jamais capturée. Chez Lyra la
+	// transaction de VERIFICATION « n'est jamais remise en banque et
+	// reste dans l'onglet Transactions en cours » — il y a eu une
+	// demande d'autorisation, pas de mouvement de fonds.
+	//
+	// La laisser « initiated » ferait croire qu'on attend encore le
+	// porteur, alors que la vérification a eu lieu et a réussi : c'est
+	// le résultat qui manquerait à l'écran, pas une étape.
+	if err := applyOutcome(tx, OutcomeAuthorised, "", chaos.DeclineReason{}); err != nil {
+		return fmt.Errorf("transition domain: %w", err)
+	}
+	if _, err := h.enrollCardPending(tx); err != nil {
+		return err
+	}
+	tx.UpdatedAt = h.clock().Now()
+	return h.store.Save(tx)
+}
+
+// enrollCardPending enrôle la carte en attente sans juger l'issue —
+// l'appelant l'a déjà fait.
+func (h *Handler) enrollCardPending(tx *Transaction) (*PaymentMethod, error) {
+	card := tx.Card
+	tx.Card = nil
+	return h.enrollCard(tx, card)
 }
 
 // autoplay joue l'acte de paiement à la place du porteur : transition
@@ -290,19 +378,18 @@ func (h *Handler) Create(in CreateInput) (*Transaction, error) {
 // c'est le seul engagement pris par Create. Un échec ici laisse une
 // trace dans les logs et le paiement en `initiated`, état qu'un appel
 // de simulation explicite peut encore rattraper.
-func (h *Handler) autoplay(tx *Transaction, pm *PaymentMethod) {
-	outcome, reason := OutcomePaid, ""
-	var decline chaos.DeclineReason
-	if pm != nil {
-		outcome, reason, decline = decideReplayOutcome(pm, tx.Amount, h.clock().Now())
-	} else if magic := chaos.MagicOutcome(tx.Amount); magic != "" {
-		outcome, reason, decline = magic, "montant magique", chaos.MagicDeclineReason(tx.Amount)
-	}
+func (h *Handler) autoplay(tx *Transaction) {
+	outcome, reason, decline := h.decideCardOutcome(tx)
 
 	if err := applyOutcome(tx, outcome, reason, decline); err != nil {
 		h.logger.Warn("autoplay_transition_failed",
 			"uuid", tx.UUID, "outcome", outcome, "err", err)
 		return
+	}
+	// L'alias naît ici, une fois l'issue connue, et pas avant.
+	pm, err := h.enrollIfAccepted(tx)
+	if err != nil {
+		h.logger.Warn("autoplay_enroll_failed", "uuid", tx.UUID, "err", err)
 	}
 	tx.UpdatedAt = h.clock().Now()
 	if err := h.store.Save(tx); err != nil {
@@ -345,8 +432,11 @@ func (h *Handler) emitAutoplayWebhook(
 	if err != nil {
 		return fmt.Errorf("delivery uuid: %w", err)
 	}
+	// Notification serveur à serveur : c'est le mot de passe d'API REST
+	// qui signe, pas la clé du navigateur.
+	cle, nomCle := h.signature(CanalServeur)
 	wh, _, err := buildDeliveryWebhook(deliveryID, targetURL,
-		answer, h.cfg.HMACKey, "V4/Payment", false, 0)
+		answer, cle, nomCle, "V4/Payment", false, 0)
 	if err != nil {
 		return err
 	}
@@ -381,6 +471,9 @@ func (h *Handler) createNominal(in CreateInput) (*Transaction, error) {
 		Customer:        in.Customer,
 		Metadata:        in.Metadata,
 		Payment:         payment,
+		// La carte attend son issue : l'alias ne naîtra qu'après une
+		// autorisation acceptée, comme chez PayZen.
+		Card:            in.Card,
 		ReturnURL:       in.ReturnURL,
 		NotificationURL: in.NotificationURL,
 		CreatedAt:       now,
@@ -400,6 +493,80 @@ func (h *Handler) createNominal(in CreateInput) (*Transaction, error) {
 		},
 	})
 	return tx, nil
+}
+
+// decideCardOutcome choisit l'issue d'un paiement présenté avec une
+// carte, avant tout enrôlement.
+//
+// Travaille sur la carte et non sur un PaymentMethod : l'alias n'existe
+// pas encore à ce stade, et c'est justement cette issue qui décidera
+// s'il doit exister. Les conditions évaluées sont les mêmes qu'au rejeu
+// — expiration, PAN de refus, montant magique — pour qu'une carte
+// refusée le soit pareillement au premier paiement et au centième.
+//
+// Sans carte, seul le montant parle : un paiement par formulaire dont
+// le porteur n'a rien saisi n'a aucune condition de moyen à vérifier.
+func (h *Handler) decideCardOutcome(tx *Transaction) (outcome, reason string, decline chaos.DeclineReason) {
+	if tx.Card != nil {
+		if o, r, d := outcomeFromUsability(
+			tx.Card.PAN, tx.Card.ExpiryMonth, tx.Card.ExpiryYear, false, h.clock().Now()); o != "" {
+			return o, r, d
+		}
+	}
+	if magic := chaos.MagicOutcome(tx.Amount); magic != "" {
+		return magic, "montant magique", chaos.MagicDeclineReason(tx.Amount)
+	}
+	return OutcomePaid, "", chaos.DeclineReason{}
+}
+
+// conditionsDuMoyen applique les conditions bloquantes au moyen que
+// porte la transaction, qu'il soit déjà enrôlé ou encore en attente.
+//
+// Un alias prime sur une carte en attente : les deux ne coexistent pas,
+// mais l'ordre rend la lecture explicite plutôt que dépendante de
+// l'invariant.
+func (h *Handler) conditionsDuMoyen(tx *Transaction) (outcome, reason string, decline chaos.DeclineReason) {
+	if tx.PaymentMethodToken != "" {
+		pm, err := h.store.MethodByToken(tx.PaymentMethodToken)
+		if err != nil || pm == nil {
+			return "", "", chaos.DeclineReason{}
+		}
+		return evaluateMethodOutcome(pm, h.clock().Now())
+	}
+	if tx.Card != nil {
+		return outcomeFromUsability(
+			tx.Card.PAN, tx.Card.ExpiryMonth, tx.Card.ExpiryYear, false, h.clock().Now())
+	}
+	return "", "", chaos.DeclineReason{}
+}
+
+// enrollIfAccepted crée l'alias si — et seulement si — l'issue le
+// permet.
+//
+// C'est la règle PayZen, écrite noir sur blanc dans son guide : «
+// L'alias (token) ne sera pas créé si la demande d'autorisation ou de
+// renseignement est refusée. » Un refus ne laisse donc aucun alias
+// derrière lui, pas même transitoirement — il n'y a rien à masquer à
+// l'affichage, puisqu'il n'y a rien.
+//
+// Retourne nil sans erreur quand il n'y a pas de carte en attente ou
+// que l'issue est un refus : ce n'est pas un échec, c'est le
+// comportement attendu.
+func (h *Handler) enrollIfAccepted(tx *Transaction) (*PaymentMethod, error) {
+	if tx.Card == nil {
+		return nil, nil
+	}
+	switch tx.Payment.State() {
+	case domain.StateCaptured, domain.StateAuthorized:
+	default:
+		// Refus, abandon, expiration : la carte n'est pas enrôlée et
+		// disparaît avec la tentative.
+		tx.Card = nil
+		return nil, nil
+	}
+	card := tx.Card
+	tx.Card = nil
+	return h.enrollCard(tx, card)
 }
 
 // enrollCard génère un paymentMethodToken opaque à partir d'une Card,
@@ -557,8 +724,11 @@ func (h *Handler) emitReplayWebhook(
 	if err != nil {
 		return fmt.Errorf("delivery uuid: %w", err)
 	}
+	// Notification serveur à serveur : c'est le mot de passe d'API REST
+	// qui signe, pas la clé du navigateur.
+	cle, nomCle := h.signature(CanalServeur)
 	wh, _, err := buildDeliveryWebhook(deliveryID, targetURL,
-		answer, h.cfg.HMACKey, "V4/Payment", false, 0)
+		answer, cle, nomCle, "V4/Payment", false, 0)
 	if err != nil {
 		return err
 	}
@@ -590,6 +760,31 @@ func (h *Handler) callbackTarget(explicit, uuid, origin string) string {
 	return ""
 }
 
+// CanalSignature distingue les deux façons dont PayZen signe, parce
+// qu'il ne signe pas avec la même clé selon qui reçoit.
+type CanalSignature int
+
+const (
+	// CanalNavigateur — retour POST vers le navigateur, signé avec la
+	// clé HMAC de la boutique, celle que le front connaît déjà.
+	CanalNavigateur CanalSignature = iota
+
+	// CanalServeur — notification serveur à serveur, signée avec le mot
+	// de passe d'API REST. Le marchand la vérifie sur son back-end, où
+	// il détient cette clé-là et pas l'autre.
+	CanalServeur
+)
+
+// signature rend la clé et le nom annoncé dans kr-hash-key pour un
+// canal. Le SDK officiel lit ce nom pour choisir laquelle de ses deux
+// clés appliquer — l'annoncer faux fait vérifier avec la mauvaise.
+func (h *Handler) signature(c CanalSignature) (cle, nomCle string) {
+	if c == CanalServeur {
+		return h.cfg.RESTPassword, "password"
+	}
+	return h.cfg.HMACKey, "sha256_hmac"
+}
+
 // evaluateMethodOutcome inspecte les trois conditions bloquantes d'un
 // moyen de paiement : révocation, expiration, PAN de test réservé aux
 // refus. Retourne ("", "") si tout est OK, sinon (UNPAID, raison).
@@ -607,14 +802,34 @@ func (h *Handler) callbackTarget(explicit, uuid, origin string) string {
 // moyen révoqué ou expiré n'a pas de code bancaire — c'est Paysim qui
 // refuse, pas un émetteur.
 func evaluateMethodOutcome(pm *PaymentMethod, now time.Time) (outcome, reason string, decline chaos.DeclineReason) {
-	usable, why := MethodUsability(pm.PANFull, pm.ExpiryMonth, pm.ExpiryYear, pm.Revoked, now)
+	return outcomeFromUsability(pm.PANFull, pm.ExpiryMonth, pm.ExpiryYear, pm.Revoked, now)
+}
+
+// outcomeFromUsability traduit le verdict d'exploitabilité en issue de
+// paiement, motif en clair et code bancaire.
+//
+// Travaille sur les champs bruts pour servir les trois moments où la
+// question se pose : la carte présentée au premier paiement, l'alias au
+// rejeu, l'alias à l'échéance d'un abonnement. Le même verdict aux trois
+// endroits — une carte refusée au premier débit doit l'être au centième.
+//
+// Seul le PAN de test porte un motif bancaire : il simule un refus venu
+// de l'émetteur, là où révocation et expiration sont des verdicts
+// locaux. Le motif ne suit donc que si c'est bien le PAN qui a emporté
+// la décision. Le lire inconditionnellement faisait annoncer « moyen de
+// paiement expire (51 provision insuffisante) » à une carte à la fois
+// expirée et porteuse d'un PAN de refus : la cause disait l'un, le code
+// bancaire l'autre. Un marchand qui décide de reconduire sur le code
+// aurait reconduit une carte périmée.
+func outcomeFromUsability(pan string, expiryMonth, expiryYear int, revoked bool, now time.Time) (outcome, reason string, decline chaos.DeclineReason) {
+	usable, why := MethodUsability(pan, expiryMonth, expiryYear, revoked, now)
 	if usable {
 		return "", "", chaos.DeclineReason{}
 	}
-	// Seul le PAN de test porte un motif bancaire : il simule un refus
-	// venu de l'émetteur, là où révocation et expiration sont des
-	// verdicts locaux.
-	return OutcomeUnpaid, why, chaos.DeclineReasonForPAN(pm.PANFull)
+	if why != ReasonDeclinedTestPAN {
+		return OutcomeUnpaid, why, chaos.DeclineReason{}
+	}
+	return OutcomeUnpaid, why, chaos.DeclineReasonForPAN(pan)
 }
 
 // MethodUsability dit si un moyen de paiement peut encore produire un
@@ -632,16 +847,28 @@ func evaluateMethodOutcome(pm *PaymentMethod, now time.Time) (outcome, reason st
 // deviendrait faux au premier changement de mois.
 func MethodUsability(panFull string, expiryMonth, expiryYear int, revoked bool, now time.Time) (usable bool, reason string) {
 	if revoked {
-		return false, "moyen de paiement revoque"
+		return false, ReasonRevoked
 	}
 	if isExpired(expiryMonth, expiryYear, now) {
-		return false, "moyen de paiement expire"
+		return false, ReasonExpired
 	}
 	if chaos.IsDeclinedTestPAN(panFull) {
-		return false, "carte de test refusee"
+		return false, ReasonDeclinedTestPAN
 	}
 	return true, ""
 }
+
+// Motifs d'inexploitabilité d'un moyen de paiement, dans l'ordre où
+// MethodUsability les retient.
+//
+// Constantes et non littéraux : le motif ne sert pas qu'à l'affichage,
+// il décide si un code bancaire accompagne le refus. Une comparaison
+// sur une chaîne recopiée se serait décalée à la première reformulation.
+const (
+	ReasonRevoked         = "moyen de paiement revoque"
+	ReasonExpired         = "moyen de paiement expire"
+	ReasonDeclinedTestPAN = "carte de test refusee"
+)
 
 // decideReplayOutcome combine les 3 conditions du moyen de paiement
 // et le magic amount pour choisir l'outcome d'un rejeu one-click.
@@ -690,6 +917,10 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 			h.writeError(w, ErrCodePaymentMethodUnknown, err.Error())
 			return
 		}
+		if errors.Is(err, ErrInvalidCard) {
+			h.writeError(w, ErrCodeInvalidCard, err.Error())
+			return
+		}
 		h.writeDomainError(w, err)
 		return
 	}
@@ -701,6 +932,34 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 // store est privé et qu'on ne veut pas l'exposer directement.
 func (h *Handler) RevokeMethod(token string) error {
 	return h.store.RevokeMethod(token)
+}
+
+// ExpireMethod fait vieillir un alias jusqu'à le périmer.
+//
+// Une carte ne s'enrôle jamais déjà expirée — PayZen refuse
+// l'autorisation, donc l'alias n'est pas créé. Elle expire après, quand
+// le temps passe, et c'est ce moment-là qu'un marchand a besoin de
+// reproduire : l'échéance de la semaine prochaine sur une carte qui
+// vient d'atteindre sa date.
+//
+// Sans ce levier, le refus pour expiration ne serait plus atteignable
+// autrement qu'en attendant des mois. La date posée est délibérément
+// ancienne plutôt que « le mois dernier » : on cherche un état, pas une
+// simulation fine du calendrier.
+//
+// Idempotent, comme la révocation : un token inconnu n'est pas une
+// erreur, l'état demandé est déjà celui qu'on obtient.
+func (h *Handler) ExpireMethod(token string) error {
+	pm, err := h.store.MethodByToken(token)
+	if err != nil {
+		return err
+	}
+	if pm == nil {
+		return nil
+	}
+	pm.ExpiryMonth = 1
+	pm.ExpiryYear = 2000
+	return h.store.SaveMethod(pm)
 }
 
 // ErrSubscriptionUnknown est retournée quand un subscriptionId ne
@@ -1111,7 +1370,7 @@ func (h *Handler) browserReturn(w http.ResponseWriter, r *http.Request) {
 		DeliveryDelayMs:   req.DeliveryDelayMs,
 	}
 	hash, deliveryID, err := h.simulate(req.FormToken, req.ReturnURL, opts, "V4/Payment",
-		func(tx *Transaction) string { return tx.ReturnURL })
+		CanalNavigateur, func(tx *Transaction) string { return tx.ReturnURL })
 	if err != nil {
 		h.writeSimulateError(w, err)
 		return
@@ -1142,7 +1401,7 @@ func (h *Handler) ipn(w http.ResponseWriter, r *http.Request) {
 		DeliveryDelayMs:   req.DeliveryDelayMs,
 	}
 	hash, deliveryID, err := h.simulate(req.FormToken, req.NotificationURL, opts, "V4/Payment",
-		func(tx *Transaction) string { return tx.NotificationURL })
+		CanalServeur, func(tx *Transaction) string { return tx.NotificationURL })
 	if err != nil {
 		h.writeSimulateError(w, err)
 		return
@@ -1167,6 +1426,11 @@ type SimulateInput struct {
 	// V4/Payment. Le marchand s'en sert pour choisir son décodage.
 	AnswerType string
 
+	// Canal choisit la clé de signature et le kr-hash-key annoncé. Le
+	// zéro vaut CanalNavigateur — c'est le canal d'un retour de
+	// formulaire, celui qu'on joue par défaut.
+	Canal CanalSignature
+
 	// Opts porte l'issue à jouer et l'habillage du webhook.
 	Opts BrowserReturnOpts
 
@@ -1183,7 +1447,7 @@ type SimulateInput struct {
 // internal/delivery. Retourne le hash calculé et l'id de livraison,
 // ou une erreur (convertie en 400 par les handlers HTTP).
 func (h *Handler) Simulate(in SimulateInput) (hash, deliveryID string, err error) {
-	return h.simulate(in.FormToken, in.URLOverride, in.Opts, in.AnswerType, in.FallbackURL)
+	return h.simulate(in.FormToken, in.URLOverride, in.Opts, in.AnswerType, in.Canal, in.FallbackURL)
 }
 
 // simulate est la logique commune aux deux endpoints de simulation :
@@ -1195,9 +1459,14 @@ func (h *Handler) simulate(
 	formToken, urlOverride string,
 	opts BrowserReturnOpts,
 	answerType string,
+	canal CanalSignature,
 	fallbackURL func(*Transaction) string,
 ) (hash, deliveryID string, err error) {
-	if h.cfg.HMACKey == "" {
+	cle, nomCle := h.signature(canal)
+	if cle == "" {
+		if canal == CanalServeur {
+			return "", "", errors.New("simulation impossible : PAYSIM_PAYZEN_REST_PASSWORD non configure")
+		}
 		return "", "", errors.New("simulation impossible : PAYSIM_PAYZEN_HMAC_KEY non configuree")
 	}
 	if formToken == "" {
@@ -1234,19 +1503,20 @@ func (h *Handler) simulate(
 	// les mêmes checks qu'au rejeu récurrent s'appliquent. Un PSP
 	// réel refuse une carte expirée ou révoquée dès la présentation ;
 	// on reproduit ce comportement pour rester fidèle (invariant 3).
-	if tx.PaymentMethodToken != "" {
-		if pm, _ := h.store.MethodByToken(tx.PaymentMethodToken); pm != nil {
-			if o, r, d := evaluateMethodOutcome(pm, h.clock().Now()); o != "" {
-				opts.Outcome = o
-				if opts.ErrorMessage == "" {
-					opts.ErrorMessage = r
-				}
-				// Le PAN de test l'emporte sur le montant magique : il
-				// décrit un refus de l'émetteur, plus spécifique.
-				if d.Code != "" {
-					opts.DeclineReason = d
-				}
-			}
+	//
+	// Le contrôle vaut aussi pour la carte encore en attente
+	// d'enrôlement : c'est le premier paiement, celui-là même que le
+	// porteur vient de jouer, et une carte périmée n'y passe pas plus
+	// qu'à la centième échéance.
+	if o, r, d := h.conditionsDuMoyen(tx); o != "" {
+		opts.Outcome = o
+		if opts.ErrorMessage == "" {
+			opts.ErrorMessage = r
+		}
+		// Le PAN de test l'emporte sur le montant magique : il décrit
+		// un refus de l'émetteur, plus spécifique.
+		if d.Code != "" {
+			opts.DeclineReason = d
 		}
 	}
 	targetURL := urlOverride
@@ -1265,6 +1535,12 @@ func (h *Handler) simulate(
 	}
 	if err := applyOutcome(tx, opts.Outcome, opts.ErrorMessage, opts.DeclineReason); err != nil {
 		return "", "", fmt.Errorf("transition domain: %w", err)
+	}
+	// L'issue est connue : la carte présentée devient un alias, ou
+	// disparaît avec la tentative refusée. Le moyen est relu plus bas
+	// depuis le token que l'enrôlement vient de poser.
+	if _, err := h.enrollIfAccepted(tx); err != nil {
+		return "", "", fmt.Errorf("enrolement: %w", err)
 	}
 	tx.UpdatedAt = time.Now().UTC()
 	if err := h.store.Save(tx); err != nil {
@@ -1305,7 +1581,7 @@ func (h *Handler) simulate(
 		return "", "", fmt.Errorf("generation deliveryId: %w", err)
 	}
 	delay := time.Duration(opts.DeliveryDelayMs) * time.Millisecond
-	wh, hash, err := buildDeliveryWebhook(deliveryID, targetURL, answer, h.cfg.HMACKey, answerType,
+	wh, hash, err := buildDeliveryWebhook(deliveryID, targetURL, answer, cle, nomCle, answerType,
 		opts.Chaos.BadSignature, delay)
 	if err != nil {
 		return "", "", err
@@ -1324,7 +1600,7 @@ func (h *Handler) simulate(
 		if uerr != nil {
 			h.logger.Warn("chaos_duplicate_uuid_failed", "err", uerr)
 		} else {
-			dup, _, berr := buildDeliveryWebhook(dupID, targetURL, answer, h.cfg.HMACKey, answerType,
+			dup, _, berr := buildDeliveryWebhook(dupID, targetURL, answer, cle, nomCle, answerType,
 				opts.Chaos.BadSignature, delay)
 			if berr != nil {
 				h.logger.Warn("chaos_duplicate_build_failed", "err", berr)
