@@ -264,7 +264,7 @@ d'une interface entre deux fusions.
 
 ## Statut
 
-Préversion, tag `v0.6.1`. Le support Stripe et un GIF de démonstration
+Préversion, tag `v0.6.2`. Le support Stripe et un GIF de démonstration
 sont prévus.
 
 **Comment c'est validé.** Chaque pull request exécute le linter, les tests
