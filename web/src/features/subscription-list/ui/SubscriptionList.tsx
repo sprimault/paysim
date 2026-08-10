@@ -39,6 +39,9 @@ export function SubscriptionList() {
   const columns: Column<SubscriptionOutput>[] = [
     {
       header: t('subscription.list.column.state'),
+      // Les annulés au bout du tri croissant : ce qu'on cherche dans
+      // cette liste, c'est ce qui prélève encore.
+      sortValue: (s) => (s.cancelled ? 1 : 0),
       cell: (s) =>
         s.cancelled ? (
           <Badge tone="unpaid">{t('subscription.state.cancelled')}</Badge>
@@ -48,6 +51,7 @@ export function SubscriptionList() {
     },
     {
       header: t('subscription.list.column.provider'),
+      sortValue: (s) => s.provider,
       cell: (s) => (
         <span className="text-xs text-zinc-500 dark:text-zinc-400">{s.provider}</span>
       ),
@@ -55,6 +59,7 @@ export function SubscriptionList() {
     {
       header: t('subscription.list.column.amount'),
       align: 'right',
+      sortValue: (s) => s.amount,
       cell: (s) => (
         <span className="font-mono text-sm tabular text-zinc-900 dark:text-zinc-100">
           {formatAmount(s.amount)}
@@ -66,6 +71,7 @@ export function SubscriptionList() {
     },
     {
       header: t('subscription.list.column.order'),
+      sortValue: (s) => s.orderId ?? '',
       cell: (s) => (
         <span className="text-sm text-zinc-700 dark:text-zinc-300">{s.orderId || '—'}</span>
       ),
@@ -91,6 +97,7 @@ export function SubscriptionList() {
     },
     {
       header: t('subscription.list.column.created'),
+      sortValue: (s) => s.createdAt,
       cell: (s) => (
         <span
           className="text-xs text-zinc-500 dark:text-zinc-400"
@@ -150,6 +157,7 @@ export function SubscriptionList() {
         rows={filtered}
         rowKey={(s) => s.id}
         loading={loading}
+        pageSize={10}
         emptyState={
           <EmptyState
             icon={Repeat}

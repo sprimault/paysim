@@ -5,17 +5,17 @@ import { useMemo, useState } from 'react';
 import { CreditCard, Trash2 } from 'lucide-react';
 import { Button } from '@/shared/ui/Button';
 import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
+import { DataTable } from '@/shared/ui/DataTable';
 import { EmptyState } from '@/shared/ui/EmptyState';
 import { ProviderTabs } from '@/shared/ui/ProviderTabs';
 import { RefreshButton } from '@/shared/ui/RefreshButton';
-import { Skeleton } from '@/shared/ui/Skeleton';
 import { toast } from '@/shared/ui/toastStore';
 import { useT } from '@/shared/i18n/useT';
 import { deletePayment, purgePayments } from '@/entities/payment/api/paymentApi';
 import { usePaymentsList } from '@/entities/payment/model/usePayments';
 import { usePaymentStore } from '@/entities/payment/model/paymentStore';
 import type { PaymentSummary } from '@/shared/model';
-import { PaymentRow } from './PaymentRow';
+import { usePaymentColumns } from './paymentColumns';
 
 /**
  * Écran principal. Table dense — pas de cards ombrés. C'est ce qu'un
@@ -41,6 +41,14 @@ export function PaymentList() {
     if (!providerFilter) return payments;
     return payments.filter((p) => p.provider === providerFilter);
   }, [payments, providerFilter]);
+
+  const columns = usePaymentColumns({
+    showProvider: providerFilter === '',
+    onDelete: (payment, trigger) => {
+      setAncreLigne(trigger);
+      setToDelete(payment);
+    },
+  });
 
   async function handleDelete() {
     if (!toDelete) return;
@@ -125,48 +133,20 @@ export function PaymentList() {
         </div>
       )}
 
-      {loading && filtered.length === 0 ? (
-        <div className="rounded-panel border border-zinc-200 p-6 dark:border-zinc-800">
-          <Skeleton count={5} />
-        </div>
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          icon={CreditCard}
-          title={t('payment.list.empty.title')}
-          hint={t('payment.list.empty.hint')}
-        />
-      ) : (
-        <div className="overflow-hidden rounded-panel border border-zinc-200 dark:border-zinc-800">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-                <th className="px-4 py-2">{t('payment.list.column.state')}</th>
-                {providerFilter === '' && <th className="px-4 py-2">{t('payment.list.column.provider')}</th>}
-                <th className="px-4 py-2 text-right tabular">{t('payment.list.column.amount')}</th>
-                <th className="px-4 py-2">{t('payment.list.column.order')}</th>
-                <th className="px-4 py-2">{t('payment.list.column.uuid')}</th>
-                <th className="px-4 py-2">{t('payment.list.column.paymentMethod')}</th>
-                <th className="px-4 py-2">{t('payment.list.column.created')}</th>
-                <th className="px-4 py-2">{t('payment.list.column.updated')}</th>
-                <th className="px-4 py-2 sr-only">{t('payment.list.column.actions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((p) => (
-                <PaymentRow
-                  key={p.uuid}
-                  payment={p}
-                  onDelete={(payment, trigger) => {
-                    setAncreLigne(trigger);
-                    setToDelete(payment);
-                  }}
-                  showProvider={providerFilter === ''}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        columns={columns}
+        rows={filtered}
+        rowKey={(p) => p.uuid}
+        loading={loading}
+        pageSize={10}
+        emptyState={
+          <EmptyState
+            icon={CreditCard}
+            title={t('payment.list.empty.title')}
+            hint={t('payment.list.empty.hint')}
+          />
+        }
+      />
 
       {/* Confirmations */}
       <ConfirmDialog

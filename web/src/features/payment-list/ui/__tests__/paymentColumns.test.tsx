@@ -4,7 +4,8 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { PaymentRow } from '@/features/payment-list/ui/PaymentRow';
+import { usePaymentColumns } from '@/features/payment-list/ui/paymentColumns';
+import { DataTable } from '@/shared/ui/DataTable';
 import type { PaymentSummary } from '@/shared/model';
 
 const p: PaymentSummary = {
@@ -18,19 +19,24 @@ const p: PaymentSummary = {
   updatedAt: '2026-08-01T12:05:00Z',
 };
 
+/**
+ * Les colonnes ne se rendent que montées dans la table : c'est un hook,
+ * et le vrai contrat est ce que l'utilisateur lit à l'écran.
+ */
+function Table({ rows }: { rows: PaymentSummary[] }) {
+  const columns = usePaymentColumns({ showProvider: true });
+  return <DataTable columns={columns} rows={rows} rowKey={(r) => r.uuid} />;
+}
+
 function renderRow(payment: PaymentSummary = p) {
   return render(
     <MemoryRouter>
-      <table>
-        <tbody>
-          <PaymentRow payment={payment} />
-        </tbody>
-      </table>
+      <Table rows={[payment]} />
     </MemoryRouter>,
   );
 }
 
-describe('PaymentRow', () => {
+describe('colonnes de la liste des paiements', () => {
   it('rend le libellé d\'état, le montant, la devise et l\'orderId', () => {
     renderRow();
     expect(screen.getByText('Payé')).toBeInTheDocument();
