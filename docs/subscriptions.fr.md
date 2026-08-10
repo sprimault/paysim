@@ -68,6 +68,28 @@ le champ `provider` dans le body JSON (défaut `payzen` ; log Debug
 | POST    | `/{id}/trigger-billing`           | Déclenche l'échéance suivante            |
 | POST    | `/{id}/cancel`                    | Annule (idempotent, 204 sur id inconnu)  |
 
+La lecture et la liste retournent `billingCount` : le nombre d'échéances
+déjà produites par l'abonnement, réussies comme refusées. Il est recompté
+à la volée depuis les métadonnées des paiements plutôt que stocké — un
+compteur persisté serait à maintenir à chaque échéance et pourrait
+diverger du réel, ce qu'un simulateur ne doit précisément pas faire.
+
+### Lister les échéances d'un abonnement
+
+```
+GET /paysim/api/v1/payments?subscriptionId={id}
+```
+
+Retourne les paiements produits par cet abonnement, dans la même forme
+que n'importe quelle liste de paiements. C'est la lecture inverse de
+`Transaction.Metadata["subscriptionId"]`, et le filtre est appliqué côté
+serveur : le sommaire d'un paiement n'expose pas les métadonnées, un
+client ne pourrait donc pas trancher lui-même.
+
+Un identifiant inconnu retourne une liste vide, jamais la liste entière.
+Un filtre qui dégénère en « pas de filtre » présenterait tous les
+paiements de l'instance comme les échéances de cet abonnement.
+
 ## Notification de l'échéance
 
 Chaque `trigger-billing` émet un webhook, qu'elle réussisse ou échoue.

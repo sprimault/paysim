@@ -67,6 +67,28 @@ emitted on the default fallback).
 | POST   | `/{id}/trigger-billing`           | Fire the next installment now           |
 | POST   | `/{id}/cancel`                    | Cancel (idempotent, 204 on unknown id)  |
 
+Read and list both return `billingCount`: how many installments the
+subscription has produced, successful and declined alike. It is counted
+on the fly from payment metadata rather than stored — a persisted counter
+would have to be maintained on every installment and could drift from
+reality, which is precisely what a simulator must not do.
+
+### Listing a subscription's installments
+
+```
+GET /paysim/api/v1/payments?subscriptionId={id}
+```
+
+Returns the payments this subscription produced, in the same shape as any
+other payment list. This is the reverse read of
+`Transaction.Metadata["subscriptionId"]`, and it is filtered server-side:
+the payment summary does not expose metadata, so a client could not sort
+them out on its own.
+
+An unknown id returns an empty list — never the full one. A filter that
+silently turns into "no filter" would present every payment in the
+instance as this subscription's installments.
+
 ## Billing notification
 
 Every `trigger-billing` emits a webhook, whether it succeeds or fails.
