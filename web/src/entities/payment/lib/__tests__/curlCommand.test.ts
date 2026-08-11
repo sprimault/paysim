@@ -56,6 +56,50 @@ describe('buildReplayCurl', () => {
     expect(c.metadata).toEqual({ plan: 'pro' });
   });
 
+  // L'API sérialise les sous-structures entières : une adresse jamais
+  // renseignée occupe huit champs à null, et la commande passe de deux
+  // à sept cents caractères sans rien y gagner.
+  it('élague les champs nuls du contexte client', () => {
+    const bavard = {
+      ...base,
+      customer: {
+        email: 'client29@example.com',
+        reference: 'client-229',
+        billingDetails: { address: null, city: null, country: null, zipCode: null },
+        extraDetails: { ipAddress: null, fingerPrintId: null },
+      },
+    } as unknown as PaymentInStore;
+    const c = buildReplayCurl(bavard, 'http://x');
+    expect(corps(c).customer).toEqual({
+      email: 'client29@example.com',
+      reference: 'client-229',
+    });
+    expect(c).not.toContain('null');
+  });
+
+  // Ce qui reste renseigné doit survivre à l'élagage, à tous les
+  // niveaux — sinon on rejouerait un cas plus pauvre que l'original.
+  it('garde les champs renseignés des sous-structures', () => {
+    const partiel = {
+      ...base,
+      customer: {
+        email: 'alice@example.com',
+        billingDetails: { city: 'Paris', country: null, zipCode: '75002' },
+      },
+    } as unknown as PaymentInStore;
+    expect(corps(buildReplayCurl(partiel, 'http://x')).customer).toEqual({
+      email: 'alice@example.com',
+      billingDetails: { city: 'Paris', zipCode: '75002' },
+    });
+  });
+
+  // Un zéro est une valeur : à zéro centime, le paiement est un
+  // enrôlement pur. L'élaguer changerait le cas rejoué.
+  it('ne confond pas zéro et absence', () => {
+    const enrolement: PaymentInStore = { ...base, amount: 0 };
+    expect(corps(buildReplayCurl(enrolement, 'http://x')).amount).toBe(0);
+  });
+
   // Un objet vide n'apporte rien et allonge une commande déjà longue.
   it('omet des métadonnées vides', () => {
     expect(corps(buildReplayCurl({ ...base, metadata: {} }, 'http://x'))).not.toHaveProperty(

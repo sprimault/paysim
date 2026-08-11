@@ -13,6 +13,7 @@ import { useFormatRelative } from '@/shared/hooks/useFormatRelative';
 import { truncate } from '@/shared/lib/strings';
 import { paymentStateMeta } from '@/shared/lib/statusMeta';
 import { useT } from '@/shared/i18n/useT';
+import { CopyCurlButton } from '@/entities/payment/ui/CopyCurlButton';
 import { ReplayLastWebhookButton } from './ReplayLastWebhookButton';
 import type { PaymentSummary } from '@/shared/model';
 
@@ -174,6 +175,11 @@ export function usePaymentColumns({ onDelete, showProvider }: Options): Column<P
       align: 'right',
       cell: (p) => (
         <div className="inline-flex items-center gap-0.5">
+          {/* Dans la liste et pas seulement sur la fiche : sans quoi il
+              faut ouvrir un paiement pour découvrir que la commande
+              existe, alors que c'est en balayant la liste qu'on décide
+              lequel rejouer. */}
+          <CopyCurlButton uuid={p.uuid} />
           <ReplayLastWebhookButton payment={p} />
           {onDelete && (
             <Tooltip label={t('common.action.delete')} focusExterne>
