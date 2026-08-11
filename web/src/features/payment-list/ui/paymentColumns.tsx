@@ -13,6 +13,7 @@ import { useFormatRelative } from '@/shared/hooks/useFormatRelative';
 import { truncate } from '@/shared/lib/strings';
 import { paymentStateMeta } from '@/shared/lib/statusMeta';
 import { useT } from '@/shared/i18n/useT';
+import { ReplayLastWebhookButton } from './ReplayLastWebhookButton';
 import type { PaymentSummary } from '@/shared/model';
 
 interface Options {
@@ -173,6 +174,7 @@ export function usePaymentColumns({ onDelete, showProvider }: Options): Column<P
       align: 'right',
       cell: (p) => (
         <div className="inline-flex items-center gap-0.5">
+          <ReplayLastWebhookButton payment={p} />
           {onDelete && (
             <Tooltip label={t('common.action.delete')} focusExterne>
               <button
