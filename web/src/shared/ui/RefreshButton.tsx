@@ -32,7 +32,7 @@ export function RefreshButton({ onRefresh, title }: RefreshButtonProps) {
     }
   }
   return (
-    <Tooltip label={tip} enfantFocusable>
+    <Tooltip label={tip} focusExterne>
       <button
         type="button"
         onClick={handle}

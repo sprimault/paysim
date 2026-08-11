@@ -89,9 +89,11 @@ describe('<SubscriptionBillings />', () => {
     await waitFor(() => {
       expect(screen.getByText('51')).toBeInTheDocument();
     });
-    // L'infobulle porte sur l'etat et son code d'un seul tenant.
-    const zone = screen.getByLabelText('provision insuffisante');
-    expect(zone).toContainElement(screen.getByText('51'));
+    // L'infobulle porte sur l'etat et son code d'un seul tenant. Elle ne
+    // porte pas d'aria-label ici : la ligne entiere est un lien, et un
+    // element focusable dans un <a> est du contenu interactif imbrique.
+    const zone = screen.getByText('51').parentElement;
+    if (!zone) throw new Error('zone survolable absente');
     expect(zone).toContainElement(screen.getByText('Refusé'));
 
     fireEvent.mouseEnter(zone);

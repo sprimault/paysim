@@ -95,7 +95,7 @@ export function SubscriptionBillings({ subscriptionId }: { subscriptionId: strin
                 {/* Infobulle sur l'état et son code d'un seul tenant :
                     viser le badge de deux caractères demandait une
                     précision inutile pour lire un libellé. */}
-                <Tooltip label={p.declineMessage}>
+                <Tooltip label={p.declineMessage} focusExterne>
                   <Badge tone={meta.tone} icon={<StateIcon size={12} />}>
                     {t(meta.labelKey)}
                   </Badge>

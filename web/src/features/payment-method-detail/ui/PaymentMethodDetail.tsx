@@ -10,6 +10,7 @@ import { Card } from '@/shared/ui/Card';
 import { PaymentMethodUsage } from './PaymentMethodUsage';
 import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
 import { CopyButton } from '@/shared/ui/CopyButton';
+import { ErrorBanner } from '@/shared/ui/ErrorBanner';
 import { toast } from '@/shared/ui/toastStore';
 import { useT } from '@/shared/i18n/useT';
 import { formatShort } from '@/shared/lib/dates';
@@ -38,9 +39,7 @@ export function PaymentMethodDetail() {
   }
   if (error && !method) {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-6 text-sm text-rose-700 dark:text-rose-300">
-        {t('paymentMethod.detail.errorPrefix', { error })}
-      </div>
+      <ErrorBanner pleinePage message={t('paymentMethod.detail.errorPrefix', { error })} />
     );
   }
   if (!method) return null;

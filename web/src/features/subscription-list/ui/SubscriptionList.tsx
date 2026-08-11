@@ -1,23 +1,32 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { ChevronRight, Repeat } from 'lucide-react';
 import { Link } from 'react-router';
 import { Badge } from '@/shared/ui/Badge';
 import { CopyButton } from '@/shared/ui/CopyButton';
 import { DataTable, type Column } from '@/shared/ui/DataTable';
 import { EmptyState } from '@/shared/ui/EmptyState';
+import { ErrorBanner } from '@/shared/ui/ErrorBanner';
+import { ListFilters, type FilterState } from '@/shared/ui/ListFilters';
 import { ProviderTabs } from '@/shared/ui/ProviderTabs';
 import { RefreshButton } from '@/shared/ui/RefreshButton';
 import { Tooltip } from '@/shared/ui/Tooltip';
 import { formatAmount } from '@/shared/lib/numbers';
 import { formatShort } from '@/shared/lib/dates';
 import { useFormatRelative } from '@/shared/hooks/useFormatRelative';
+import { useListFilters } from '@/shared/hooks/useListFilters';
 import { truncate } from '@/shared/lib/strings';
 import { useT } from '@/shared/i18n/useT';
 import { useSubscriptionsList } from '@/entities/subscription/model/useSubscriptions';
 import type { SubscriptionOutput } from '@/shared/model';
+
+/** Un abonnement prélève encore, ou plus : il n'y a pas de troisième cas. */
+const ETATS_ABONNEMENT: FilterState[] = [
+  { value: 'active', labelKey: 'subscription.state.active' },
+  { value: 'cancelled', labelKey: 'subscription.state.cancelled' },
+];
 
 /**
  * Liste des abonnements. Structure alignée sur PaymentList — table
@@ -29,13 +38,16 @@ export function SubscriptionList() {
   const rel = useFormatRelative();
   const { subscriptions, loading, error, refresh } = useSubscriptionsList();
   const [providerFilter, setProviderFilter] = useState<string>('');
-  const filtered = useMemo(
-    () =>
-      providerFilter
-        ? subscriptions.filter((s) => s.provider === providerFilter)
-        : subscriptions,
-    [subscriptions, providerFilter],
-  );
+
+  const { query, setQuery, etats, setEtats, filtered, total } = useListFilters(subscriptions, {
+    provider: providerFilter,
+    providerOf: (s) => s.provider,
+    searchFields: (s) => [s.orderId, s.id, s.paymentMethodToken],
+    // Un abonnement n'a pas de champ d'état : il est actif tant qu'il
+    // n'est pas annulé. On le dérive pour que le filtre s'exprime dans
+    // le même vocabulaire que les badges de la liste.
+    stateOf: (s) => (s.cancelled ? 'cancelled' : 'active'),
+  });
 
   const columns: Column<SubscriptionOutput>[] = [
     {
@@ -131,7 +143,7 @@ export function SubscriptionList() {
       srOnly: true,
       align: 'right',
       cell: (s) => (
-        <Tooltip label={t('subscription.list.action.open')} enfantFocusable>
+        <Tooltip label={t('subscription.list.action.open')} focusExterne>
           <Link
             to={`/subscriptions/${s.id}`}
             className="inline-flex rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
@@ -167,11 +179,18 @@ export function SubscriptionList() {
 
       <ProviderTabs value={providerFilter} onChange={setProviderFilter} />
 
-      {error && (
-        <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
-          {t('subscription.list.errorPrefix', { error })}
-        </div>
-      )}
+      <ListFilters
+        query={query}
+        onQueryChange={setQuery}
+        placeholderKey="common.filters.searchSubscriptions"
+        states={ETATS_ABONNEMENT}
+        selected={etats}
+        onSelectedChange={setEtats}
+        shown={filtered.length}
+        total={total}
+      />
+
+      {error && <ErrorBanner message={t('subscription.list.errorPrefix', { error })} />}
 
       <DataTable
         columns={columns}

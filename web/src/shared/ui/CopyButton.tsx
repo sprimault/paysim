@@ -34,7 +34,7 @@ export function CopyButton({ value, className = '', label }: CopyButtonProps) {
   }
 
   return (
-    <Tooltip label={tip} enfantFocusable>
+    <Tooltip label={tip} focusExterne>
       <button
         type="button"
         onClick={handleCopy}

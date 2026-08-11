@@ -1,7 +1,7 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PaymentMethodList } from '@/features/payment-method-list/ui/PaymentMethodList';
@@ -54,7 +54,8 @@ describe('<PaymentMethodList />', () => {
         <PaymentMethodList />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Actif')).toBeInTheDocument();
+    // « Actif » figure aussi sur le bouton de filtre : on vise la ligne.
+    expect(within(screen.getAllByRole('row')[1]).getByText('Actif')).toBeInTheDocument();
     expect(screen.getByText('VISA')).toBeInTheDocument();
     expect(screen.getByText('411111XXXXXX1111')).toBeInTheDocument();
     expect(screen.getByText('12/2028')).toBeInTheDocument();
@@ -70,7 +71,7 @@ describe('<PaymentMethodList />', () => {
         <PaymentMethodList />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Révoqué')).toBeInTheDocument();
+    expect(within(screen.getAllByRole('row')[1]).getByText('Révoqué')).toBeInTheDocument();
   });
 
   it('trie par createdAt décroissant', () => {

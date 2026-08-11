@@ -51,7 +51,7 @@ function Option({
 }) {
   const active = value === current;
   return (
-    <Tooltip label={label} enfantFocusable>
+    <Tooltip label={label} focusExterne>
       <button
         type="button"
         onClick={() => onSelect(value)}

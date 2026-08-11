@@ -19,6 +19,27 @@ export function truncate(s: string, max: number): string {
 }
 
 /**
+ * matchesSearch dit si l'un des champs contient la recherche.
+ *
+ * Correspondance partielle et insensible à la casse : on colle un bout
+ * d'UUID lu dans un log, ou on tape « cmd-10 » pour retrouver une série
+ * de commandes. Exiger l'égalité obligerait à connaître la valeur
+ * exacte, ce qu'on cherche justement.
+ *
+ * Une recherche vide laisse tout passer — c'est l'absence de filtre, pas
+ * un filtre qui ne trouve rien.
+ *
+ * Les champs absents sont ignorés plutôt que traités comme des chaînes
+ * vides : un paiement sans token ne doit pas ressortir sur une recherche
+ * qui ne le concerne pas.
+ */
+export function matchesSearch(query: string, ...fields: (string | undefined)[]): boolean {
+  const q = query.trim().toLowerCase();
+  if (q === '') return true;
+  return fields.some((f) => f !== undefined && f.toLowerCase().includes(q));
+}
+
+/**
  * Mask masque le milieu d'une chaîne en gardant `prefix` caractères
  * en tête et `suffix` en queue ; le milieu est remplacé par des
  * étoiles. Si prefix+suffix+3 dépasse la longueur, la totalité est

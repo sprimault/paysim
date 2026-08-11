@@ -36,20 +36,24 @@ const BORD = 8; // distance minimale aux bords de la fenêtre
 export function Tooltip({
   label,
   children,
-  enfantFocusable = false,
+  focusExterne = false,
 }: {
   label?: string;
   children: ReactNode;
   /**
-   * L'enfant gère déjà son focus — un bouton, un lien. L'enveloppe ne
-   * pose alors ni `tabIndex` ni `aria-label` : deux arrêts au clavier
-   * pour un seul contrôle, et un nom accessible en double, desservent
-   * plus qu'ils n'aident.
+   * Le focus est déjà géré autour de l'infobulle — par l'enfant (un
+   * bouton, un lien) ou par un ancêtre (l'infobulle est posée dans un
+   * lien). L'enveloppe ne pose alors ni `tabIndex` ni `aria-label`.
+   *
+   * Deux raisons, et la seconde est bloquante : un contrôle qui prend
+   * deux arrêts au clavier et porte deux noms accessibles dessert plus
+   * qu'il n'aide ; et un élément focusable **à l'intérieur d'un `<a>`**
+   * est du contenu interactif imbriqué, que HTML5 interdit.
    *
    * L'infobulle apparaît quand même au focus : React propage `focus` et
    * `blur` depuis l'enfant, contrairement au DOM natif.
    */
-  enfantFocusable?: boolean;
+  focusExterne?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
   const ancreRef = useRef<HTMLSpanElement>(null);
@@ -115,7 +119,7 @@ export function Tooltip({
         onMouseLeave={() => setVisible(false)}
         onFocus={() => setVisible(true)}
         onBlur={() => setVisible(false)}
-        {...(enfantFocusable
+        {...(focusExterne
           ? {}
           : // Lu par les lecteurs d'écran, pour qui le survol n'existe
             // pas, et atteignable au clavier.
