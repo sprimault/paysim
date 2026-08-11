@@ -565,14 +565,40 @@ Reproduit le contrat PayZen byte-pour-byte — validé contre le
 - **Algorithme** : HMAC-SHA-256, encodage hex minuscule (pas base64).
 - **Message** : contenu brut du champ `kr-answer`, chaîne JSON exacte,
   byte-pour-byte.
-- **Clé** : la clé HMAC de la boutique (`PAYSIM_PAYZEN_HMAC_KEY` côté
-  serveur, sa contrepartie côté marchand).
 - **Champs POST accompagnant `kr-answer`** :
   - `kr-hash` : la signature.
   - `kr-hash-algorithm` : `sha256_hmac`.
-  - `kr-hash-key` : `sha256_hmac`.
+  - `kr-hash-key` : **`sha256_hmac` ou `password` selon le canal**, voir
+    ci-dessous.
   - `kr-answer-type` : `V4/Payment`.
 - **Vérification** : temps constant (`hmac.Equal`), jamais `==`.
+
+### Deux clés, une par canal
+
+PayZen ne signe pas ses deux canaux avec la même clé. Il annonce
+laquelle il a employée dans `kr-hash-key`, et c'est ce champ — non le
+canal deviné — qui doit décider côté marchand :
+
+| `kr-hash-key` | Canal | Clé côté Paysim | Clé côté marchand |
+| --- | --- | --- | --- |
+| `sha256_hmac` | Retour navigateur | `PAYSIM_PAYZEN_HMAC_KEY` | clé HMAC de la boutique |
+| `password` | Notification serveur (IPN) | `PAYSIM_PAYZEN_REST_PASSWORD` | mot de passe d'API REST |
+
+Le SDK PHP officiel procède exactement ainsi :
+
+```php
+if ($_POST['kr-hash-key'] == "sha256_hmac") { $key = $this->_hashKey; }
+elseif ($_POST['kr-hash-key'] == "password") { $key = $this->_password; }
+```
+
+**Vérifier une notification avec la clé du navigateur échoue.** C'est
+la panne qu'un intégrateur emporte en production s'il n'a codé qu'une
+seule branche — elle passait avant la v0.6.3, où Paysim annonçait
+`sha256_hmac` partout et signait tout avec la même clé.
+
+Les deux valeurs peuvent être identiques en local ; ce qui compte est
+que le marchand emprunte le chemin de vérification que la production
+empruntera.
 
 **Vecteur de validation** (extrait du SDK Java Lyra) :
 

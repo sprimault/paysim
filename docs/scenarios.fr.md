@@ -58,7 +58,15 @@ steps:
     state: captured
 ```
 
-Noms de champs en `snake_case` en YAML, `camelCase` sur le fil (API JSON).
+> **Deux vocabulaires, à ne pas confondre.** Ce DSL YAML est en
+> `snake_case` (`order_id`, `expiry_month`, `form_action`) ; l'API HTTP,
+> elle, attend du `camelCase` (`orderId`, `expiryMonth`, `formAction`).
+>
+> Recopier un champ YAML dans un `curl` ne produit pas d'erreur de
+> syntaxe : le champ inconnu est simplement ignoré. Un `order_id` passé
+> en JSON donne un paiement sans référence de commande, et un
+> `expiry_month` donne une carte sans date — désormais refusée en `400`,
+> ce qui au moins le signale.
 
 ## Référence des actions
 
