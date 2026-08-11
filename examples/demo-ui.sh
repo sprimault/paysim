@@ -5,12 +5,16 @@
 # Différence avec seed-paysim.sh, qui le complète plutôt qu'il ne le
 # remplace : celui-ci suppose un Paysim déjà lancé et se contente de le
 # peupler. Ici, tout est monté — Paysim, un récepteur de webhooks, le
-# réseau qui les relie — puis détruit d'une commande.
+# réseau qui les relie — puis détruit d'une commande. Le jeu de données
+# produit est le même dans les deux, et dans leurs variantes .ps1.
 #
-# Le jeu de données couvre ce qu'on veut voir d'un coup d'œil : un
-# contexte client complet, des refus avec des motifs distincts, un
-# paiement en attente, un moyen inexploitable, un abonnement avec une
-# échéance jouée, un rejeu en un clic.
+# Ce jeu tient en deux parties. Des cas remarquables d'abord, chacun
+# porteur d'une chose à voir : contexte client complet, motifs de refus
+# distincts, paiement en attente, moyen expiré, moyen révoqué,
+# échéance refusée, abonnement annulé. Du volume ensuite — trente
+# paiements répartis sur les états. Il n'est pas décoratif : la
+# recherche, les filtres d'état, la pagination et l'en-tête collant ne
+# se jugent pas sur huit lignes.
 #
 # Prérequis :
 #   - Docker installé ET démarré — sous Windows ou macOS, cela veut dire
@@ -86,7 +90,7 @@ for _ in $(seq 1 30); do
 done
 
 API="http://127.0.0.1:$PORT/paysim/api/v1"
-post() { curl -s -X POST "$API$1" -H 'Content-Type: application/json' -d "$2"; }
+post() { curl -s -X POST "$API$1" -H 'Content-Type: application/json' -d "${2:-}"; }
 
 # Extraction par grep plutôt que par un interpréteur JSON, comme
 # seed-paysim.sh : sous git-bash, `python3` n'est pas Python mais le
@@ -94,6 +98,12 @@ post() { curl -s -X POST "$API$1" -H 'Content-Type: application/json' -d "$2"; }
 # stdout. Les champs lus sont des chaînes plates, un grep suffit — et le
 # script ne dépend plus que de bash, curl et grep.
 field() { grep -o "\"$1\":\"[^\"]*\"" | head -1 | sed "s/.*\":\"//; s/\"$//"; }
+
+# Enrôle une carte sans rien débiter et rend l'alias créé.
+enrole() {
+  post /payments "{\"amount\":0,\"currency\":\"EUR\",\"orderId\":\"$1\",
+    \"formAction\":\"REGISTER\",\"card\":$2}" | field paymentMethodToken
+}
 
 # Compte les éléments d'une collection en s'appuyant sur une clé présente
 # une fois par entrée. Approximatif par nature, suffisant pour un
@@ -140,6 +150,23 @@ T1=$(post /payments '{
 }' | field paymentMethodToken)
 echo "  moyen enrole (contexte complet) : $T1"
 
+T2=$(enrole REGISTER-2042 '{"pan":"4111111111111111","expiryMonth":6,"expiryYear":2028}')
+enrole REGISTER-2045 '{"pan":"371449635398431","expiryMonth":3,"expiryYear":2029}' >/dev/null
+echo "  moyens enroles (VISA, AMEX) : actifs"
+
+# Une carte ne s'enrole jamais deja expiree : l'autorisation serait
+# refusee et aucun alias ne naitrait. On l'enregistre saine, puis on la
+# fait vieillir — c'est le cas reel, et le seul qui produise un alias
+# perime a regarder dans l'interface.
+T3=$(enrole REGISTER-2043 '{"pan":"4242424242424242","expiryMonth":12,"expiryYear":2030}')
+post "/payment-methods/$T3/expire" >/dev/null
+echo "  moyen expire : $T3"
+
+T4=$(enrole REGISTER-2044 '{"pan":"2223000048400011","expiryMonth":10,"expiryYear":2030}')
+echo "  moyen a revoquer plus bas : $T4"
+
+T6=$(enrole REGISTER-2046 '{"pan":"4111111111111111","expiryMonth":9,"expiryYear":2031}')
+
 U2=$(post /payments '{"amount": 4990, "currency": "EUR", "orderId": "CMD-1042",
   "customer": {"email": "bob@example.com", "reference": "client-1042"}}' | field uuid)
 post "/payments/$U2/simulate" '{"outcome":"PAID","channel":"ipn"}' >/dev/null
@@ -158,27 +185,63 @@ post /payments '{"amount": 12500, "currency": "EUR", "orderId": "CMD-1044",
   "customer": {"email": "dave@example.com", "reference": "client-1044"}}' >/dev/null
 echo "  paiement en attente : CMD-1044"
 
-post /payments '{"amount": 0, "currency": "EUR", "orderId": "REGISTER-2042",
-  "formAction": "REGISTER",
-  "card": {"pan": "4111111111111111", "expiryMonth": 6, "expiryYear": 2028}}' >/dev/null
-echo "  moyen enrole (sans contexte) : VISA"
-
-post /payments '{"amount": 0, "currency": "EUR", "orderId": "REGISTER-2043",
-  "formAction": "REGISTER",
-  "card": {"pan": "4000000000000002", "expiryMonth": 1, "expiryYear": 2020,
-           "holderName": "CARTE EXPIREE"}}' >/dev/null
-echo "  moyen inexploitable : PAN de refus + expire"
+U8=$(post /payments '{"amount": 7500, "currency": "EUR", "orderId": "CMD-1048",
+  "customer": {"email": "erin@example.com", "reference": "client-1048"}}' | field uuid)
+post "/payments/$U8/simulate" '{"outcome":"AUTHORISED","channel":"ipn"}' >/dev/null
+echo "  paiement autorise, non debite : CMD-1048"
 
 S1=$(post /subscriptions "{\"paymentMethodToken\": \"$T1\",
   \"amount\": 2990, \"currency\": \"EUR\", \"orderId\": \"SUB-77\",
   \"effectDate\": \"2026-09-01T00:00:00Z\",
-  \"rrule\": \"RRULE:FREQ=MONTHLY;INTERVAL=1\"}" | field id)
-post "/subscriptions/$S1/trigger-billing" '{}' >/dev/null
-echo "  abonnement + 1 echeance : SUB-77"
+  \"rrule\": \"RRULE:FREQ=MONTHLY;INTERVAL=1\",
+  \"metadata\": {\"plan\": \"pro\"}}" | field id)
+post "/subscriptions/$S1/trigger-billing" >/dev/null
+post "/subscriptions/$S1/trigger-billing" >/dev/null
+echo "  abonnement + 2 echeances : SUB-77"
+
+# L'echeance refusee vient d'un moyen devenu inexploitable apres coup, et
+# non d'une carte de refus enrolee : celle-la ne produirait aucun alias,
+# donc aucun abonnement a porter.
+S2=$(post /subscriptions "{\"paymentMethodToken\": \"$T4\",
+  \"amount\": 990, \"currency\": \"EUR\", \"orderId\": \"SUB-78\",
+  \"rrule\": \"RRULE:FREQ=MONTHLY\"}" | field id)
+post "/payment-methods/$T4/revoke" >/dev/null
+post "/subscriptions/$S2/trigger-billing" >/dev/null
+echo "  moyen revoque puis echeance refusee : SUB-78"
+
+S3=$(post /subscriptions "{\"paymentMethodToken\": \"$T6\",
+  \"amount\": 4900, \"currency\": \"EUR\", \"orderId\": \"SUB-79\",
+  \"rrule\": \"RRULE:FREQ=YEARLY\"}" | field id)
+post "/subscriptions/$S3/cancel" >/dev/null
+echo "  abonnement annule : SUB-79"
+
+post /subscriptions "{\"paymentMethodToken\": \"$T2\",
+  \"amount\": 1490, \"currency\": \"EUR\", \"orderId\": \"SUB-80\",
+  \"rrule\": \"RRULE:FREQ=WEEKLY\"}" >/dev/null
+echo "  abonnement sans echeance : SUB-80"
 
 post /payments "{\"amount\": 1990, \"currency\": \"EUR\", \"orderId\": \"CMD-1045\",
   \"paymentMethodToken\": \"$T1\"}" >/dev/null
 echo "  rejeu one-click : CMD-1045"
+
+# Volume. Les etats sont repartis par le rang et non tires au hasard :
+# deux executions donnent le meme ecran, ce qui rend une capture ou une
+# comparaison reproductible.
+for i in $(seq 1 30); do
+  order=$(printf 'CMD-2%03d' "$i")
+  base=$(( (12 + i * 7) * 100 ))
+  case $(( i % 5 )) in
+    0) case $(( (i / 5) % 3 )) in 0) c=1 ;; 1) c=2 ;; *) c=4 ;; esac
+       amount=$(( base + c )); issue=PAID ;;
+    1) amount=$base; issue=NONE ;;
+    3) amount=$base; issue=AUTHORISED ;;
+    *) amount=$(( base + 50 )); issue=PAID ;;
+  esac
+  U=$(post /payments "{\"amount\": $amount, \"currency\": \"EUR\", \"orderId\": \"$order\",
+    \"customer\": {\"email\": \"client$i@example.com\", \"reference\": \"client-2$i\"}}" | field uuid)
+  [ "$issue" = NONE ] || post "/payments/$U/simulate" "{\"outcome\":\"$issue\",\"channel\":\"ipn\"}" >/dev/null
+done
+echo "  volume : 30 paiements repartis sur les etats"
 
 sleep 2
 
@@ -192,5 +255,8 @@ echo "Bloc Client complet  : REGISTER-2041"
 echo "Motifs de refus      : CMD-1043 (51), CMD-1046 (43), CMD-1047 (91)"
 echo "Charges utiles       : comparer CMD-1042 et CMD-1043"
 echo "Charge utile vide    : CMD-1044, aucune livraison rattachee"
+echo "Etats des moyens     : REGISTER-2043 expire, REGISTER-2044 revoque"
+echo "Abonnements          : SUB-77 (2 echeances), SUB-78 (refusee), SUB-79 (annule), SUB-80 (aucune)"
+echo "Recherche            : taper « client-2 » pour filtrer le volume"
 echo
 echo "Pour arreter : docker rm -f $NAME $SINK && docker network rm $NET"

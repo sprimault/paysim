@@ -388,11 +388,26 @@ bash examples/seed-paysim.sh
 ./examples/seed-paysim.ps1
 ```
 
-Les deux scripts produisent les mêmes 11 cas : capture nominale,
-refus magic amount, autorisation seule, enrolement Visa + abonnement
-mensuel avec 2 renewals réussis, magic PAN + renewal en échec,
-enrolements Mastercard / Amex / carte expirée, et une révocation
-manuelle.
+Les deux scripts — et les deux variantes de `demo-ui` plus bas —
+produisent le même jeu, en deux parties.
+
+Des cas remarquables d'abord, chacun porteur d'une chose à voir : un
+enrôlement au contexte client complet, une capture nominale, trois
+refus de motifs distincts (51, 43, 91), un paiement en attente, une
+autorisation seule, un moyen expiré, un moyen révoqué, un abonnement à
+deux échéances jouées, un dont l'échéance est refusée, un annulé, un
+sans aucune échéance, et un rejeu one-click.
+
+Du volume ensuite : trente paiements répartis sur les états. Cette
+partie n'est pas décorative — la recherche, les filtres d'état, la
+pagination et l'en-tête collant du tableau ne se jugent pas sur huit
+lignes. Les états sont attribués par le rang plutôt qu'au hasard, si
+bien que deux exécutions donnent le même écran.
+
+À noter : l'échéance refusée vient d'un moyen révoqué *après* création
+de l'abonnement. Enrôler une carte de test refusée ne marcherait pas —
+une autorisation déclinée ne crée aucun alias, il n'y aurait donc rien
+à abonner.
 
 ### Tout monter d'une commande
 
@@ -414,7 +429,7 @@ bash examples/demo-ui.sh
 veut dire Docker Desktop lancé, pas seulement installé. Les deux scripts
 le vérifient d'emblée et s'arrêtent avec un message clair sinon.
 
-Au-delà de Docker, la version bash demande `curl` et `python3` ; la
+Au-delà de Docker, la version bash demande `curl` et `grep` ; la
 version PowerShell ne demande rien de plus, `Invoke-RestMethod` étant
 natif. Les deux affichent à la fin l'URL de l'interface.
 

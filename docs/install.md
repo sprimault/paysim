@@ -369,10 +369,26 @@ bash examples/seed-paysim.sh
 ./examples/seed-paysim.ps1
 ```
 
-Both scripts create the same 11 cases: nominal capture, magic-amount
-decline, authorization-only, Visa enrollment + monthly subscription
-with 2 successful renewals, magic-PAN enrollment + failing renewal,
-Mastercard / Amex / expired-card enrollments, and a manual revocation.
+Both scripts — and both `demo-ui` variants below — create the same
+dataset, in two parts.
+
+Notable cases first, each there to show one thing: an enrollment
+carrying a full customer context, a nominal capture, three declines
+with distinct reasons (51, 43, 91), a pending payment, an
+authorization-only, an expired payment method, a revoked one, a
+subscription with two successful renewals, one whose renewal is
+declined, a cancelled one, one with no billing yet, and a one-click
+replay.
+
+Volume next: thirty payments spread across the states. That part is
+not decoration — search, state filters, pagination and the sticky
+table header cannot be judged on eight rows. States are assigned by
+rank rather than at random, so two runs give the same screen.
+
+Note the failing renewal comes from a payment method revoked *after*
+the subscription was created. Enrolling a declining test PAN would not
+work: a refused authorization creates no alias, so there would be
+nothing to subscribe.
 
 Options: `--purge` (bash) / `-Purge` (PowerShell) clears existing
 payments first. Set `NOTIF_URL` if you want webhooks delivered
@@ -400,7 +416,7 @@ bash examples/demo-ui.sh
 Docker Desktop started, not merely installed. Both scripts check this
 upfront and stop with a clear message otherwise.
 
-Beyond Docker, the bash version needs `curl` and `python3`; the
+Beyond Docker, the bash version needs `curl` and `grep`; the
 PowerShell one needs nothing extra, as `Invoke-RestMethod` is built in.
 Both print the UI URL when done.
 
