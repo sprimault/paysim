@@ -8,13 +8,16 @@ import { LangToggle } from '@/shared/ui/LangToggle';
 import { ResetAllButton } from '@/shared/ui/ResetAllButton';
 import { ThemeToggle } from '@/shared/ui/ThemeToggle';
 import { useT } from '@/shared/i18n/useT';
+import { FreshnessIndicator } from '@/widgets/header/FreshnessIndicator';
 import { useNavCounts } from '@/widgets/header/model/useNavCounts';
 
 interface HeaderProps {
   connected?: boolean;
+  /** Instant du dernier signe de vie du flux, en millisecondes epoch. */
+  lastEventAt?: number;
 }
 
-export function Header({ connected = true }: HeaderProps) {
+export function Header({ connected = true, lastEventAt }: HeaderProps) {
   const t = useT();
   const counts = useNavCounts();
   return (
@@ -42,6 +45,7 @@ export function Header({ connected = true }: HeaderProps) {
         </div>
         <div className="flex items-center gap-3">
           <ConnectionIndicator connected={connected} />
+          <FreshnessIndicator lastEventAt={lastEventAt} connected={connected} />
           <ThemeToggle />
           <LangToggle />
           {/* Séparé des sélecteurs par un filet : action destructive

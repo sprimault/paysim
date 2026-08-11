@@ -20,11 +20,11 @@ import { useAppShortcuts } from '@/app/useAppShortcuts';
  * Cohérent avec le pattern Cadensio.
  */
 export function App() {
-  const { connected } = usePaysimEvents();
+  const { connected, lastEventAt } = usePaysimEvents();
   const { helpOpen, closeHelp } = useAppShortcuts();
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
-      <Header connected={connected} />
+      <Header connected={connected} lastEventAt={lastEventAt} />
       <Outlet />
       <ToastContainer />
       <UpdateBanner />

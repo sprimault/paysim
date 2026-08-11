@@ -18,8 +18,13 @@ export function useSSE(
   path: string,
   onEvent: (evt: SSEEvent) => void,
   onReconnect?: () => void,
-): { connected: boolean } {
+): { connected: boolean; lastEventAt?: number } {
   const [connected, setConnected] = useState(false);
+  // Instant du dernier signe de vie du serveur, pour que l'interface
+  // puisse dire depuis quand elle n'a rien reçu. L'ouverture du flux en
+  // est un : sur une instance au repos, aucun événement ne viendra, et
+  // un compteur parti de rien laisserait croire à une panne.
+  const [lastEventAt, setLastEventAt] = useState<number | undefined>(undefined);
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
   // Même raison que pour onEvent : passer le callback par un ref évite
@@ -29,12 +34,18 @@ export function useSSE(
 
   useEffect(() => {
     const handle = subscribeSSE(path, {
-      onEvent: (evt) => onEventRef.current(evt),
-      onStatusChange: setConnected,
+      onEvent: (evt) => {
+        setLastEventAt(Date.now());
+        onEventRef.current(evt);
+      },
+      onStatusChange: (ouvert) => {
+        setConnected(ouvert);
+        if (ouvert) setLastEventAt(Date.now());
+      },
       onReconnect: () => onReconnectRef.current?.(),
     });
     return () => handle.close();
   }, [path]);
 
-  return { connected };
+  return { connected, lastEventAt };
 }
