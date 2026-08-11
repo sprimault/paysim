@@ -10,6 +10,7 @@ import { DataTable, type Column } from '@/shared/ui/DataTable';
 import { EmptyState } from '@/shared/ui/EmptyState';
 import { ProviderTabs } from '@/shared/ui/ProviderTabs';
 import { RefreshButton } from '@/shared/ui/RefreshButton';
+import { Tooltip } from '@/shared/ui/Tooltip';
 import { formatAmount } from '@/shared/lib/numbers';
 import { formatShort } from '@/shared/lib/dates';
 import { useFormatRelative } from '@/shared/hooks/useFormatRelative';
@@ -120,12 +121,9 @@ export function SubscriptionList() {
       header: t('subscription.list.column.created'),
       sortValue: (s) => s.createdAt,
       cell: (s) => (
-        <span
-          className="text-xs text-zinc-500 dark:text-zinc-400"
-          title={formatShort(s.createdAt)}
-        >
-          {rel(s.createdAt)}
-        </span>
+        <Tooltip label={formatShort(s.createdAt)}>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">{rel(s.createdAt)}</span>
+        </Tooltip>
       ),
     },
     {
@@ -133,13 +131,15 @@ export function SubscriptionList() {
       srOnly: true,
       align: 'right',
       cell: (s) => (
-        <Link
-          to={`/subscriptions/${s.id}`}
-          className="inline-flex rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-          aria-label={t('subscription.list.action.open')}
-        >
-          <ChevronRight size={16} />
-        </Link>
+        <Tooltip label={t('subscription.list.action.open')} enfantFocusable>
+          <Link
+            to={`/subscriptions/${s.id}`}
+            className="inline-flex rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            aria-label={t('subscription.list.action.open')}
+          >
+            <ChevronRight size={16} />
+          </Link>
+        </Tooltip>
       ),
     },
   ];

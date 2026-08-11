@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Radio, Zap } from 'lucide-react';
+import { Tooltip } from '@/shared/ui/Tooltip';
 import { Link, NavLink } from 'react-router';
 import { LangToggle } from '@/shared/ui/LangToggle';
 import { ResetAllButton } from '@/shared/ui/ResetAllButton';
@@ -90,23 +91,30 @@ function NavItem({
 function ConnectionIndicator({ connected }: { connected: boolean }) {
   const t = useT();
   return (
-    <div
-      className={
-        'flex items-center gap-1.5 text-xs ' +
-        (connected
-          ? 'text-emerald-600 dark:text-emerald-400'
-          : 'text-zinc-400 dark:text-zinc-600')
+    <Tooltip
+      label={
+        connected
+          ? t('header.connection.titleConnected')
+          : t('header.connection.titleDisconnected')
       }
-      title={connected ? t('header.connection.titleConnected') : t('header.connection.titleDisconnected')}
     >
-      <Radio
-        size={14}
-        className={connected ? 'animate-pulse-slow' : ''}
-        strokeWidth={connected ? 2.5 : 2}
-      />
-      <span className="hidden sm:inline">
-        {connected ? t('header.connection.connected') : t('header.connection.disconnected')}
+      <span
+        className={
+          'flex items-center gap-1.5 text-xs ' +
+          (connected
+            ? 'text-emerald-600 dark:text-emerald-400'
+            : 'text-zinc-400 dark:text-zinc-600')
+        }
+      >
+        <Radio
+          size={14}
+          className={connected ? 'animate-pulse-slow' : ''}
+          strokeWidth={connected ? 2.5 : 2}
+        />
+        <span className="hidden sm:inline">
+          {connected ? t('header.connection.connected') : t('header.connection.disconnected')}
+        </span>
       </span>
-    </div>
+    </Tooltip>
   );
 }

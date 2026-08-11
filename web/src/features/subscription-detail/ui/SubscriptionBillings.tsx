@@ -6,6 +6,7 @@ import { Link } from 'react-router';
 import { Badge } from '@/shared/ui/Badge';
 import { Card } from '@/shared/ui/Card';
 import { Skeleton } from '@/shared/ui/Skeleton';
+import { Tooltip } from '@/shared/ui/Tooltip';
 import { formatAmount } from '@/shared/lib/numbers';
 import { formatShort } from '@/shared/lib/dates';
 import { paymentStateMeta } from '@/shared/lib/statusMeta';
@@ -91,17 +92,19 @@ export function SubscriptionBillings({ subscriptionId }: { subscriptionId: strin
                 <span className="w-24 shrink-0 font-mono text-xs tabular-nums text-zinc-900 dark:text-zinc-100">
                   {formatAmount(p.amount)} {p.currency}
                 </span>
-                <Badge tone={meta.tone} icon={<StateIcon size={12} />}>
-                  {t(meta.labelKey)}
-                </Badge>
-                {p.declineCode && (
-                  <span
-                    title={p.declineMessage}
-                    className="rounded bg-rose-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
-                  >
-                    {p.declineCode}
-                  </span>
-                )}
+                {/* Infobulle sur l'état et son code d'un seul tenant :
+                    viser le badge de deux caractères demandait une
+                    précision inutile pour lire un libellé. */}
+                <Tooltip label={p.declineMessage}>
+                  <Badge tone={meta.tone} icon={<StateIcon size={12} />}>
+                    {t(meta.labelKey)}
+                  </Badge>
+                  {p.declineCode && (
+                    <span className="rounded bg-rose-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
+                      {p.declineCode}
+                    </span>
+                  )}
+                </Tooltip>
                 <span className="min-w-0 flex-1 truncate text-zinc-700 dark:text-zinc-300">
                   {p.orderId}
                 </span>

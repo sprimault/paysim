@@ -10,6 +10,7 @@ import { DataTable, type Column } from '@/shared/ui/DataTable';
 import { EmptyState } from '@/shared/ui/EmptyState';
 import { ProviderTabs } from '@/shared/ui/ProviderTabs';
 import { RefreshButton } from '@/shared/ui/RefreshButton';
+import { Tooltip } from '@/shared/ui/Tooltip';
 import { formatShort } from '@/shared/lib/dates';
 import { useFormatRelative } from '@/shared/hooks/useFormatRelative';
 import { truncate } from '@/shared/lib/strings';
@@ -101,12 +102,9 @@ export function PaymentMethodList() {
       header: t('paymentMethod.list.column.created'),
       sortValue: (m) => m.createdAt,
       cell: (m) => (
-        <span
-          className="text-xs text-zinc-500 dark:text-zinc-400"
-          title={formatShort(m.createdAt)}
-        >
-          {rel(m.createdAt)}
-        </span>
+        <Tooltip label={formatShort(m.createdAt)}>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">{rel(m.createdAt)}</span>
+        </Tooltip>
       ),
     },
     {
@@ -114,13 +112,15 @@ export function PaymentMethodList() {
       srOnly: true,
       align: 'right',
       cell: (m) => (
-        <Link
-          to={`/payment-methods/${m.token}`}
-          className="inline-flex rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-          aria-label={t('paymentMethod.list.action.open')}
-        >
-          <ChevronRight size={16} />
-        </Link>
+        <Tooltip label={t('paymentMethod.list.action.open')} enfantFocusable>
+          <Link
+            to={`/payment-methods/${m.token}`}
+            className="inline-flex rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            aria-label={t('paymentMethod.list.action.open')}
+          >
+            <ChevronRight size={16} />
+          </Link>
+        </Tooltip>
       ),
     },
   ];

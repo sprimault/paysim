@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import { RefreshCw } from 'lucide-react';
+import { Tooltip } from '@/shared/ui/Tooltip';
 import { useT } from '@/shared/i18n/useT';
 
 interface RefreshButtonProps {
@@ -31,15 +32,16 @@ export function RefreshButton({ onRefresh, title }: RefreshButtonProps) {
     }
   }
   return (
-    <button
-      type="button"
-      onClick={handle}
-      disabled={busy}
-      aria-label={tip}
-      title={tip}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-    >
-      <RefreshCw size={14} className={busy ? 'animate-spin' : ''} />
-    </button>
+    <Tooltip label={tip} enfantFocusable>
+      <button
+        type="button"
+        onClick={handle}
+        disabled={busy}
+        aria-label={tip}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+      >
+        <RefreshCw size={14} className={busy ? 'animate-spin' : ''} />
+      </button>
+    </Tooltip>
   );
 }

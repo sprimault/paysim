@@ -111,10 +111,9 @@ export function PaymentMethodUsage({
                   <span className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
                     {p.state}
                   </span>
-                  <span
-                    className="w-32 shrink-0 text-right text-xs text-zinc-500 dark:text-zinc-400"
-                    title={formatShort(p.createdAt)}
-                  >
+                  {/* Pas d'infobulle : elle répéterait mot pour mot la
+                      date déjà affichée. */}
+                  <span className="w-32 shrink-0 text-right text-xs text-zinc-500 dark:text-zinc-400">
                     {formatShort(p.createdAt)}
                   </span>
                 </Link>

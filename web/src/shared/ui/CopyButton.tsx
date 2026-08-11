@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
+import { Tooltip } from '@/shared/ui/Tooltip';
 import { useT } from '@/shared/i18n/useT';
 
 interface CopyButtonProps {
@@ -33,12 +34,12 @@ export function CopyButton({ value, className = '', label }: CopyButtonProps) {
   }
 
   return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      aria-label={tip}
-      title={tip}
-      className={
+    <Tooltip label={tip} enfantFocusable>
+      <button
+        type="button"
+        onClick={handleCopy}
+        aria-label={tip}
+        className={
         'inline-flex items-center gap-1 rounded p-1 text-zinc-500 ' +
         'hover:bg-zinc-100 hover:text-zinc-800 ' +
         'dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 ' +
@@ -46,12 +47,13 @@ export function CopyButton({ value, className = '', label }: CopyButtonProps) {
         className
       }
     >
-      {copied ? (
-        <Check size={14} className="text-emerald-600 dark:text-emerald-400" />
-      ) : (
-        <Copy size={14} />
-      )}
-      {label && <span className="text-xs">{label}</span>}
-    </button>
+        {copied ? (
+          <Check size={14} className="text-emerald-600 dark:text-emerald-400" />
+        ) : (
+          <Copy size={14} />
+        )}
+        {label && <span className="text-xs">{label}</span>}
+      </button>
+    </Tooltip>
   );
 }

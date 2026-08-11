@@ -6,6 +6,7 @@ import { Link } from 'react-router';
 import { Badge } from '@/shared/ui/Badge';
 import { CopyButton } from '@/shared/ui/CopyButton';
 import type { Column } from '@/shared/ui/DataTable';
+import { Tooltip } from '@/shared/ui/Tooltip';
 import { formatAmount } from '@/shared/lib/numbers';
 import { formatShort } from '@/shared/lib/dates';
 import { useFormatRelative } from '@/shared/hooks/useFormatRelative';
@@ -55,7 +56,15 @@ export function usePaymentColumns({ onDelete, showProvider }: Options): Column<P
         const meta = paymentStateMeta[p.state];
         const StateIcon = meta.icon;
         return (
-          <div className="flex items-center gap-1.5">
+          // L'infobulle est portée par la cellule entière, pas par le
+          // seul badge du code : viser deux caractères à la souris
+          // demande une précision que personne n'a envie de fournir
+          // pour lire un libellé. Survoler « Refusé 43 » suffit.
+          //
+          // Sans motif — un abandon, une expiration — Tooltip ne rend
+          // qu'un passe-plat : ni curseur ni boîte n'annoncent une
+          // lecture qui n'existe pas.
+          <Tooltip label={p.declineMessage}>
             <Badge tone={meta.tone} icon={<StateIcon size={12} />}>
               {t(meta.labelKey)}
             </Badge>
@@ -70,14 +79,11 @@ export function usePaymentColumns({ onDelete, showProvider }: Options): Column<P
               vide vaudrait moins que l'absence de badge.
             */}
             {p.declineCode && (
-              <span
-                title={p.declineMessage}
-                className="rounded bg-rose-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
-              >
+              <span className="rounded bg-rose-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
                 {p.declineCode}
               </span>
             )}
-          </div>
+          </Tooltip>
         );
       },
     },
@@ -147,24 +153,18 @@ export function usePaymentColumns({ onDelete, showProvider }: Options): Column<P
       header: t('payment.list.column.created'),
       sortValue: (p) => p.createdAt,
       cell: (p) => (
-        <span
-          className="text-xs text-zinc-500 dark:text-zinc-400"
-          title={formatShort(p.createdAt)}
-        >
-          {rel(p.createdAt)}
-        </span>
+        <Tooltip label={formatShort(p.createdAt)}>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">{rel(p.createdAt)}</span>
+        </Tooltip>
       ),
     },
     {
       header: t('payment.list.column.updated'),
       sortValue: (p) => p.updatedAt,
       cell: (p) => (
-        <span
-          className="text-xs text-zinc-500 dark:text-zinc-400"
-          title={formatShort(p.updatedAt)}
-        >
-          {rel(p.updatedAt)}
-        </span>
+        <Tooltip label={formatShort(p.updatedAt)}>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">{rel(p.updatedAt)}</span>
+        </Tooltip>
       ),
     },
     {
@@ -174,23 +174,28 @@ export function usePaymentColumns({ onDelete, showProvider }: Options): Column<P
       cell: (p) => (
         <div className="inline-flex items-center gap-0.5">
           {onDelete && (
-            <button
-              type="button"
-              onClick={(e) => onDelete(p, e.currentTarget)}
-              aria-label={t('payment.list.action.deletePayment')}
-              title={t('common.action.delete')}
-              className="rounded p-1 text-zinc-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40 dark:hover:text-rose-400"
-            >
-              <Trash2 size={14} />
-            </button>
+            <Tooltip label={t('common.action.delete')} enfantFocusable>
+              <button
+                type="button"
+                onClick={(e) => onDelete(p, e.currentTarget)}
+                aria-label={t('payment.list.action.deletePayment')}
+                className="rounded p-1 text-zinc-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40 dark:hover:text-rose-400"
+              >
+                <Trash2 size={14} />
+              </button>
+            </Tooltip>
           )}
-          <Link
-            to={`/payments/${p.uuid}`}
-            className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-            aria-label={t('payment.list.action.openPayment')}
-          >
-            <ChevronRight size={16} />
-          </Link>
+          {/* Le chevron seul n'apprend rien : l'aria-label sert les
+              lecteurs d'écran, l'infobulle sert tous les autres. */}
+          <Tooltip label={t('payment.list.action.openPayment')} enfantFocusable>
+            <Link
+              to={`/payments/${p.uuid}`}
+              className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              aria-label={t('payment.list.action.openPayment')}
+            >
+              <ChevronRight size={16} />
+            </Link>
+          </Tooltip>
         </div>
       ),
     },

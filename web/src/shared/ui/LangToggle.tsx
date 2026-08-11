@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Languages } from 'lucide-react';
+import { Tooltip } from '@/shared/ui/Tooltip';
 import { useLangStore } from '@/shared/i18n/store';
 import { useT } from '@/shared/i18n/useT';
 import type { Lang } from '@/shared/i18n/messages';
@@ -50,19 +51,21 @@ function Option({
 }) {
   const active = value === current;
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(value)}
-      aria-pressed={active}
-      title={label}
-      className={
-        'rounded px-1.5 py-0.5 text-xs font-medium transition-colors ' +
-        (active
-          ? 'bg-brand-100 text-brand-800 dark:bg-brand-900/40 dark:text-brand-300'
-          : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100')
-      }
-    >
-      {short}
-    </button>
+    <Tooltip label={label} enfantFocusable>
+      <button
+        type="button"
+        onClick={() => onSelect(value)}
+        aria-pressed={active}
+        aria-label={label}
+        className={
+          'rounded px-1.5 py-0.5 text-xs font-medium transition-colors ' +
+          (active
+            ? 'bg-brand-100 text-brand-800 dark:bg-brand-900/40 dark:text-brand-300'
+            : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100')
+        }
+      >
+        {short}
+      </button>
+    </Tooltip>
   );
 }
