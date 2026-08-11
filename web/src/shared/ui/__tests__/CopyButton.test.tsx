@@ -33,4 +33,18 @@ describe('CopyButton', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copier' }));
     expect(await screen.findByRole('button', { name: 'Copié' })).toBeInTheDocument();
   });
+
+  // Une icône seule ne dit pas ce qui part au presse-papier : l'appelant
+  // doit pouvoir le nommer.
+  it('accepte un intitulé d\'action propre à l\'appelant', () => {
+    render(<CopyButton value="curl ..." tip="Copier la commande curl" />);
+    expect(screen.getByRole('button', { name: 'Copier la commande curl' })).toBeInTheDocument();
+  });
+
+  // C'est l'action qui varie, pas sa confirmation.
+  it('confirme toujours par « Copié »', async () => {
+    render(<CopyButton value="x" tip="Copier la commande curl" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Copier la commande curl' }));
+    expect(await screen.findByRole('button', { name: 'Copié' })).toBeInTheDocument();
+  });
 });
