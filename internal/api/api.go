@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sprimault/paysim/internal/bus"
@@ -1391,7 +1392,7 @@ func (h *Handler) replayWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wh := rec.Webhook
-	wh.ID = "replay-" + id + "-" + time.Now().UTC().Format("150405.000000")
+	wh.ID = "replay-" + racineLivraison(id) + "-" + time.Now().UTC().Format("150405.000000")
 	wh.Attempts = 0
 	wh.Delay = 0
 	wh.CreatedAt = time.Now().UTC()
@@ -1401,6 +1402,29 @@ func (h *Handler) replayWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, ReplayWebhookResponse{NewDeliveryID: wh.ID})
+}
+
+// racineLivraison rend l'identifiant de la livraison d'origine, que
+// l'on parte d'elle ou d'un de ses rejeux.
+//
+// Sans cela, rejouer un rejeu empile les préfixes : chaque clic
+// ajoutait vingt et un caractères, sans borne, et l'identifiant se
+// retrouve tel quel dans l'URL de la fiche. Le geste est tout sauf
+// théorique — provoquer des livraisons en double est la raison d'être
+// du simulateur.
+//
+// L'horodatage étant toujours le dernier segment, le dernier tiret
+// sépare sans ambiguïté malgré ceux de l'UUID.
+func racineLivraison(id string) string {
+	if !strings.HasPrefix(id, "replay-") {
+		return id
+	}
+	sansPrefixe := strings.TrimPrefix(id, "replay-")
+	dernierTiret := strings.LastIndex(sansPrefixe, "-")
+	if dernierTiret <= 0 {
+		return id
+	}
+	return sansPrefixe[:dernierTiret]
 }
 
 // simulatePayment déclenche une simulation de retour navigateur ou
