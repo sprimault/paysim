@@ -33,8 +33,19 @@ export function ToastContainer() {
   const toasts = useToastStore((s) => s.toasts);
   const tt = useT();
   return (
+    // En haut et centré, sous le bandeau de navigation : c'est là que le
+    // regard revient de lui-même. En bas à droite, un toast demande de
+    // savoir d'avance où regarder — sur un outil où la confirmation
+    // arrive après un geste fait ailleurs dans la page, elle passe
+    // inaperçue et disparaît avant d'avoir été lue.
+    //
+    // `top-16` dégage les 3,5 rem de l'en-tête collant, et la largeur
+    // est bornée pour ne pas déborder sur une fenêtre étroite.
     <div
-      className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-full max-w-sm flex-col gap-2"
+      className={
+        'pointer-events-none fixed left-1/2 top-16 z-50 flex w-[calc(100%-2rem)] max-w-sm ' +
+        '-translate-x-1/2 flex-col gap-2'
+      }
       role="region"
       aria-label={tt('toast.regionLabel')}
     >
@@ -59,7 +70,7 @@ function ToastItem({ toast: t }: { toast: Toast }) {
     <div
       className={
         'pointer-events-auto flex items-start gap-3 rounded-panel border p-3 shadow-panel ' +
-        'animate-slide-in-right ' +
+        'animate-slide-in-top ' +
         classes
       }
     >

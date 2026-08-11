@@ -20,6 +20,7 @@ interface CorpsRejeu {
   amount: number;
   currency: string;
   orderId: string;
+  /** Élagué de ses champs nuls — voir sansValeursNulles. */
   customer?: unknown;
   metadata?: Record<string, string>;
   paymentMethodToken?: string;
@@ -48,7 +49,7 @@ export function buildReplayCurl(
     currency: payment.currency,
     orderId: payment.orderId,
   };
-  if (payment.customer) corps.customer = payment.customer;
+  if (payment.customer) corps.customer = sansValeursNulles(payment.customer);
   // Un objet vide se sérialise en `{}`, qui n'apporte rien et allonge
   // une commande déjà longue.
   if (payment.metadata && Object.keys(payment.metadata).length > 0) {
@@ -62,6 +63,37 @@ export function buildReplayCurl(
     `-H 'Content-Type: application/json' ` +
     `-d ${quoteShell(JSON.stringify(corps))}`
   );
+}
+
+/**
+ * Élague récursivement les champs nuls et les objets qui n'en
+ * contiennent que.
+ *
+ * Le contexte client remonte de l'API avec toutes ses sous-structures
+ * sérialisées, `omitempty` ne s'appliquant pas aux structs imbriquées :
+ * une adresse de facturation jamais renseignée occupe quand même huit
+ * champs à `null`. Recopiés dans la commande, ils la font passer de
+ * deux à sept cents caractères sans rien y ajouter — Go désérialise un
+ * `null` exactement comme une absence.
+ *
+ * Seul `null` disparaît. Un zéro ou une chaîne vide sont des valeurs :
+ * un montant à zéro désigne l'enrôlement pur, l'effacer changerait le
+ * cas rejoué.
+ */
+function sansValeursNulles(valeur: unknown): unknown {
+  if (Array.isArray(valeur)) {
+    const items = valeur.map(sansValeursNulles).filter((v) => v !== undefined);
+    return items.length > 0 ? items : undefined;
+  }
+  if (typeof valeur === 'object' && valeur !== null) {
+    const net: Record<string, unknown> = {};
+    for (const [cle, v] of Object.entries(valeur)) {
+      const elague = sansValeursNulles(v);
+      if (elague !== undefined) net[cle] = elague;
+    }
+    return Object.keys(net).length > 0 ? net : undefined;
+  }
+  return valeur === null ? undefined : valeur;
 }
 
 /**

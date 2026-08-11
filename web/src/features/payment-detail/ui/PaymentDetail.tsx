@@ -7,7 +7,6 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { Badge } from '@/shared/ui/Badge';
 import { Button } from '@/shared/ui/Button';
 import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
-import { CopyButton } from '@/shared/ui/CopyButton';
 import { Skeleton } from '@/shared/ui/Skeleton';
 import { Tabs } from '@/shared/ui/Tabs';
 import { toast } from '@/shared/ui/toastStore';
@@ -16,7 +15,6 @@ import { formatShort } from '@/shared/lib/dates';
 import { paymentStateMeta } from '@/shared/lib/statusMeta';
 import { useT } from '@/shared/i18n/useT';
 import { deletePayment } from '@/entities/payment/api/paymentApi';
-import { buildReplayCurl } from '@/entities/payment/lib/curlCommand';
 import { usePayment } from '@/entities/payment/model/usePayments';
 import { usePaymentStore } from '@/entities/payment/model/paymentStore';
 import { useWebhooksOfPayment } from '@/entities/webhook/model/useWebhooks';
@@ -113,15 +111,6 @@ export function PaymentDetail() {
           <Badge tone={meta.tone} icon={<StateIcon size={12} />}>
             {t(meta.labelKey)}
           </Badge>
-          {/* La commande qui rejoue ce paiement : l'écran porte déjà
-              tout ce qu'il faut pour l'écrire, la recomposer à la main
-              est le geste répétitif du débogage. */}
-          <CopyButton
-            value={buildReplayCurl(payment)}
-            label="curl"
-            tip={t('payment.detail.copyCurl')}
-            className="border border-zinc-200 px-2 dark:border-zinc-800"
-          />
           <Button
             variant="ghost"
             size="sm"

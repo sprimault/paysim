@@ -4,6 +4,8 @@
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { Tooltip } from '@/shared/ui/Tooltip';
+import { toast } from '@/shared/ui/toastStore';
+import { copyToClipboard } from '@/shared/lib/clipboard';
 import { useT } from '@/shared/i18n/useT';
 
 interface CopyButtonProps {
@@ -28,15 +30,14 @@ export function CopyButton({ value, className = '', label, tip: tipRepos }: Copy
   const tip = copied ? t('common.action.copied') : (tipRepos ?? t('common.action.copy'));
 
   async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(value);
+    if (await copyToClipboard(value)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
-    } catch {
-      // Clipboard peut échouer en http (permissions) — fallback silencieux.
-      // Un vrai fallback (textarea + execCommand) ne vaut pas le code sur un
-      // outil dev servi en https ou en localhost.
+      return;
     }
+    // Un échec muet est pire que pas de bouton : on croit avoir copié,
+    // et on colle autre chose.
+    toast.error(t('common.action.copyFailed'));
   }
 
   return (

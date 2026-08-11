@@ -503,6 +503,77 @@ func TestReplayWebhookReEnqueues(t *testing.T) {
 	if count.Load() != 2 {
 		t.Errorf("apres replay : count = %d, veut 2", count.Load())
 	}
+
+	// 4. Rejouer le rejeu ne fait pas grossir l'identifiant. Provoquer
+	// des livraisons en double est la raison d'être du simulateur : le
+	// geste se répète, et chaque répétition ajoutait un préfixe.
+	//
+	// Même race qu'en 1 : le compteur du serveur aval bouge avant que
+	// l'historique ne porte l'entrée, et c'est lui qu'interroge
+	// /replay.
+	deadline = time.Now().Add(2 * time.Second)
+	found = false
+	for time.Now().Before(deadline) && !found {
+		for _, r := range queue.Recent(50) {
+			if r.Webhook.ID == body.NewDeliveryID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	if !found {
+		t.Fatalf("rejeu %q absent de l'historique", body.NewDeliveryID)
+	}
+
+	req, _ = http.NewRequest(http.MethodPost,
+		server.URL+"/paysim/api/v1/webhooks/"+body.NewDeliveryID+"/replay", nil)
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp2.Body.Close() }()
+	if resp2.StatusCode != http.StatusAccepted {
+		t.Fatalf("replay du replay status = %d, veut 202", resp2.StatusCode)
+	}
+	var second ReplayWebhookResponse
+	_ = json.NewDecoder(resp2.Body).Decode(&second)
+	if !strings.HasPrefix(second.NewDeliveryID, "replay-wh-original-") {
+		t.Errorf("NewDeliveryID = %q, doit repartir de la livraison d'origine", second.NewDeliveryID)
+	}
+	if len(second.NewDeliveryID) != len(body.NewDeliveryID) {
+		t.Errorf("identifiant de %d caracteres apres deux rejeux, %d apres un seul : il s'empile",
+			len(second.NewDeliveryID), len(body.NewDeliveryID))
+	}
+}
+
+func TestRacineLivraison(t *testing.T) {
+	t.Parallel()
+	cas := []struct {
+		nom, in, veut string
+	}{
+		{"livraison d'origine", "wh-42", "wh-42"},
+		{"rejeu simple", "replay-wh-42-144028.486128", "wh-42"},
+		{"UUID a tirets", "replay-90252b82-ce2d-447f-b0e4-84c4987dab53-144028.486128",
+			"90252b82-ce2d-447f-b0e4-84c4987dab53"},
+		// Identifiants deja empiles sur une instance en cours : ils
+		// cessent de croitre, sans qu'on cherche a les demeler.
+		{"rejeu deja empile", "replay-replay-wh-42-144028.486128-144141.683509",
+			"replay-wh-42-144028.486128"},
+		// Rien a couper : mieux vaut rendre l'entree telle quelle qu'un
+		// identifiant vide, qui serait introuvable a la relecture.
+		{"prefixe seul", "replay-", "replay-"},
+		{"sans horodatage", "replay-wh42", "replay-wh42"},
+	}
+	for _, c := range cas {
+		t.Run(c.nom, func(t *testing.T) {
+			if got := racineLivraison(c.in); got != c.veut {
+				t.Errorf("racineLivraison(%q) = %q, veut %q", c.in, got, c.veut)
+			}
+		})
+	}
 }
 
 func TestReplayWebhookUnknown(t *testing.T) {

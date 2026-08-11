@@ -22,6 +22,16 @@ export interface Column<T> {
   /** Rend la cellule visible aux screen-reader mais pas visuellement. */
   srOnly?: boolean;
   /**
+   * Masque la colonne en dessous de ce palier de largeur.
+   *
+   * Une table dense déborde vite : sur un portable, huit colonnes de
+   * paiement poussent la fenêtre à défiler horizontalement, et c'est
+   * l'essentiel qu'on perd de vue. Marquer ici ce qui peut disparaître
+   * garde la décision auprès de la colonne, là où l'on sait ce qu'elle
+   * vaut, plutôt que dans une règle CSS lointaine.
+   */
+  hideBelow?: 'sm' | 'md' | 'lg' | 'xl';
+  /**
    * Valeur comparable extraite de la ligne. Sa présence rend la colonne
    * triable ; son absence laisse l'en-tête inerte. On trie sur cette
    * valeur et non sur le rendu, parce qu'une cellule contient un badge,
@@ -33,6 +43,21 @@ export interface Column<T> {
 
 /** Sens de tri courant. `null` = ordre fourni par l'appelant. */
 type SortState = { column: number; dir: 'asc' | 'desc' } | null;
+
+/**
+ * Classes de masquage, écrites en toutes lettres : Tailwind ne garde
+ * que ce qu'il lit dans les sources, et une classe composée à la volée
+ * (`hidden ${p}:table-cell`) serait absente du CSS produit.
+ *
+ * `table-cell` et non `block` : rendre une cellule en bloc la sortirait
+ * de la grille du tableau et décalerait toute la ligne.
+ */
+const MASQUAGE = {
+  sm: 'hidden sm:table-cell',
+  md: 'hidden md:table-cell',
+  lg: 'hidden lg:table-cell',
+  xl: 'hidden xl:table-cell',
+} as const;
 
 export interface DataTableProps<T> {
   /** Colonnes déclaratives : en-tête, rendu de cellule, alignement. */
@@ -310,7 +335,8 @@ export function DataTable<T>({
                   className={
                     'sticky z-10 border-b border-zinc-200 bg-zinc-50 px-4 py-2 ' +
                     'dark:border-zinc-800 dark:bg-zinc-900 ' +
-                    (col.align === 'right' ? 'text-right tabular' : '') +
+                    (col.align === 'right' ? 'text-right tabular ' : '') +
+                    (col.hideBelow ? MASQUAGE[col.hideBelow] : '') +
                     (col.srOnly ? ' sr-only' : '')
                   }
                   style={{ top: `calc(3.5rem + ${hauteurEntete}px)` }}
@@ -360,7 +386,8 @@ export function DataTable<T>({
                     (r < visibles.length - 1
                       ? 'border-b border-zinc-200 dark:border-zinc-800 '
                       : '') +
-                    (col.align === 'right' ? 'text-right' : '') +
+                    (col.align === 'right' ? 'text-right ' : '') +
+                    (col.hideBelow ? MASQUAGE[col.hideBelow] : '') +
                     (col.className ? ' ' + col.className : '')
                   }
                 >

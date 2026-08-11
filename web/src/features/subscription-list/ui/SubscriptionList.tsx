@@ -64,6 +64,7 @@ export function SubscriptionList() {
     },
     {
       header: t('subscription.list.column.provider'),
+      hideBelow: 'xl',
       sortValue: (s) => s.provider,
       cell: (s) => (
         <span className="text-xs text-zinc-500 dark:text-zinc-400">{s.provider}</span>
@@ -112,6 +113,7 @@ export function SubscriptionList() {
     },
     {
       header: t('subscription.list.column.rrule'),
+      hideBelow: 'xl',
       cell: (s) => (
         <code className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
           {truncate(s.rrule || '—', 30)}
@@ -120,6 +122,7 @@ export function SubscriptionList() {
     },
     {
       header: t('subscription.list.column.id'),
+      hideBelow: 'lg',
       cell: (s) => (
         <div className="flex items-center gap-1">
           <code className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
@@ -131,6 +134,7 @@ export function SubscriptionList() {
     },
     {
       header: t('subscription.list.column.created'),
+      hideBelow: 'lg',
       sortValue: (s) => s.createdAt,
       cell: (s) => (
         <Tooltip label={formatShort(s.createdAt)}>
