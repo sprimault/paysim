@@ -5,7 +5,16 @@
 # Différence avec seed-paysim.ps1, qui le complète plutôt qu'il ne le
 # remplace : celui-ci suppose un Paysim déjà lancé et se contente de le
 # peupler. Ici, tout est monté — Paysim, un récepteur de webhooks, le
-# réseau qui les relie — puis détruit d'une commande.
+# réseau qui les relie — puis détruit d'une commande. Le jeu de données
+# produit est le même dans les deux, et dans leurs variantes .sh.
+#
+# Ce jeu tient en deux parties. Des cas remarquables d'abord, chacun
+# porteur d'une chose à voir : contexte client complet, motifs de refus
+# distincts, paiement en attente, moyen expiré, moyen révoqué, échéance
+# refusée, abonnement annulé. Du volume ensuite — trente paiements
+# répartis sur les états. Il n'est pas décoratif : la recherche, les
+# filtres d'état, la pagination et l'en-tête collant ne se jugent pas
+# sur huit lignes.
 #
 # Prérequis :
 #   - Docker Desktop démarré, avec le droit de créer un réseau et de
@@ -114,6 +123,16 @@ function Invoke-JsonPost {
     Invoke-RestMethod -Method Post -Uri "$Api$Path" -ContentType 'application/json' -Body $json
 }
 
+# Enrôle une carte sans rien débiter et rend l'alias créé.
+function Register-Card {
+    param([string]$OrderId, [hashtable]$Card)
+    $r = Invoke-JsonPost '/payments' @{
+        amount     = 0; currency = 'EUR'; orderId = $OrderId
+        formAction = 'REGISTER'; card = $Card
+    }
+    return $r.paymentMethodToken
+}
+
 # La réponse passe par une variable avant d'être comptée : écrit en une
 # seule expression, `@(Invoke-RestMethod ...).Count` encapsule le tableau
 # au lieu de le dérouler et répond 1 quel que soit le nombre d'entrées.
@@ -168,6 +187,22 @@ $reg = Invoke-JsonPost '/payments' @{
 $T1 = $reg.paymentMethodToken
 Write-Host "  moyen enrole (contexte complet) : $T1"
 
+$T2 = Register-Card 'REGISTER-2042' @{ pan = '4111111111111111'; expiryMonth = 6; expiryYear = 2028 }
+$null = Register-Card 'REGISTER-2045' @{ pan = '371449635398431'; expiryMonth = 3; expiryYear = 2029 }
+$T6 = Register-Card 'REGISTER-2046' @{ pan = '4111111111111111'; expiryMonth = 9; expiryYear = 2031 }
+Write-Host '  moyens enroles (VISA, AMEX) : actifs'
+
+# Une carte ne s'enrole jamais deja expiree : l'autorisation serait
+# refusee et aucun alias ne naitrait. On l'enregistre saine, puis on la
+# fait vieillir — c'est le cas reel, et le seul qui produise un alias
+# perime a regarder dans l'interface.
+$T3 = Register-Card 'REGISTER-2043' @{ pan = '4242424242424242'; expiryMonth = 12; expiryYear = 2030 }
+$null = Invoke-JsonPost "/payment-methods/$T3/expire"
+Write-Host "  moyen expire : $T3"
+
+$T4 = Register-Card 'REGISTER-2044' @{ pan = '2223000048400011'; expiryMonth = 10; expiryYear = 2030 }
+Write-Host "  moyen a revoquer plus bas : $T4"
+
 $p = Invoke-JsonPost '/payments' @{
     amount = 4990; currency = 'EUR'; orderId = 'CMD-1042'
     customer = @{ email = 'bob@example.com'; reference = 'client-1042' }
@@ -194,35 +229,79 @@ $null = Invoke-JsonPost '/payments' @{
 }
 Write-Host '  paiement en attente : CMD-1044'
 
-$null = Invoke-JsonPost '/payments' @{
-    amount = 0; currency = 'EUR'; orderId = 'REGISTER-2042'; formAction = 'REGISTER'
-    card = @{ pan = '4111111111111111'; expiryMonth = 6; expiryYear = 2028 }
+$p = Invoke-JsonPost '/payments' @{
+    amount = 7500; currency = 'EUR'; orderId = 'CMD-1048'
+    customer = @{ email = 'erin@example.com'; reference = 'client-1048' }
 }
-Write-Host '  moyen enrole (sans contexte) : VISA'
-
-$null = Invoke-JsonPost '/payments' @{
-    amount = 0; currency = 'EUR'; orderId = 'REGISTER-2043'; formAction = 'REGISTER'
-    card = @{
-        pan = '4000000000000002'; expiryMonth = 1; expiryYear = 2020
-        holderName = 'CARTE EXPIREE'
-    }
-}
-Write-Host '  moyen inexploitable : PAN de refus + expire'
+$null = Invoke-JsonPost "/payments/$($p.uuid)/simulate" @{ outcome = 'AUTHORISED'; channel = 'ipn' }
+Write-Host '  paiement autorise, non debite : CMD-1048'
 
 $sub = Invoke-JsonPost '/subscriptions' @{
     paymentMethodToken = $T1
     amount = 2990; currency = 'EUR'; orderId = 'SUB-77'
     effectDate = '2026-09-01T00:00:00Z'
     rrule = 'RRULE:FREQ=MONTHLY;INTERVAL=1'
+    metadata = @{ plan = 'pro' }
 }
-$null = Invoke-JsonPost "/subscriptions/$($sub.id)/trigger-billing" @{}
-Write-Host '  abonnement + 1 echeance : SUB-77'
+$null = Invoke-JsonPost "/subscriptions/$($sub.id)/trigger-billing"
+$null = Invoke-JsonPost "/subscriptions/$($sub.id)/trigger-billing"
+Write-Host '  abonnement + 2 echeances : SUB-77'
+
+# L'echeance refusee vient d'un moyen devenu inexploitable apres coup, et
+# non d'une carte de refus enrolee : celle-la ne produirait aucun alias,
+# donc aucun abonnement a porter.
+$sub = Invoke-JsonPost '/subscriptions' @{
+    paymentMethodToken = $T4
+    amount = 990; currency = 'EUR'; orderId = 'SUB-78'
+    rrule = 'RRULE:FREQ=MONTHLY'
+}
+$null = Invoke-JsonPost "/payment-methods/$T4/revoke"
+$null = Invoke-JsonPost "/subscriptions/$($sub.id)/trigger-billing"
+Write-Host '  moyen revoque puis echeance refusee : SUB-78'
+
+$sub = Invoke-JsonPost '/subscriptions' @{
+    paymentMethodToken = $T6
+    amount = 4900; currency = 'EUR'; orderId = 'SUB-79'
+    rrule = 'RRULE:FREQ=YEARLY'
+}
+$null = Invoke-JsonPost "/subscriptions/$($sub.id)/cancel"
+Write-Host '  abonnement annule : SUB-79'
+
+$null = Invoke-JsonPost '/subscriptions' @{
+    paymentMethodToken = $T2
+    amount = 1490; currency = 'EUR'; orderId = 'SUB-80'
+    rrule = 'RRULE:FREQ=WEEKLY'
+}
+Write-Host '  abonnement sans echeance : SUB-80'
 
 $null = Invoke-JsonPost '/payments' @{
     amount = 1990; currency = 'EUR'; orderId = 'CMD-1045'
     paymentMethodToken = $T1
 }
 Write-Host '  rejeu one-click : CMD-1045'
+
+# Volume. Les etats sont repartis par le rang et non tires au hasard :
+# deux executions donnent le meme ecran, ce qui rend une capture ou une
+# comparaison reproductible.
+foreach ($i in 1..30) {
+    # $socle et non $base : PowerShell ignore la casse des variables, et
+    # un nom aussi courant s'y collisionne sans prevenir.
+    $socle = (12 + $i * 7) * 100
+    switch ($i % 5) {
+        0 { $amount = $socle + @(1, 2, 4)[[int](($i / 5) % 3)]; $issue = 'PAID' }
+        1 { $amount = $socle; $issue = $null }
+        3 { $amount = $socle; $issue = 'AUTHORISED' }
+        default { $amount = $socle + 50; $issue = 'PAID' }
+    }
+    $r = Invoke-JsonPost '/payments' @{
+        amount = $amount; currency = 'EUR'; orderId = ('CMD-2{0:d3}' -f $i)
+        customer = @{ email = "client$i@example.com"; reference = "client-2$i" }
+    }
+    if ($issue) {
+        $null = Invoke-JsonPost "/payments/$($r.uuid)/simulate" @{ outcome = $issue; channel = 'ipn' }
+    }
+}
+Write-Host '  volume : 30 paiements repartis sur les etats'
 
 Start-Sleep -Seconds 2
 
@@ -238,5 +317,8 @@ Write-Host 'Bloc Client complet  : REGISTER-2041'
 Write-Host 'Motifs de refus      : CMD-1043 (51), CMD-1046 (43), CMD-1047 (91)'
 Write-Host 'Charges utiles       : comparer CMD-1042 et CMD-1043'
 Write-Host 'Charge utile vide    : CMD-1044, aucune livraison rattachee'
+Write-Host 'Etats des moyens     : REGISTER-2043 expire, REGISTER-2044 revoque'
+Write-Host 'Abonnements          : SUB-77 (2 echeances), SUB-78 (refusee), SUB-79 (annule), SUB-80 (aucune)'
+Write-Host 'Recherche            : taper « client-2 » pour filtrer le volume'
 Write-Host ''
 Write-Host "Pour arreter : docker rm -f $Name $Sink; docker network rm $Net"

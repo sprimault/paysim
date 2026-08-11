@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
-# examples/seed-paysim.sh — peuple un Paysim de démo avec un jeu de
-# paiements, subscriptions et moyens de paiement varié, pour voir
-# les états visuels de l'UI (captured / declined / actif / révoqué /
-# expiré). Utile en première prise en main : « lance ça et regarde ».
+# examples/seed-paysim.sh — peuple un Paysim déjà lancé avec le jeu de
+# démonstration : moyens de paiement dans chacun de leurs états,
+# abonnements avec et sans échéance, paiements couvrant les états de la
+# machine. Utile en première prise en main : « lance ça et regarde ».
+#
+# Le jeu produit est identique à celui de demo-ui.sh, qui monte en plus
+# le conteneur et son récepteur de webhooks. Il tient en deux parties :
+# des cas remarquables, chacun porteur d'une chose à voir, puis du
+# volume — trente paiements répartis sur les états. Ce volume n'est pas
+# décoratif : la recherche, les filtres d'état, la pagination et
+# l'en-tête collant ne se jugent pas sur huit lignes.
 #
 # Prérequis :
 #   - Paysim tourne sur http://localhost:30880. Surcharger PAYSIM_URL
 #     si Paysim est ailleurs.
-#   - PAYSIM_PAYZEN_HMAC_KEY configuré côté serveur (sinon simulate
-#     retourne 400 sur les cartes).
+#   - PAYSIM_PAYZEN_HMAC_KEY et PAYSIM_PAYZEN_REST_PASSWORD configurés
+#     côté serveur (sinon simulate retourne 400 sur les cartes).
 #   - bash + curl + grep -o. Aucune autre dépendance.
 #
 # Variables :
@@ -29,7 +36,6 @@ set -euo pipefail
 
 API="${PAYSIM_URL:-http://localhost:30880}/paysim/api/v1"
 NOTIF_URL="${NOTIF_URL:-http://localhost:1/discard}"
-CURL_HEADERS=(-H 'Content-Type: application/json')
 
 if [[ "${1:-}" == "--purge" ]]; then
     echo "==> Purge des paiements existants"
@@ -37,111 +43,154 @@ if [[ "${1:-}" == "--purge" ]]; then
     echo "  purgés"
 fi
 
+post() { curl -s -X POST "$API$1" -H 'Content-Type: application/json' -d "${2:-}"; }
+
 # Extraction d'un champ scalaire d'un objet JSON, en shell pur —
 # suffisant pour les réponses simples de l'API Paysim (uuid, id, token).
 # Pour parser un vrai JSON, préférer jq ; ici on évite la dépendance.
-json_get() {
-    local field="$1"
-    grep -o "\"$field\":\"[^\"]*\"" | head -1 | sed "s/^\"$field\":\"//;s/\"\$//"
+field() { grep -o "\"$1\":\"[^\"]*\"" | head -1 | sed "s/.*\":\"//; s/\"$//"; }
+
+# Joue l'issue d'un paiement en attente, webhook compris.
+simulate() {
+    post "/payments/$1/simulate" \
+        "{\"outcome\":\"${2:-PAID}\",\"channel\":\"ipn\",\"notificationUrl\":\"$NOTIF_URL\"}" >/dev/null
 }
 
-echo "==> 1. Paiement nominal (captured)"
-p=$(curl -s -X POST "$API/payments" "${CURL_HEADERS[@]}" \
-    -d '{"amount":4990,"currency":"EUR","orderId":"ORDER-NOMINAL-001"}')
-uuid=$(echo "$p" | json_get uuid)
-curl -s -X POST "$API/payments/$uuid/simulate" "${CURL_HEADERS[@]}" \
-    -d "{\"outcome\":\"PAID\",\"channel\":\"ipn\",\"notificationUrl\":\"$NOTIF_URL\"}" >/dev/null
-echo "  $uuid — captured"
+# Enrôle une carte sans rien débiter et rend l'alias créé.
+enrole() {
+    post /payments "{\"amount\":0,\"currency\":\"EUR\",\"orderId\":\"$1\",
+      \"formAction\":\"REGISTER\",\"card\":$2}" | field paymentMethodToken
+}
 
-echo "==> 2. Paiement refus magic amount (xxx01 → UNPAID)"
-p=$(curl -s -X POST "$API/payments" "${CURL_HEADERS[@]}" \
-    -d '{"amount":1001,"currency":"EUR","orderId":"ORDER-MAGIC-AMOUNT"}')
-uuid=$(echo "$p" | json_get uuid)
-curl -s -X POST "$API/payments/$uuid/simulate" "${CURL_HEADERS[@]}" \
-    -d "{\"outcome\":\"PAID\",\"channel\":\"ipn\",\"notificationUrl\":\"$NOTIF_URL\"}" >/dev/null
-echo "  $uuid — declined (magic amount)"
+echo "==> 1. Enrolement portant un contexte client complet"
+T1=$(post /payments '{
+  "amount": 0, "currency": "EUR", "orderId": "REGISTER-2041",
+  "formAction": "REGISTER",
+  "customer": {
+    "email": "alice.martin@example.com",
+    "reference": "client-4821",
+    "billingDetails": {
+      "title": "Mme", "language": "fr",
+      "firstName": "Alice", "lastName": "MARTIN",
+      "address": "1 rue de la Paix", "zipCode": "75002",
+      "city": "Paris", "country": "FR"
+    },
+    "shippingDetails": {
+      "category": "COMPANY", "legalName": "ACME SARL",
+      "firstName": "Bob", "lastName": "DURAND",
+      "phoneNumber": "+33600000000",
+      "address": "avenue des Champs", "zipCode": "75008",
+      "city": "Paris", "country": "FR"
+    },
+    "extraDetails": {"ipAddress": "203.0.113.7", "fingerPrintId": "fp-9f2c1ab4"}
+  },
+  "metadata": {"plan": "pro", "source": "onboarding"},
+  "card": {"pan": "5555555555554444", "expiryMonth": 12, "expiryYear": 2030,
+           "holderName": "ALICE MARTIN", "productCategory": "DEBIT"}
+}' | field paymentMethodToken)
+echo "  token Mastercard = $T1"
 
-echo "==> 3. Paiement autorisé (fonds réservés, non débités)"
-p=$(curl -s -X POST "$API/payments" "${CURL_HEADERS[@]}" \
-    -d '{"amount":7500,"currency":"EUR","orderId":"ORDER-AUTH-ONLY"}')
-uuid=$(echo "$p" | json_get uuid)
-curl -s -X POST "$API/payments/$uuid/simulate" "${CURL_HEADERS[@]}" \
-    -d "{\"outcome\":\"AUTHORISED\",\"channel\":\"ipn\",\"notificationUrl\":\"$NOTIF_URL\"}" >/dev/null
-echo "  $uuid — authorized"
+echo "==> 2. Enrolements Visa et Amex"
+T2=$(enrole REGISTER-2042 '{"pan":"4111111111111111","expiryMonth":6,"expiryYear":2028}')
+T5=$(enrole REGISTER-2045 '{"pan":"371449635398431","expiryMonth":3,"expiryYear":2029}')
+T6=$(enrole REGISTER-2046 '{"pan":"4111111111111111","expiryMonth":9,"expiryYear":2031}')
+echo "  tokens actifs = $T2, $T5, $T6"
 
-echo "==> 4. Enrolement Visa valide (long-terme, dates 2028)"
-p=$(curl -s -X POST "$API/payments" "${CURL_HEADERS[@]}" \
-    -d '{"amount":0,"currency":"EUR","orderId":"SUB-INIT-VISA","formAction":"REGISTER","card":{"pan":"4111111111111111","expiryMonth":12,"expiryYear":2028,"brand":"VISA"}}')
-token_visa=$(echo "$p" | json_get paymentMethodToken)
-echo "  token Visa = $token_visa"
+echo "==> 3. Moyen périmé — état « Expiré » côté UI"
+# Une carte ne s'enrôle jamais déjà expirée : l'autorisation serait
+# refusée et aucun alias ne naîtrait. On l'enregistre saine, puis on la
+# fait vieillir — c'est le cas réel, et le seul qui produise un alias
+# périmé à regarder dans l'interface.
+T3=$(enrole REGISTER-2043 '{"pan":"4242424242424242","expiryMonth":12,"expiryYear":2030}')
+post "/payment-methods/$T3/expire" >/dev/null
+echo "  token = $T3 — périmé"
 
-echo "==> 5. Subscription mensuelle active + 2 renewals réussis"
-s=$(curl -s -X POST "$API/subscriptions" "${CURL_HEADERS[@]}" \
-    -d "{\"paymentMethodToken\":\"$token_visa\",\"amount\":2990,\"currency\":\"EUR\",\"orderId\":\"SUB-42-PRO\",\"effectDate\":\"2026-09-01\",\"rrule\":\"RRULE:FREQ=MONTHLY;INTERVAL=1\",\"metadata\":{\"plan\":\"pro\"}}")
-subid=$(echo "$s" | json_get id)
-echo "  subscription $subid"
-for i in 1 2; do
-    curl -s -X POST "$API/subscriptions/$subid/trigger-billing" >/dev/null
-    echo "  renewal $i triggered"
+echo "==> 4. Paiement nominal (captured)"
+U=$(post /payments '{"amount":4990,"currency":"EUR","orderId":"CMD-1042",
+  "customer":{"email":"bob@example.com","reference":"client-1042"}}' | field uuid)
+simulate "$U"
+echo "  $U — captured"
+
+echo "==> 5. Trois refus, trois motifs"
+# Les centimes portent le motif : .01 donne un 51, .02 un 43, .04 un 91.
+for pair in "1001:51:CMD-1043" "1002:43:CMD-1046" "1004:91:CMD-1047"; do
+    amount=${pair%%:*}; rest=${pair#*:}; code=${rest%%:*}; order=${rest##*:}
+    U=$(post /payments "{\"amount\":$amount,\"currency\":\"EUR\",\"orderId\":\"$order\"}" | field uuid)
+    simulate "$U"
+    echo "  $order — declined ($code)"
 done
 
-echo "==> 6. Enrolement magic PAN Visa 4000...02 (refus systématique)"
-p=$(curl -s -X POST "$API/payments" "${CURL_HEADERS[@]}" \
-    -d '{"amount":0,"currency":"EUR","orderId":"CARD-MAGIC-DECLINE","formAction":"REGISTER","card":{"pan":"4000000000000002","expiryMonth":12,"expiryYear":2028,"brand":"VISA"}}')
-token_magic=$(echo "$p" | json_get paymentMethodToken)
-echo "  token = $token_magic — refusera a chaque debit"
+echo "==> 6. Paiement en attente, sans issue jouée"
+post /payments '{"amount":12500,"currency":"EUR","orderId":"CMD-1044",
+  "customer":{"email":"dave@example.com","reference":"client-1044"}}' >/dev/null
+echo "  CMD-1044 — initiated"
 
-echo "==> 7. Subscription sur CB magic PAN → renewal declined"
-s=$(curl -s -X POST "$API/subscriptions" "${CURL_HEADERS[@]}" \
-    -d "{\"paymentMethodToken\":\"$token_magic\",\"amount\":990,\"currency\":\"EUR\",\"orderId\":\"SUB-FAILING\",\"rrule\":\"RRULE:FREQ=MONTHLY\"}")
-subid=$(echo "$s" | json_get id)
-curl -s -X POST "$API/subscriptions/$subid/trigger-billing" >/dev/null
-echo "  subscription $subid + renewal (declined)"
+echo "==> 7. Paiement autorisé (fonds réservés, non débités)"
+U=$(post /payments '{"amount":7500,"currency":"EUR","orderId":"CMD-1048",
+  "customer":{"email":"erin@example.com","reference":"client-1048"}}' | field uuid)
+simulate "$U" AUTHORISED
+echo "  $U — authorized"
 
-echo "==> 8. Enrolement Mastercard valide"
-p=$(curl -s -X POST "$API/payments" "${CURL_HEADERS[@]}" \
-    -d '{"amount":0,"currency":"EUR","orderId":"MC-CHECKOUT","formAction":"REGISTER","card":{"pan":"5555555555554444","expiryMonth":6,"expiryYear":2029}}')
-uuid=$(echo "$p" | json_get uuid)
-curl -s -X POST "$API/payments/$uuid/simulate" "${CURL_HEADERS[@]}" \
-    -d "{\"outcome\":\"PAID\",\"channel\":\"ipn\",\"notificationUrl\":\"$NOTIF_URL\"}" >/dev/null
-echo "  $uuid — captured"
+echo "==> 8. Abonnement mensuel actif + 2 échéances jouées"
+S1=$(post /subscriptions "{\"paymentMethodToken\":\"$T1\",\"amount\":2990,
+  \"currency\":\"EUR\",\"orderId\":\"SUB-77\",\"effectDate\":\"2026-09-01T00:00:00Z\",
+  \"rrule\":\"RRULE:FREQ=MONTHLY;INTERVAL=1\",\"metadata\":{\"plan\":\"pro\"}}" | field id)
+post "/subscriptions/$S1/trigger-billing" >/dev/null
+post "/subscriptions/$S1/trigger-billing" >/dev/null
+echo "  $S1 — SUB-77, 2 échéances"
 
-echo "==> 9. Enrolement Amex valide"
-p=$(curl -s -X POST "$API/payments" "${CURL_HEADERS[@]}" \
-    -d '{"amount":8900,"currency":"EUR","orderId":"AMEX-CHECKOUT","formAction":"REGISTER_PAY","card":{"pan":"371449635398431","expiryMonth":3,"expiryYear":2027}}')
-uuid=$(echo "$p" | json_get uuid)
-curl -s -X POST "$API/payments/$uuid/simulate" "${CURL_HEADERS[@]}" \
-    -d "{\"outcome\":\"PAID\",\"channel\":\"ipn\",\"notificationUrl\":\"$NOTIF_URL\"}" >/dev/null
-echo "  $uuid — captured"
+echo "==> 9. Moyen révoqué, puis échéance refusée"
+# L'échéance refusée vient d'un moyen devenu inexploitable après coup, et
+# non d'une carte de refus enrôlée : celle-là ne produirait aucun alias,
+# donc aucun abonnement à porter.
+T4=$(enrole REGISTER-2044 '{"pan":"2223000048400011","expiryMonth":10,"expiryYear":2030}')
+S2=$(post /subscriptions "{\"paymentMethodToken\":\"$T4\",\"amount\":990,
+  \"currency\":\"EUR\",\"orderId\":\"SUB-78\",\"rrule\":\"RRULE:FREQ=MONTHLY\"}" | field id)
+post "/payment-methods/$T4/revoke" >/dev/null
+post "/subscriptions/$S2/trigger-billing" >/dev/null
+echo "  token $T4 révoqué, $S2 — SUB-78 échéance refusée"
 
-echo "==> 10. Moyen périmé — état « Expiré » côté UI"
-# Une carte ne s'enrôle jamais déjà expirée : PayZen refuserait
-# l'autorisation et ne créerait aucun alias. On l'enregistre saine, puis
-# on la fait vieillir — c'est le cas réel, et le seul qui produise un
-# alias périmé à regarder dans l'interface.
-p=$(curl -s -X POST "$API/payments" "${CURL_HEADERS[@]}" \
-    -d '{"amount":0,"currency":"EUR","orderId":"CARD-EXPIRED","formAction":"REGISTER","card":{"pan":"4242424242424242","expiryMonth":12,"expiryYear":2030,"brand":"VISA"}}')
-token_exp=$(echo "$p" | json_get paymentMethodToken)
-curl -sX POST "$API/payment-methods/$token_exp/expire" -o /dev/null
-echo "  token = $token_exp — périmé"
+echo "==> 10. Abonnement annulé, et abonnement sans échéance"
+S3=$(post /subscriptions "{\"paymentMethodToken\":\"$T6\",\"amount\":4900,
+  \"currency\":\"EUR\",\"orderId\":\"SUB-79\",\"rrule\":\"RRULE:FREQ=YEARLY\"}" | field id)
+post "/subscriptions/$S3/cancel" >/dev/null
+post /subscriptions "{\"paymentMethodToken\":\"$T2\",\"amount\":1490,
+  \"currency\":\"EUR\",\"orderId\":\"SUB-80\",\"rrule\":\"RRULE:FREQ=WEEKLY\"}" >/dev/null
+echo "  SUB-79 annulé, SUB-80 sans échéance"
 
-echo "==> 11. Enrolement Mastercard série 2 (nouveau BIN) puis révocation"
-p=$(curl -s -X POST "$API/payments" "${CURL_HEADERS[@]}" \
-    -d '{"amount":0,"currency":"EUR","orderId":"MC2-CHECKOUT","formAction":"REGISTER","card":{"pan":"2223000048400011","expiryMonth":10,"expiryYear":2030}}')
-token_mc2=$(echo "$p" | json_get paymentMethodToken)
-curl -sX POST "$API/payment-methods/$token_mc2/revoke" -o /dev/null
-echo "  token = $token_mc2 — moyen révoqué manuellement"
+echo "==> 11. Rejeu one-click sur l'alias enrôlé"
+post /payments "{\"amount\":1990,\"currency\":\"EUR\",\"orderId\":\"CMD-1045\",
+  \"paymentMethodToken\":\"$T1\"}" >/dev/null
+echo "  CMD-1045"
+
+echo "==> 12. Volume : 30 paiements répartis sur les états"
+# Répartis par le rang et non tirés au hasard : deux exécutions donnent
+# le même écran, ce qui rend une capture ou une comparaison reproductible.
+for i in $(seq 1 30); do
+    order=$(printf 'CMD-2%03d' "$i")
+    base=$(( (12 + i * 7) * 100 ))
+    case $(( i % 5 )) in
+        0) case $(( (i / 5) % 3 )) in 0) c=1 ;; 1) c=2 ;; *) c=4 ;; esac
+           amount=$(( base + c )); issue=PAID ;;
+        1) amount=$base; issue=NONE ;;
+        3) amount=$base; issue=AUTHORISED ;;
+        *) amount=$(( base + 50 )); issue=PAID ;;
+    esac
+    U=$(post /payments "{\"amount\":$amount,\"currency\":\"EUR\",\"orderId\":\"$order\",
+      \"customer\":{\"email\":\"client$i@example.com\",\"reference\":\"client-2$i\"}}" | field uuid)
+    [ "$issue" = NONE ] || simulate "$U" "$issue"
+done
+echo "  CMD-2001 à CMD-2030"
 
 # Comptage : chaque entrée du tableau porte le champ scalaire attendu
-# une seule fois — grep -c compte les occurrences sans dépendance JSON.
-count_field() {
-    curl -s "$1" | grep -o "\"$2\":" | wc -l | tr -d ' '
-}
+# une seule fois — grep -o compte les occurrences sans dépendance JSON.
+count() { curl -s "$API/$1" | grep -o "\"$2\":" | wc -l | tr -d ' '; }
 
 echo ""
 echo "==> Résumé"
-echo "Paiements: $(count_field "$API/payments" uuid)"
-echo "Subscriptions: $(count_field "$API/subscriptions" id)"
-echo "Payment methods: $(count_field "$API/payment-methods" token)"
+echo "Paiements: $(count payments uuid)"
+echo "Subscriptions: $(count subscriptions id)"
+echo "Payment methods: $(count payment-methods token)"
 echo ""
+echo "Recherche : taper « client-2 » pour filtrer le volume"
 echo "UI : ${PAYSIM_URL:-http://localhost:30880}/"

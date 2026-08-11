@@ -148,17 +148,6 @@ export function PaymentList() {
 
       <ProviderTabs value={providerFilter} onChange={setProviderFilter} />
 
-      <ListFilters
-        query={query}
-        onQueryChange={setQuery}
-        placeholderKey="common.filters.searchPayments"
-        states={ETATS_PAIEMENT}
-        selected={etats}
-        onSelectedChange={setEtats}
-        shown={filtered.length}
-        total={total}
-      />
-
       {error && <ErrorBanner message={t('payment.list.errorPrefix', { error })} />}
 
       <DataTable
@@ -167,6 +156,18 @@ export function PaymentList() {
         rowKey={(p) => p.uuid}
         loading={loading}
         pageSize={10}
+        toolbar={
+          <ListFilters
+            query={query}
+            onQueryChange={setQuery}
+            placeholderKey="common.filters.searchPayments"
+            states={ETATS_PAIEMENT}
+            selected={etats}
+            onSelectedChange={setEtats}
+            shown={filtered.length}
+            total={total}
+          />
+        }
         emptyState={
           <EmptyState
             icon={CreditCard}
