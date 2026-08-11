@@ -75,6 +75,39 @@ describe('useSSE', () => {
     expect(instances[0].close).toHaveBeenCalledTimes(1);
   });
 
+  // Sur une instance au repos, aucun événement ne viendra jamais : sans
+  // l'ouverture comme premier signe de vie, le témoin de fraîcheur
+  // resterait muet et laisserait croire à une panne.
+  it('horodate l\'ouverture du flux comme un signe de vie', () => {
+    const { result } = renderHook(() => useSSE('/stream', () => undefined));
+    expect(result.current.lastEventAt).toBeUndefined();
+    act(() => {
+      instances[0].onopen?.(new Event('open'));
+    });
+    expect(result.current.lastEventAt).toBeGreaterThan(0);
+  });
+
+  it('horodate chaque événement reçu', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-11T10:00:00Z'));
+    try {
+      const { result } = renderHook(() => useSSE('/stream', () => undefined));
+      act(() => {
+        instances[0].onopen?.(new Event('open'));
+      });
+      const ouverture = result.current.lastEventAt;
+      vi.setSystemTime(new Date('2026-08-11T10:00:30Z'));
+      act(() => {
+        instances[0].onmessage?.(
+          new MessageEvent('message', { data: JSON.stringify({ type: 't', at: 'x', data: 1 }) }),
+        );
+      });
+      expect(result.current.lastEventAt).toBe((ouverture ?? 0) + 30_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('ne rouvre pas la connexion à chaque re-render (callback stocké en ref)', () => {
     let cb = () => undefined;
     const { rerender } = renderHook(({ fn }: { fn: () => void }) => useSSE('/stream', fn), {

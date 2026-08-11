@@ -10,16 +10,22 @@ interface CopyButtonProps {
   value: string;
   className?: string;
   label?: string; // texte optionnel affiché à côté de l'icône (sinon icône seule)
+  /**
+   * Remplace le « Copier » du tooltip au repos, quand l'icône seule ne
+   * dit pas ce qui part au presse-papier. Le retour de succès reste
+   * « Copié » : c'est l'action qui varie, pas sa confirmation.
+   */
+  tip?: string;
 }
 
 /**
  * Bouton icône « copier ». Feedback visuel 1200 ms sur succès. Geste
  * le plus répété en débogage (web.md) — reste minimal et neutre visuellement.
  */
-export function CopyButton({ value, className = '', label }: CopyButtonProps) {
+export function CopyButton({ value, className = '', label, tip: tipRepos }: CopyButtonProps) {
   const t = useT();
   const [copied, setCopied] = useState(false);
-  const tip = copied ? t('common.action.copied') : t('common.action.copy');
+  const tip = copied ? t('common.action.copied') : (tipRepos ?? t('common.action.copy'));
 
   async function handleCopy() {
     try {
@@ -27,7 +33,7 @@ export function CopyButton({ value, className = '', label }: CopyButtonProps) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     } catch {
-      // clipboard peut échouer en http (permissions) — fallback silencieux.
+      // Clipboard peut échouer en http (permissions) — fallback silencieux.
       // Un vrai fallback (textarea + execCommand) ne vaut pas le code sur un
       // outil dev servi en https ou en localhost.
     }

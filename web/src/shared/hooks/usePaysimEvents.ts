@@ -82,12 +82,12 @@ function resynchroniser(): void {
  * n'inclut pas l'amount, etc.). Le coût d'un GET local par event est
  * négligeable et garantit la cohérence sans coordination fragile.
  *
- * Retourne `connected` — la seule connexion SSE de l'app, celle qui
- * pilote l'indicateur du Header.
+ * Retourne `connected` et l'instant du dernier signe de vie — la seule
+ * connexion SSE de l'app, celle qui pilote les témoins du Header.
  */
 export function usePaysimEvents(
   streamPath = '/paysim/api/v1/events/stream',
-): { connected: boolean } {
+): { connected: boolean; lastEventAt?: number } {
   const setPaymentDetail = usePaymentStore((s) => s.setDetail);
   const upsertPayment = usePaymentStore((s) => s.upsert);
   const setWebhookList = useWebhookStore((s) => s.setList);
