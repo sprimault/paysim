@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { usePaymentColumns } from '@/features/payment-list/ui/paymentColumns';
 import { DataTable } from '@/shared/ui/DataTable';
@@ -55,11 +55,37 @@ describe('colonnes de la liste des paiements', () => {
   // 43 impose de reclamer une autre carte. Il etait livre par l'API et
   // affiche nulle part — il fallait ouvrir la charge utile et lire du
   // JSON pour le trouver.
-  it('affiche le code du motif de refus, libelle en infobulle', () => {
+  // L'infobulle porte sur la cellule entiere, etat compris : viser le
+  // badge de deux caracteres demandait une precision que personne ne
+  // fournit pour lire un libelle.
+  it('affiche le code du motif de refus, libelle en infobulle sur toute la cellule', () => {
     renderRow({ ...p, state: 'declined', declineCode: '51', declineMessage: 'provision insuffisante' });
     const badge = screen.getByText('51');
     expect(badge).toBeInTheDocument();
-    expect(badge).toHaveAttribute('title', 'provision insuffisante');
+
+    // La zone survolable couvre l'etat et son code d'un seul tenant.
+    const zone = screen.getByLabelText('provision insuffisante');
+    expect(zone).toContainElement(badge);
+    expect(zone).toContainElement(screen.getByText('Refusé'));
+
+    // Rien tant qu'on ne survole pas.
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    fireEvent.mouseEnter(zone);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('provision insuffisante');
+    fireEvent.mouseLeave(zone);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+
+  // Sans motif, l'etat ne doit rien annoncer a lire. On survole la
+  // cellule elle-meme : chercher un curseur dans toute la ligne
+  // attraperait celui du bouton de copie, qui a le sien a bon droit.
+  it('sans motif, l\'etat n\'ouvre aucune infobulle', () => {
+    renderRow({ ...p, state: 'declined' });
+    const etat = screen.getByText('Refusé');
+    fireEvent.mouseEnter(etat);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    // Et l'etat n'est pas devenu une zone survolable.
+    expect(etat.closest('.cursor-pointer')).toBeNull();
   });
 
   // Un abandon ou une expiration n'ont pas de code bancaire : un badge

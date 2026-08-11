@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
+import { Tooltip } from '@/shared/ui/Tooltip';
 import { ConfirmDialog } from './ConfirmDialog';
 import { toast } from './toastStore';
 import { useT } from '@/shared/i18n/useT';
@@ -65,18 +66,19 @@ export function ResetAllButton() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={(e) => {
-          setAncre(e.currentTarget);
-          setOpen(true);
-        }}
-        title={t('header.reset.title')}
-        aria-label={t('header.reset.title')}
-        className="rounded p-1.5 text-zinc-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-zinc-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
-      >
-        <Trash2 size={16} strokeWidth={2} />
-      </button>
+      <Tooltip label={t('header.reset.title')} enfantFocusable>
+        <button
+          type="button"
+          onClick={(e) => {
+            setAncre(e.currentTarget);
+            setOpen(true);
+          }}
+          aria-label={t('header.reset.title')}
+          className="rounded p-1.5 text-zinc-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-zinc-400 dark:hover:bg-red-950/40 dark:hover:text-red-400"
+        >
+          <Trash2 size={16} strokeWidth={2} />
+        </button>
+      </Tooltip>
       <ConfirmDialog
         open={open}
         title={t('header.reset.dialogTitle')}

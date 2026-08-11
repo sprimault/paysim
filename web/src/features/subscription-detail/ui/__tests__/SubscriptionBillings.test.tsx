@@ -1,7 +1,7 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SubscriptionBillings } from '@/features/subscription-detail/ui/SubscriptionBillings';
@@ -87,8 +87,15 @@ describe('<SubscriptionBillings />', () => {
     ]);
     renderBillings();
     await waitFor(() => {
-      expect(screen.getByText('51')).toHaveAttribute('title', 'provision insuffisante');
+      expect(screen.getByText('51')).toBeInTheDocument();
     });
+    // L'infobulle porte sur l'etat et son code d'un seul tenant.
+    const zone = screen.getByLabelText('provision insuffisante');
+    expect(zone).toContainElement(screen.getByText('51'));
+    expect(zone).toContainElement(screen.getByText('Refusé'));
+
+    fireEvent.mouseEnter(zone);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('provision insuffisante');
   });
 
   it('affiche un état vide quand rien n\'a été prélevé', async () => {

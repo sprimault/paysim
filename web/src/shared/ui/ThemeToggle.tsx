@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Monitor, Moon, Sun } from 'lucide-react';
+import { Tooltip } from '@/shared/ui/Tooltip';
 import type { ComponentType } from 'react';
 import { useTheme } from '@/shared/hooks/useTheme';
 import type { Theme } from '@/shared/lib/theme';
@@ -45,22 +46,23 @@ export function ThemeToggle() {
       {OPTIONS.map(({ value, labelKey, icon: Icon }) => {
         const active = theme === value;
         return (
-          <button
-            key={value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            title={t(labelKey)}
-            onClick={() => setTheme(value)}
-            className={
-              'inline-flex h-6 w-6 items-center justify-center rounded transition-colors ' +
-              (active
-                ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-500 dark:hover:text-zinc-100')
-            }
-          >
-            <Icon size={14} />
-          </button>
+          <Tooltip key={value} label={t(labelKey)} enfantFocusable>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={active}
+              aria-label={t(labelKey)}
+              onClick={() => setTheme(value)}
+              className={
+                'inline-flex h-6 w-6 items-center justify-center rounded transition-colors ' +
+                (active
+                  ? 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
+                  : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-500 dark:hover:text-zinc-100')
+              }
+            >
+              <Icon size={14} />
+            </button>
+          </Tooltip>
         );
       })}
     </div>

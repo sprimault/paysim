@@ -7,6 +7,7 @@ import { Badge } from '@/shared/ui/Badge';
 import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
 import { CopyButton } from '@/shared/ui/CopyButton';
+import { Tooltip } from '@/shared/ui/Tooltip';
 import { EmptyState } from '@/shared/ui/EmptyState';
 import { formatShort, humanDuration } from '@/shared/lib/dates';
 import { useFormatRelative } from '@/shared/hooks/useFormatRelative';
@@ -72,7 +73,9 @@ export function PaymentWebhooks({ webhooks }: PaymentWebhooksProps) {
                   <CopyButton value={w.url} className="p-0.5" />
                 </div>
                 <div className="mt-1 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-500">
-                  <span title={formatShort(w.createdAt)}>{rel(w.createdAt)}</span>
+                  <Tooltip label={formatShort(w.createdAt)}>
+                    <span>{rel(w.createdAt)}</span>
+                  </Tooltip>
                   <span>·</span>
                   <code className="font-mono">{w.id}</code>
                   <CopyButton value={w.id} className="p-0.5" />
