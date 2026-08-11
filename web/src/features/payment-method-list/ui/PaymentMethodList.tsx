@@ -164,17 +164,6 @@ export function PaymentMethodList() {
 
       <ProviderTabs value={providerFilter} onChange={setProviderFilter} />
 
-      <ListFilters
-        query={query}
-        onQueryChange={setQuery}
-        placeholderKey="common.filters.searchMethods"
-        states={ETATS_MOYEN}
-        selected={etats}
-        onSelectedChange={setEtats}
-        shown={filtered.length}
-        total={total}
-      />
-
       {error && <ErrorBanner message={t('paymentMethod.list.errorPrefix', { error })} />}
 
       <DataTable
@@ -183,6 +172,18 @@ export function PaymentMethodList() {
         rowKey={(m) => m.token}
         loading={loading}
         pageSize={10}
+        toolbar={
+          <ListFilters
+            query={query}
+            onQueryChange={setQuery}
+            placeholderKey="common.filters.searchMethods"
+            states={ETATS_MOYEN}
+            selected={etats}
+            onSelectedChange={setEtats}
+            shown={filtered.length}
+            total={total}
+          />
+        }
         emptyState={
           <EmptyState
             icon={CreditCard}

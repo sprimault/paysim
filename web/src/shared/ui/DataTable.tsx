@@ -1,7 +1,7 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
 import { Skeleton } from '@/shared/ui/Skeleton';
 import { useT } from '@/shared/i18n/useT';
@@ -57,6 +57,16 @@ export interface DataTableProps<T> {
    * sur une valeur qu'il ne propose pas.
    */
   pageSizeOptions?: number[];
+  /**
+   * Contrôles propres à l'écran — recherche, filtres — rendus au-dessus
+   * de la pagination.
+   *
+   * Ils passent par ici plutôt que d'être posés à côté de la table pour
+   * qu'un seul bloc les rende collants avec elle : empilés dans le même
+   * conteneur, ils se placent l'un sous l'autre sans qu'on ait à
+   * connaître leur hauteur. `DataTable` ne les interprète jamais.
+   */
+  toolbar?: ReactNode;
 }
 
 /**
@@ -84,11 +94,36 @@ export function DataTable<T>({
   loading,
   pageSize,
   pageSizeOptions = [10, 25, 50, 100],
+  toolbar,
 }: DataTableProps<T>) {
   const t = useT();
   const [sort, setSort] = useState<SortState>(null);
   const [page, setPage] = useState(0);
   const [taille, setTaille] = useState(pageSize);
+
+  // Hauteur du bloc collant supérieur, pour caler le thead dessous.
+  // Observée plutôt que calculée : la barre de filtres change de
+  // hauteur quand ses boutons passent à la ligne, et un thead posé sur
+  // une hauteur figée se retrouverait alors à chevaucher ou à flotter.
+  const enteteRef = useRef<HTMLDivElement>(null);
+  const [hauteurEntete, setHauteurEntete] = useState(0);
+
+  useLayoutEffect(() => {
+    const el = enteteRef.current;
+    if (!el) return;
+    const mesurer = () => setHauteurEntete(el.offsetHeight);
+    mesurer();
+    // ResizeObserver manque à jsdom : les tests n'ont pas de mise en
+    // page, la hauteur y reste donc à zéro, ce qui est sans effet sur
+    // ce qu'ils vérifient.
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(mesurer);
+    ro.observe(el);
+    return () => ro.disconnect();
+    // Aucune dépendance : l'observateur suit toutes les variations de
+    // hauteur, d'où qu'elles viennent — filtres repliés, barre de
+    // pagination apparue, fenêtre rétrécie.
+  }, []);
 
   const sorted = useMemo(() => {
     if (!sort) return rows;
@@ -160,9 +195,14 @@ export function DataTable<T>({
   }
 
   /**
-   * La barre de navigation, rendue au-dessus et au-dessous de la table.
-   * Sur une page pleine, celle du bas est hors de l'écran au moment où
-   * l'on décide de changer de page — dupliquer évite de remonter.
+   * La barre de navigation, rendue une seule fois, en tête du bloc
+   * collant.
+   *
+   * Elle était auparavant dupliquée en bas : sur une page pleine, celle
+   * du haut sortait de l'écran au moment où l'on décidait de changer de
+   * page. Depuis qu'elle reste visible en défilant, la seconde n'a plus
+   * d'objet — et deux barres identiques à l'écran valent moins qu'une
+   * qui ne s'en va pas.
    *
    * `bordure` est le seul écart entre les deux : chacune se sépare de la
    * table du côté où elle la touche.
@@ -220,10 +260,31 @@ export function DataTable<T>({
   }
 
   return (
-    <div className="overflow-hidden rounded-panel border border-zinc-200 dark:border-zinc-800">
-      {barreVisible && barre('border-b')}
+    // Pas d'overflow-hidden : il neutraliserait le collage de tout ce
+    // qu'il contient. Les angles sont donc arrondis sur les blocs
+    // extrêmes plutôt que découpés par le conteneur.
+    <div className="rounded-panel border border-zinc-200 dark:border-zinc-800">
+      {/*
+        Un seul bloc collant pour la barre de filtres et la pagination :
+        empilés dans le même conteneur, ils se placent l'un sous l'autre
+        sans qu'on ait à connaître leur hauteur. Sous le bandeau de
+        navigation, qui colle déjà à top-0 sur 3,5 rem.
+      */}
+      <div
+        ref={enteteRef}
+        className="sticky top-14 z-20 rounded-t-panel bg-white dark:bg-zinc-950"
+      >
+        {toolbar}
+        {barreVisible && barre('border-b')}
+      </div>
       <table className="w-full text-sm">
-        <thead>
+        <thead
+          // Le thead colle sous ce bloc, à sa hauteur mesurée : la coder
+          // en dur se dérèglerait dès que la barre passe à la ligne —
+          // ce qui arrive sur écran étroit.
+          className="sticky z-10"
+          style={{ top: `calc(3.5rem + ${hauteurEntete}px)` }}
+        >
           <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
             {columns.map((col, i) => {
               const triable = !!col.sortValue;
@@ -289,7 +350,6 @@ export function DataTable<T>({
         </tbody>
       </table>
 
-      {barreVisible && barre('border-t')}
     </div>
   );
 }

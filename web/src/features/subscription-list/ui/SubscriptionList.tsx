@@ -179,17 +179,6 @@ export function SubscriptionList() {
 
       <ProviderTabs value={providerFilter} onChange={setProviderFilter} />
 
-      <ListFilters
-        query={query}
-        onQueryChange={setQuery}
-        placeholderKey="common.filters.searchSubscriptions"
-        states={ETATS_ABONNEMENT}
-        selected={etats}
-        onSelectedChange={setEtats}
-        shown={filtered.length}
-        total={total}
-      />
-
       {error && <ErrorBanner message={t('subscription.list.errorPrefix', { error })} />}
 
       <DataTable
@@ -198,6 +187,18 @@ export function SubscriptionList() {
         rowKey={(s) => s.id}
         loading={loading}
         pageSize={10}
+        toolbar={
+          <ListFilters
+            query={query}
+            onQueryChange={setQuery}
+            placeholderKey="common.filters.searchSubscriptions"
+            states={ETATS_ABONNEMENT}
+            selected={etats}
+            onSelectedChange={setEtats}
+            shown={filtered.length}
+            total={total}
+          />
+        }
         emptyState={
           <EmptyState
             icon={Repeat}

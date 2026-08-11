@@ -30,9 +30,9 @@ function colonne(index: number): string[] {
     .map((tr) => tr.children[index].textContent ?? '');
 }
 
-// Les contrôles de pagination sont rendus deux fois, au-dessus et
-// au-dessous de la table. Les helpers visent celui du haut ; un cas
-// dédié vérifie que les deux restent synchronisés.
+// Une seule barre de pagination, en tête du bloc collant. Les getAll
+// restent pour que l'assertion de compte reste possible dans le cas qui
+// la vérifie.
 const suivant = () => screen.getAllByRole('button', { name: 'Suivant' })[0];
 const precedent = () => screen.getAllByRole('button', { name: 'Précédent' })[0];
 const selecteur = () => screen.getAllByLabelText('Lignes par page')[0];
@@ -256,16 +256,34 @@ describe('<DataTable /> pagination', () => {
     expect(screen.getAllByText('Page 1 / 3')).not.toHaveLength(0);
   });
 
-  // Deux barres, un seul état : celle du haut sert à changer de page sans
-  // dérouler jusqu'en bas, ce qui suppose qu'elles disent la même chose.
-  it('rend la barre au-dessus et au-dessous, synchronisées', () => {
+  // Une seule barre, en tete du bloc collant. Elle etait dupliquee en
+  // bas tant que celle du haut sortait de l'ecran ; depuis qu'elle reste
+  // visible en defilant, la seconde n'a plus d'objet.
+  it('rend une seule barre de pagination, en haut', () => {
     render(<DataTable columns={cols} rows={rows} rowKey={(r) => r.id} pageSize={3} />);
-    expect(screen.getAllByRole('button', { name: 'Suivant' })).toHaveLength(2);
-    expect(screen.getAllByText('Page 1 / 3')).toHaveLength(2);
-    // Le clic part de la barre du bas, la lecture se fait sur les deux.
-    fireEvent.click(screen.getAllByRole('button', { name: 'Suivant' })[1]);
-    expect(screen.getAllByText('Page 2 / 3')).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Suivant' })).toHaveLength(1);
+    expect(screen.getAllByText('Page 1 / 3')).toHaveLength(1);
+    fireEvent.click(suivant());
+    expect(screen.getByText('Page 2 / 3')).toBeInTheDocument();
     expect(colonne(0)).toEqual(['L3', 'L4', 'L5']);
+  });
+
+  // La barre de l'ecran est rendue dans le meme bloc que la pagination :
+  // c'est ce qui les fait defiler ensemble sans mesurer de hauteur.
+  it('rend la toolbar fournie au-dessus de la pagination', () => {
+    render(
+      <DataTable
+        columns={cols}
+        rows={rows}
+        rowKey={(r) => r.id}
+        pageSize={3}
+        toolbar={<div data-testid="toolbar">filtres</div>}
+      />,
+    );
+    const toolbar = screen.getByTestId('toolbar');
+    const bloc = toolbar.parentElement;
+    expect(bloc?.className).toContain('sticky');
+    expect(bloc).toContainElement(screen.getByRole('button', { name: 'Suivant' }));
   });
 });
 
@@ -287,15 +305,15 @@ describe('<DataTable /> choix du nombre de lignes', () => {
     expect(colonne(0)).toHaveLength(10);
     fireEvent.change(selecteur(), { target: { value: '25' } });
     expect(colonne(0)).toHaveLength(25);
-    expect(screen.getAllByText('1–25 sur 30')).toHaveLength(2);
+    expect(screen.getByText('1–25 sur 30')).toBeInTheDocument();
   });
 
   it('« Tout » rend la liste entière sans découpage', () => {
     render(<DataTable columns={cols} rows={rows} rowKey={(r) => r.id} pageSize={10} />);
     fireEvent.change(selecteur(), { target: { value: '0' } });
     expect(colonne(0)).toHaveLength(30);
-    expect(screen.getAllByText('1–30 sur 30')).toHaveLength(2);
-    expect(screen.getAllByText('Page 1 / 1')).toHaveLength(2);
+    expect(screen.getByText('1–30 sur 30')).toBeInTheDocument();
+    expect(screen.getByText('Page 1 / 1')).toBeInTheDocument();
   });
 
   // Sans cela, choisir « tout » supprimerait le sélecteur qui vient de
@@ -318,7 +336,7 @@ describe('<DataTable /> choix du nombre de lignes', () => {
     expect(colonne(0)[0]).toBe('L25');
     fireEvent.change(selecteur(), { target: { value: '10' } });
     expect(colonne(0)[0]).toBe('L20');
-    expect(screen.getAllByText('Page 3 / 3')).toHaveLength(2);
+    expect(screen.getByText('Page 3 / 3')).toBeInTheDocument();
   });
 
   it('agrandir la page ne perd pas la liste', () => {
