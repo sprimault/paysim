@@ -94,6 +94,9 @@ export function usePaymentColumns({ onDelete, showProvider }: Options): Column<P
   if (showProvider) {
     colonnes.push({
       header: t('payment.list.column.provider'),
+      // Un seul fournisseur existe aujourd'hui, et l'onglet le porte
+      // déjà : c'est la première colonne à céder la place.
+      hideBelow: 'xl',
       sortValue: (p) => p.provider,
       cell: (p) => (
         <span className="text-xs text-zinc-500 dark:text-zinc-400">{p.provider}</span>
@@ -122,6 +125,9 @@ export function usePaymentColumns({ onDelete, showProvider }: Options): Column<P
     },
     {
       header: t('payment.list.column.uuid'),
+      // Le chevron de la colonne d'actions ouvre la même fiche : c'est
+      // le lien qu'on perd ici, pas l'accès.
+      hideBelow: 'lg',
       cell: (p) => (
         <div className="flex items-center gap-1">
           <Link
@@ -136,6 +142,7 @@ export function usePaymentColumns({ onDelete, showProvider }: Options): Column<P
     },
     {
       header: t('payment.list.column.paymentMethod'),
+      hideBelow: 'xl',
       cell: (p) =>
         p.paymentMethodToken ? (
           <div className="flex items-center gap-1">
@@ -153,6 +160,9 @@ export function usePaymentColumns({ onDelete, showProvider }: Options): Column<P
     },
     {
       header: t('payment.list.column.created'),
+      // Des deux dates, « mis à jour » est celle qu'on cherche — quelle
+      // transaction a bougé en dernier. « Créé » part la première.
+      hideBelow: 'xl',
       sortValue: (p) => p.createdAt,
       cell: (p) => (
         <Tooltip label={formatShort(p.createdAt)}>
@@ -162,6 +172,7 @@ export function usePaymentColumns({ onDelete, showProvider }: Options): Column<P
     },
     {
       header: t('payment.list.column.updated'),
+      hideBelow: 'lg',
       sortValue: (p) => p.updatedAt,
       cell: (p) => (
         <Tooltip label={formatShort(p.updatedAt)}>

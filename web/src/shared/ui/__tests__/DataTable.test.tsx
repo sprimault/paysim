@@ -309,6 +309,25 @@ describe('<DataTable /> pagination', () => {
     }
   });
 
+  // Une table dense deborde vite : sur un portable, la fenetre se met a
+  // defiler horizontalement et c'est l'essentiel qu'on perd de vue.
+  it('masque en-tete et cellules d\'une colonne sous son palier', () => {
+    const avecPalier: Column<Row>[] = [
+      { header: 'Nom', cell: (r) => r.name },
+      { header: 'Montant', cell: (r) => r.amount, hideBelow: 'lg' },
+    ];
+    render(<DataTable columns={avecPalier} rows={rows} rowKey={(r) => r.id} pageSize={3} />);
+
+    const entetes = screen.getAllByRole('columnheader');
+    expect(entetes[0].className).not.toContain('hidden');
+    expect(entetes[1].className).toContain('hidden lg:table-cell');
+
+    // La cellule suit son en-tete, sans quoi la colonne masquee
+    // laisserait ses valeurs decaler la ligne.
+    const premiere = screen.getAllByRole('row')[1];
+    expect(premiere.children[1].className).toContain('hidden lg:table-cell');
+  });
+
   // Bordures separees, imposees par le collage des cellules : une
   // bordure posee sur un <tr> n'y est plus peinte, les separateurs de
   // lignes doivent donc vivre sur les <td>.

@@ -72,6 +72,7 @@ export function PaymentMethodList() {
     },
     {
       header: t('paymentMethod.list.column.provider'),
+      hideBelow: 'xl',
       sortValue: (m) => m.provider,
       cell: (m) => (
         <span className="text-xs text-zinc-500 dark:text-zinc-400">{m.provider}</span>
@@ -105,6 +106,7 @@ export function PaymentMethodList() {
     },
     {
       header: t('paymentMethod.list.column.token'),
+      hideBelow: 'lg',
       cell: (m) => (
         <div className="flex items-center gap-1">
           <code className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
@@ -116,6 +118,7 @@ export function PaymentMethodList() {
     },
     {
       header: t('paymentMethod.list.column.created'),
+      hideBelow: 'lg',
       sortValue: (m) => m.createdAt,
       cell: (m) => (
         <Tooltip label={formatShort(m.createdAt)}>
