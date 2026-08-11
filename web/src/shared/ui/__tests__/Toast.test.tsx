@@ -39,6 +39,17 @@ describe('ToastContainer', () => {
     expect(screen.queryByText('Éphémère')).not.toBeInTheDocument();
   });
 
+  // En bas à droite, la confirmation d'un geste fait ailleurs dans la
+  // page passe inaperçue et disparaît avant d'avoir été lue.
+  it('se place en haut, centré, sous l\'en-tête collant', () => {
+    render(<ToastContainer />);
+    const region = screen.getByRole('region', { name: 'Notifications' });
+    expect(region.className).toContain('top-16');
+    expect(region.className).toContain('left-1/2');
+    expect(region.className).toContain('-translate-x-1/2');
+    expect(region.className).not.toContain('bottom-4');
+  });
+
   it('se ferme au clic sur le bouton Fermer', () => {
     render(<ToastContainer />);
     act(() => toast.info('À fermer'));
