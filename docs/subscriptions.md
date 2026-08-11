@@ -130,11 +130,15 @@ A cancelled subscription short-circuits the whole chain: `400` with
 name: subscription-monthly
 description: Monthly plan — enrollment, two billings, cancellation.
 steps:
+  # Register-only, no debit: the alias comes back right away. With an
+  # amount, it would only appear once the payment is played, and the
+  # next step would have no token to use.
   - action: create_payment
     provider: payzen
-    amount: 100
+    amount: 0
     currency: EUR
     order_id: INIT
+    form_action: REGISTER
     card:
       pan: "4111111111111111"
       expiry_month: 12
@@ -162,10 +166,18 @@ Live equivalent in raw HTTP:
 
 ```bash
 # 1. Enroll a payment method (returns {uuid, paymentMethodToken})
+#
+# amount: 0 — a verification with no debit returns the alias right
+# away. With an amount, the alias only exists once the payment is
+# played: PayZen creates it only after an accepted authorization.
+#
+# Field names in camelCase: this is the HTTP API. The scenario YAML
+# DSL, in contrast, uses snake_case.
 curl -X POST http://paysim:8080/paysim/api/v1/payments \
   -H 'Content-Type: application/json' \
   -d '{
-    "provider":"payzen","amount":100,"currency":"EUR","orderId":"INIT",
+    "provider":"payzen","amount":0,"currency":"EUR","orderId":"INIT",
+    "formAction":"REGISTER",
     "card":{"pan":"4111111111111111","expiryMonth":12,"expiryYear":2028}
   }'
 

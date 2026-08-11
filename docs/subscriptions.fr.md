@@ -131,11 +131,15 @@ Un abonnement annulé court-circuite toute la chaîne : `400` avec
 name: subscription-monthly
 description: Plan mensuel — enrôlement, deux échéances, annulation.
 steps:
+  # Enrôlement sans débit : l'alias est rendu tout de suite. Avec un
+  # montant, il n'apparaîtrait qu'après le paiement joué, et l'étape
+  # suivante n'aurait pas de token à utiliser.
   - action: create_payment
     provider: payzen
-    amount: 100
+    amount: 0
     currency: EUR
     order_id: INIT
+    form_action: REGISTER
     card:
       pan: "4111111111111111"
       expiry_month: 12
@@ -163,10 +167,18 @@ steps:
 
 ```bash
 # 1. Enrôler un moyen de paiement (retourne {uuid, paymentMethodToken})
+#
+# amount: 0 — une vérification sans débit rend l'alias immédiatement.
+# Avec un montant, l'alias n'existe qu'après le paiement joué : PayZen
+# ne le crée qu'une fois l'autorisation acceptée.
+#
+# Noms de champs en camelCase : c'est l'API HTTP. Le DSL YAML des
+# scénarios, lui, est en snake_case.
 curl -X POST http://paysim:8080/paysim/api/v1/payments \
   -H 'Content-Type: application/json' \
   -d '{
-    "provider":"payzen","amount":100,"currency":"EUR","orderId":"INIT",
+    "provider":"payzen","amount":0,"currency":"EUR","orderId":"INIT",
+    "formAction":"REGISTER",
     "card":{"pan":"4111111111111111","expiryMonth":12,"expiryYear":2028}
   }'
 

@@ -559,14 +559,39 @@ Reproduces the PayZen contract byte-for-byte — validated against the
 - **Algorithm**: HMAC-SHA-256, lowercase hex encoding (not base64).
 - **Message**: raw content of the `kr-answer` field, exact JSON
   string, byte-for-byte.
-- **Key**: the HMAC key of the shop (`PAYSIM_PAYZEN_HMAC_KEY` on the
-  server, its counterpart on the merchant side).
 - **Additional POST fields alongside `kr-answer`**:
   - `kr-hash`: the signature.
   - `kr-hash-algorithm`: `sha256_hmac`.
-  - `kr-hash-key`: `sha256_hmac`.
+  - `kr-hash-key`: **`sha256_hmac` or `password` depending on the
+    channel**, see below.
   - `kr-answer-type`: `V4/Payment`.
 - **Verification**: constant-time (`hmac.Equal`), never `==`.
+
+### Two keys, one per channel
+
+PayZen does not sign both channels with the same key. It states which
+one it used in `kr-hash-key`, and that field — not a guessed channel —
+is what must drive the merchant side:
+
+| `kr-hash-key` | Channel | Paysim variable | Merchant-side key |
+| --- | --- | --- | --- |
+| `sha256_hmac` | Browser return | `PAYSIM_PAYZEN_HMAC_KEY` | shop HMAC key |
+| `password` | Server notification (IPN) | `PAYSIM_PAYZEN_REST_PASSWORD` | REST API password |
+
+The official PHP SDK does exactly this:
+
+```php
+if ($_POST['kr-hash-key'] == "sha256_hmac") { $key = $this->_hashKey; }
+elseif ($_POST['kr-hash-key'] == "password") { $key = $this->_password; }
+```
+
+**Verifying a notification with the browser key fails.** That is the
+outage an integrator carries to production after coding a single
+branch — it used to pass before v0.6.3, when Paysim announced
+`sha256_hmac` everywhere and signed everything with the same key.
+
+Both values may be identical locally; what matters is that the merchant
+takes the verification path production will take.
 
 **Validation vector** (extracted from the SDK Java Lyra):
 

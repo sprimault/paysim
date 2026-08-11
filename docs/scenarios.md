@@ -57,7 +57,14 @@ steps:
     state: captured
 ```
 
-Field names use `snake_case` in YAML, `camelCase` on the wire (JSON API).
+> **Two vocabularies, not to be mixed up.** This YAML DSL uses
+> `snake_case` (`order_id`, `expiry_month`, `form_action`); the HTTP API
+> expects `camelCase` (`orderId`, `expiryMonth`, `formAction`).
+>
+> Copying a YAML field into a `curl` raises no syntax error: the unknown
+> field is simply ignored. An `order_id` sent as JSON yields a payment
+> with no order reference, and an `expiry_month` yields a card with no
+> expiry date — now rejected with a `400`, which at least says so.
 
 ## Actions reference
 
