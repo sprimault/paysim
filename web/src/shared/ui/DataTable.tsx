@@ -1,7 +1,7 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
 import { Skeleton } from '@/shared/ui/Skeleton';
 import { useT } from '@/shared/i18n/useT';
@@ -101,28 +101,31 @@ export function DataTable<T>({
   const [page, setPage] = useState(0);
   const [taille, setTaille] = useState(pageSize);
 
-  // Hauteur du bloc collant supérieur, pour caler le thead dessous.
-  // Observée plutôt que calculée : la barre de filtres change de
-  // hauteur quand ses boutons passent à la ligne, et un thead posé sur
-  // une hauteur figée se retrouverait alors à chevaucher ou à flotter.
-  const enteteRef = useRef<HTMLDivElement>(null);
+  // Hauteur du bloc collant supérieur, pour caler les en-têtes de
+  // colonnes dessous. Mesurée plutôt que calculée : la barre de filtres
+  // change de hauteur quand ses boutons passent à la ligne, et des
+  // en-têtes posés sur une hauteur figée se retrouveraient alors à
+  // chevaucher ou à flotter.
   const [hauteurEntete, setHauteurEntete] = useState(0);
+  const observateur = useRef<ResizeObserver | null>(null);
 
-  useLayoutEffect(() => {
-    const el = enteteRef.current;
+  // Ref de rappel et non useLayoutEffect : au premier rendu la table
+  // affiche son squelette de chargement, le bloc n'existe pas encore.
+  // Un effet à dépendances vides ne le verrait jamais apparaître, la
+  // hauteur resterait à zéro, et les en-têtes colleraient sous le
+  // bandeau de navigation — donc derrière le bloc, invisibles.
+  const enteteRef = useCallback((el: HTMLDivElement | null) => {
+    observateur.current?.disconnect();
     if (!el) return;
-    const mesurer = () => setHauteurEntete(el.offsetHeight);
-    mesurer();
+    setHauteurEntete(el.offsetHeight);
     // ResizeObserver manque à jsdom : les tests n'ont pas de mise en
     // page, la hauteur y reste donc à zéro, ce qui est sans effet sur
     // ce qu'ils vérifient.
     if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(mesurer);
-    ro.observe(el);
-    return () => ro.disconnect();
-    // Aucune dépendance : l'observateur suit toutes les variations de
-    // hauteur, d'où qu'elles viennent — filtres repliés, barre de
-    // pagination apparue, fenêtre rétrécie.
+    // Suit toutes les variations de hauteur, d'où qu'elles viennent —
+    // filtres repliés, barre de pagination apparue, fenêtre rétrécie.
+    observateur.current = new ResizeObserver(() => setHauteurEntete(el.offsetHeight));
+    observateur.current.observe(el);
   }, []);
 
   const sorted = useMemo(() => {
@@ -277,15 +280,16 @@ export function DataTable<T>({
         {toolbar}
         {barreVisible && barre('border-b')}
       </div>
-      <table className="w-full text-sm">
-        <thead
-          // Le thead colle sous ce bloc, à sa hauteur mesurée : la coder
-          // en dur se dérèglerait dès que la barre passe à la ligne —
-          // ce qui arrive sur écran étroit.
-          className="sticky z-10"
-          style={{ top: `calc(3.5rem + ${hauteurEntete}px)` }}
-        >
-          <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+      {/*
+        Bordures séparées, et non le modèle fusionné de la préflight
+        Tailwind : avec `border-collapse: collapse`, Chrome ne colle pas
+        les cellules d'en-tête de façon fiable et n'en peint pas les
+        bordures. Contrepartie assumée — les traits sont portés par les
+        cellules, une bordure posée sur un <tr> n'étant plus peinte.
+      */}
+      <table className="w-full border-separate border-spacing-0 text-sm">
+        <thead>
+          <tr className="text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
             {columns.map((col, i) => {
               const triable = !!col.sortValue;
               const actif = sort?.column === i;
@@ -293,11 +297,23 @@ export function DataTable<T>({
                 <th
                   key={i}
                   aria-sort={actif ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
+                  // Le collage est porté par les cellules, pas par le
+                  // <thead> : les éléments de table ne le supportent pas
+                  // partout, et un <tr> collant ne peint ni son fond ni
+                  // sa bordure. D'où le fond et le trait repris ici, sur
+                  // chaque cellule, sinon les lignes défileraient en
+                  // transparence dessous.
+                  //
+                  // `top` suit la hauteur mesurée du bloc supérieur : la
+                  // coder en dur se dérèglerait dès que la barre passe à
+                  // la ligne, ce qui arrive en fenêtre étroite.
                   className={
-                    'px-4 py-2 ' +
+                    'sticky z-10 border-b border-zinc-200 bg-zinc-50 px-4 py-2 ' +
+                    'dark:border-zinc-800 dark:bg-zinc-900 ' +
                     (col.align === 'right' ? 'text-right tabular' : '') +
                     (col.srOnly ? ' sr-only' : '')
                   }
+                  style={{ top: `calc(3.5rem + ${hauteurEntete}px)` }}
                 >
                   {triable ? (
                     <button
@@ -328,16 +344,22 @@ export function DataTable<T>({
           </tr>
         </thead>
         <tbody>
-          {visibles.map((row) => (
+          {visibles.map((row, r) => (
             <tr
               key={rowKey(row)}
-              className="border-b border-zinc-200 last:border-b-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900/50"
+              className="hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
             >
               {columns.map((col, i) => (
                 <td
                   key={i}
                   className={
                     'px-4 py-2.5 ' +
+                    // Séparateur sur la cellule, pas sur la ligne, et
+                    // pas sur la dernière : le conteneur ferme déjà le
+                    // bloc, un trait de plus le doublerait.
+                    (r < visibles.length - 1
+                      ? 'border-b border-zinc-200 dark:border-zinc-800 '
+                      : '') +
                     (col.align === 'right' ? 'text-right' : '') +
                     (col.className ? ' ' + col.className : '')
                   }

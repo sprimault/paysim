@@ -268,6 +268,64 @@ describe('<DataTable /> pagination', () => {
     expect(colonne(0)).toEqual(['L3', 'L4', 'L5']);
   });
 
+  // Le collage est porte par les cellules d'en-tete, pas par le <thead> :
+  // les elements de table ne le supportent pas partout, et un <tr>
+  // collant ne peint ni son fond ni sa bordure — les lignes defileraient
+  // alors en transparence dessous.
+  it('colle les cellules d\'en-tete, avec leur propre fond', () => {
+    render(<DataTable columns={cols} rows={rows} rowKey={(r) => r.id} pageSize={3} />);
+    const entete = screen.getAllByRole('columnheader')[0];
+    expect(entete.className).toContain('sticky');
+    expect(entete.className).toContain('bg-zinc-50');
+    // Cale sous le bloc superieur, pas sur une valeur figee.
+    expect(entete.getAttribute('style')).toContain('top');
+
+    // Le thead lui-meme ne porte rien : ce qui y serait pose n'aurait
+    // aucun effet dans une partie des navigateurs.
+    const thead = entete.closest('thead');
+    expect(thead?.className ?? '').not.toContain('sticky');
+  });
+
+  // Le bloc superieur n'existe pas au premier rendu, remplace par le
+  // squelette de chargement. Tant que sa hauteur restait a zero, les
+  // en-tetes collaient sous le bandeau de navigation, donc derriere lui
+  // — collants, mais invisibles.
+  it('cale les en-tetes sous le bloc superieur apparu apres le chargement', () => {
+    const descripteur = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight');
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      value: 42,
+    });
+    try {
+      const { rerender } = render(
+        <DataTable columns={cols} rows={[]} rowKey={(r) => r.id} loading pageSize={3} />,
+      );
+      rerender(<DataTable columns={cols} rows={rows} rowKey={(r) => r.id} pageSize={3} />);
+      expect(screen.getAllByRole('columnheader')[0].getAttribute('style')).toContain('42px');
+    } finally {
+      if (descripteur) {
+        Object.defineProperty(HTMLElement.prototype, 'offsetHeight', descripteur);
+      }
+    }
+  });
+
+  // Bordures separees, imposees par le collage des cellules : une
+  // bordure posee sur un <tr> n'y est plus peinte, les separateurs de
+  // lignes doivent donc vivre sur les <td>.
+  it('trace les separateurs sur les cellules, pas sur les lignes', () => {
+    const { container } = render(
+      <DataTable columns={cols} rows={rows} rowKey={(r) => r.id} pageSize={3} />,
+    );
+    expect(container.querySelector('table')?.className).toContain('border-separate');
+
+    const lignes = screen.getAllByRole('row').slice(1);
+    expect(lignes[0].className).not.toContain('border-b');
+    expect(lignes[0].children[0].className).toContain('border-b');
+    // Derniere ligne de la page : le conteneur ferme deja le bloc, un
+    // trait de plus le doublerait.
+    expect(lignes[lignes.length - 1].children[0].className).not.toContain('border-b');
+  });
+
   // La barre de l'ecran est rendue dans le meme bloc que la pagination :
   // c'est ce qui les fait defiler ensemble sans mesurer de hauteur.
   it('rend la toolbar fournie au-dessus de la pagination', () => {
