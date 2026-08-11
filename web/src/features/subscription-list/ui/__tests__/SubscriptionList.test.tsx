@@ -1,7 +1,7 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SubscriptionList } from '@/features/subscription-list/ui/SubscriptionList';
@@ -58,7 +58,8 @@ describe('<SubscriptionList />', () => {
         <SubscriptionList />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Actif')).toBeInTheDocument();
+    // « Actif » figure aussi sur le bouton de filtre : on vise la ligne.
+    expect(within(screen.getAllByRole('row')[1]).getByText('Actif')).toBeInTheDocument();
     expect(screen.getByText('SUB-42')).toBeInTheDocument();
     // « payzen » apparaît dans le tab et dans la colonne provider —
     // on ne teste que la présence dans la cellule via getAllByText.
@@ -75,7 +76,7 @@ describe('<SubscriptionList />', () => {
         <SubscriptionList />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Annulé')).toBeInTheDocument();
+    expect(within(screen.getAllByRole('row')[1]).getByText('Annulé')).toBeInTheDocument();
   });
 
   // Le compteur répond en liste à « celui-là prélève-t-il ? » — la

@@ -174,7 +174,7 @@ export function usePaymentColumns({ onDelete, showProvider }: Options): Column<P
       cell: (p) => (
         <div className="inline-flex items-center gap-0.5">
           {onDelete && (
-            <Tooltip label={t('common.action.delete')} enfantFocusable>
+            <Tooltip label={t('common.action.delete')} focusExterne>
               <button
                 type="button"
                 onClick={(e) => onDelete(p, e.currentTarget)}
@@ -187,7 +187,7 @@ export function usePaymentColumns({ onDelete, showProvider }: Options): Column<P
           )}
           {/* Le chevron seul n'apprend rien : l'aria-label sert les
               lecteurs d'écran, l'infobulle sert tous les autres. */}
-          <Tooltip label={t('payment.list.action.openPayment')} enfantFocusable>
+          <Tooltip label={t('payment.list.action.openPayment')} focusExterne>
             <Link
               to={`/payments/${p.uuid}`}
               className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"

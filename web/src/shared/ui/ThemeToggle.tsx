@@ -46,7 +46,7 @@ export function ThemeToggle() {
       {OPTIONS.map(({ value, labelKey, icon: Icon }) => {
         const active = theme === value;
         return (
-          <Tooltip key={value} label={t(labelKey)} enfantFocusable>
+          <Tooltip key={value} label={t(labelKey)} focusExterne>
             <button
               type="button"
               role="radio"

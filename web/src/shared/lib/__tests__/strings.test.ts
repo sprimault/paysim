@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from 'vitest';
-import { truncate, mask } from '@/shared/lib/strings';
+import { truncate, mask, matchesSearch } from '@/shared/lib/strings';
 
 describe('truncate', () => {
   it.each([
@@ -34,5 +34,28 @@ describe('mask', () => {
     ['abcdefgh', 0, 4, '****efgh'],
   ])('mask(%j, %d, %d) = %j', (input, prefix, suffix, expected) => {
     expect(mask(input, prefix, suffix)).toBe(expected);
+  });
+});
+
+describe('matchesSearch', () => {
+  it('une recherche vide laisse tout passer', () => {
+    expect(matchesSearch('', 'quoi que ce soit')).toBe(true);
+    expect(matchesSearch('   ', undefined)).toBe(true);
+  });
+
+  it('correspondance partielle et insensible a la casse', () => {
+    expect(matchesSearch('cmd-10', 'CMD-1042')).toBe(true);
+    expect(matchesSearch('CMD', 'cmd-1042')).toBe(true);
+    expect(matchesSearch('1043', 'CMD-1042')).toBe(false);
+  });
+
+  it('cherche dans tous les champs fournis', () => {
+    expect(matchesSearch('bbb', 'CMD-1', 'aaa-111', 'bbb-222')).toBe(true);
+  });
+
+  // Un champ absent n'est pas une chaine vide : un paiement sans alias
+  // ne doit pas ressortir sur une recherche qui ne le concerne pas.
+  it('ignore les champs absents', () => {
+    expect(matchesSearch('x', undefined, undefined)).toBe(false);
   });
 });

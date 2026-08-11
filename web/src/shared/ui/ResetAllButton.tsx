@@ -66,7 +66,7 @@ export function ResetAllButton() {
 
   return (
     <>
-      <Tooltip label={t('header.reset.title')} enfantFocusable>
+      <Tooltip label={t('header.reset.title')} focusExterne>
         <button
           type="button"
           onClick={(e) => {

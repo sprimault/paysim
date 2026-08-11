@@ -1,12 +1,14 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { CreditCard, Trash2 } from 'lucide-react';
 import { Button } from '@/shared/ui/Button';
 import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
 import { DataTable } from '@/shared/ui/DataTable';
 import { EmptyState } from '@/shared/ui/EmptyState';
+import { ErrorBanner } from '@/shared/ui/ErrorBanner';
+import { ListFilters, type FilterState } from '@/shared/ui/ListFilters';
 import { ProviderTabs } from '@/shared/ui/ProviderTabs';
 import { RefreshButton } from '@/shared/ui/RefreshButton';
 import { toast } from '@/shared/ui/toastStore';
@@ -14,8 +16,25 @@ import { useT } from '@/shared/i18n/useT';
 import { deletePayment, purgePayments } from '@/entities/payment/api/paymentApi';
 import { usePaymentsList } from '@/entities/payment/model/usePayments';
 import { usePaymentStore } from '@/entities/payment/model/paymentStore';
+import { useListFilters } from '@/shared/hooks/useListFilters';
 import type { PaymentSummary } from '@/shared/model';
 import { usePaymentColumns } from './paymentColumns';
+
+/**
+ * États proposés au filtre, dans l'ordre du cycle de vie.
+ *
+ * Sous-ensemble volontaire des huit états du domaine : ceux qu'on
+ * cherche réellement en débogage. Un remboursement se trouve par sa
+ * commande, pas en balayant une liste ; l'encombrement d'un bouton de
+ * plus coûterait plus qu'il ne rendrait.
+ */
+const ETATS_PAIEMENT: FilterState[] = [
+  { value: 'initiated', labelKey: 'payment.state.initiated' },
+  { value: 'authorized', labelKey: 'payment.state.authorized' },
+  { value: 'captured', labelKey: 'payment.state.captured' },
+  { value: 'declined', labelKey: 'payment.state.declined' },
+  { value: 'expired', labelKey: 'payment.state.expired' },
+];
 
 /**
  * Écran principal. Table dense — pas de cards ombrés. C'est ce qu'un
@@ -37,10 +56,12 @@ export function PaymentList() {
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const filtered = useMemo(() => {
-    if (!providerFilter) return payments;
-    return payments.filter((p) => p.provider === providerFilter);
-  }, [payments, providerFilter]);
+  const { query, setQuery, etats, setEtats, filtered, total } = useListFilters(payments, {
+    provider: providerFilter,
+    providerOf: (p) => p.provider,
+    searchFields: (p) => [p.orderId, p.uuid, p.paymentMethodToken],
+    stateOf: (p) => p.state,
+  });
 
   const columns = usePaymentColumns({
     showProvider: providerFilter === '',
@@ -127,11 +148,18 @@ export function PaymentList() {
 
       <ProviderTabs value={providerFilter} onChange={setProviderFilter} />
 
-      {error && (
-        <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
-          {t('payment.list.errorPrefix', { error })}
-        </div>
-      )}
+      <ListFilters
+        query={query}
+        onQueryChange={setQuery}
+        placeholderKey="common.filters.searchPayments"
+        states={ETATS_PAIEMENT}
+        selected={etats}
+        onSelectedChange={setEtats}
+        shown={filtered.length}
+        total={total}
+      />
+
+      {error && <ErrorBanner message={t('payment.list.errorPrefix', { error })} />}
 
       <DataTable
         columns={columns}

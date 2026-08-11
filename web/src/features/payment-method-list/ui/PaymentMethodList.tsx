@@ -1,23 +1,33 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { ChevronRight, CreditCard } from 'lucide-react';
 import { Link } from 'react-router';
 import { Badge } from '@/shared/ui/Badge';
 import { CopyButton } from '@/shared/ui/CopyButton';
 import { DataTable, type Column } from '@/shared/ui/DataTable';
 import { EmptyState } from '@/shared/ui/EmptyState';
+import { ErrorBanner } from '@/shared/ui/ErrorBanner';
+import { ListFilters, type FilterState } from '@/shared/ui/ListFilters';
 import { ProviderTabs } from '@/shared/ui/ProviderTabs';
 import { RefreshButton } from '@/shared/ui/RefreshButton';
 import { Tooltip } from '@/shared/ui/Tooltip';
 import { formatShort } from '@/shared/lib/dates';
 import { useFormatRelative } from '@/shared/hooks/useFormatRelative';
+import { useListFilters } from '@/shared/hooks/useListFilters';
 import { truncate } from '@/shared/lib/strings';
 import { useT } from '@/shared/i18n/useT';
 import { paymentMethodStatus } from '@/entities/payment-method/lib/status';
 import { usePaymentMethodsList } from '@/entities/payment-method/model/usePaymentMethods';
 import type { PaymentMethodOutput } from '@/shared/model';
+
+/** Les trois verdicts d'exploitabilité, mêmes valeurs que les badges. */
+const ETATS_MOYEN: FilterState[] = [
+  { value: 'active', labelKey: 'paymentMethod.state.active' },
+  { value: 'expired', labelKey: 'paymentMethod.state.expired' },
+  { value: 'revoked', labelKey: 'paymentMethod.state.revoked' },
+];
 
 /**
  * Liste des moyens de paiement enregistrés. Réutilise le DataTable
@@ -32,11 +42,17 @@ export function PaymentMethodList() {
   const rel = useFormatRelative();
   const { methods, loading, error, refresh } = usePaymentMethodsList();
   const [providerFilter, setProviderFilter] = useState<string>('');
-  const filtered = useMemo(
-    () =>
-      providerFilter ? methods.filter((m) => m.provider === providerFilter) : methods,
-    [methods, providerFilter],
-  );
+
+  const { query, setQuery, etats, setEtats, filtered, total } = useListFilters(methods, {
+    provider: providerFilter,
+    providerOf: (m) => m.provider,
+    // Le PAN masqué se cherche aussi : c'est par les quatre derniers
+    // chiffres qu'un marchand désigne une carte.
+    searchFields: (m) => [m.token, m.panMasked, m.brand],
+    // Même verdict que celui affiché en badge — révoqué prime sur
+    // expiré, et le filtre ne doit pas dire autre chose que la colonne.
+    stateOf: paymentMethodStatus,
+  });
 
   const columns: Column<PaymentMethodOutput>[] = [
     {
@@ -112,7 +128,7 @@ export function PaymentMethodList() {
       srOnly: true,
       align: 'right',
       cell: (m) => (
-        <Tooltip label={t('paymentMethod.list.action.open')} enfantFocusable>
+        <Tooltip label={t('paymentMethod.list.action.open')} focusExterne>
           <Link
             to={`/payment-methods/${m.token}`}
             className="inline-flex rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
@@ -148,11 +164,18 @@ export function PaymentMethodList() {
 
       <ProviderTabs value={providerFilter} onChange={setProviderFilter} />
 
-      {error && (
-        <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
-          {t('paymentMethod.list.errorPrefix', { error })}
-        </div>
-      )}
+      <ListFilters
+        query={query}
+        onQueryChange={setQuery}
+        placeholderKey="common.filters.searchMethods"
+        states={ETATS_MOYEN}
+        selected={etats}
+        onSelectedChange={setEtats}
+        shown={filtered.length}
+        total={total}
+      />
+
+      {error && <ErrorBanner message={t('paymentMethod.list.errorPrefix', { error })} />}
 
       <DataTable
         columns={columns}

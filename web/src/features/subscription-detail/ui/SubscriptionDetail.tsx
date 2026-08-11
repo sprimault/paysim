@@ -10,6 +10,7 @@ import { Card } from '@/shared/ui/Card';
 import { SubscriptionBillings } from './SubscriptionBillings';
 import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
 import { CopyButton } from '@/shared/ui/CopyButton';
+import { ErrorBanner } from '@/shared/ui/ErrorBanner';
 import { toast } from '@/shared/ui/toastStore';
 import { useT } from '@/shared/i18n/useT';
 import { formatAmount } from '@/shared/lib/numbers';
@@ -40,9 +41,7 @@ export function SubscriptionDetail() {
   }
   if (error && !subscription) {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-6 text-sm text-rose-700 dark:text-rose-300">
-        {t('subscription.detail.errorPrefix', { error })}
-      </div>
+      <ErrorBanner pleinePage message={t('subscription.detail.errorPrefix', { error })} />
     );
   }
   if (!subscription) return null;
