@@ -49,6 +49,23 @@ function Invoke-Simulate {
     }
 }
 
+# Renvoie N fois la derniere livraison d'un paiement.
+#
+# L'identifiant n'est lu qu'une fois : rejouer un rejeu produit la meme
+# chose, et l'identifiant ne s'empile plus depuis qu'il repart de la
+# livraison d'origine. La pause laisse la livraison se terminer — c'est
+# a ce moment-la qu'elle entre dans l'historique, donc dans le compte.
+function Invoke-Rejeu {
+    param([string]$Uuid, [int]$Fois)
+    $livraisons = @(Invoke-RestMethod -Uri "$Api/webhooks?paymentUuid=$Uuid")
+    if ($livraisons.Count -eq 0) { return }
+    $id = $livraisons[0].id
+    1..$Fois | ForEach-Object {
+        $null = Invoke-RestMethod -Method Post -Uri "$Api/webhooks/$id/replay"
+        Start-Sleep -Seconds 1
+    }
+}
+
 # Enrôle une carte sans rien débiter et rend l'alias créé.
 function Register-Card {
     param([string]$OrderId, [hashtable]$Card)
@@ -117,6 +134,7 @@ $p = Invoke-JsonPost '/payments' @{
     customer = @{ email = 'bob@example.com'; reference = 'client-1042' }
 }
 Invoke-Simulate $p.uuid
+$U42 = $p.uuid
 Write-Host "  $($p.uuid) — captured"
 
 Write-Host '==> 5. Trois refus, trois motifs'
@@ -130,6 +148,8 @@ foreach ($cas in @(
     }
     Invoke-Simulate $p.uuid
     Write-Host "  $($cas.order) — declined ($($cas.code))"
+    # Dernier tour de boucle : CMD-1047, garde pour les rejeux plus bas.
+    $U47 = $p.uuid
 }
 
 Write-Host '==> 6. Paiement en attente, sans issue jouée'
@@ -212,8 +232,17 @@ foreach ($i in 1..30) {
         customer = @{ email = "client$i@example.com"; reference = "client-2$i" }
     }
     if ($issue) { Invoke-Simulate $p.uuid $issue }
+    if ($i -eq 12) { $U12 = $p.uuid }
 }
 Write-Host '  CMD-2001 à CMD-2030'
+
+Write-Host '==> 13. Rejeux, pour que la pastille du bouton de renvoi compte'
+# Des nombres differents sur trois paiements : sans rejeu, la pastille
+# ne s'affiche nulle part et l'ecran ne montre pas ce qu'il sait faire.
+Invoke-Rejeu $U42 1
+Invoke-Rejeu $U47 2
+Invoke-Rejeu $U12 3
+Write-Host '  CMD-1042 (1), CMD-1047 (2), CMD-2012 (3)'
 
 Write-Host ''
 Write-Host '==> Résumé'
@@ -225,4 +254,5 @@ Write-Host "Subscriptions: $(@($subs).Count)"
 Write-Host "Payment methods: $(@($methods).Count)"
 Write-Host ''
 Write-Host 'Recherche : taper « client-2 » pour filtrer le volume'
+Write-Host 'Pastille de rejeux : CMD-1042 (1), CMD-1047 (2), CMD-2012 (3)'
 Write-Host "UI : $Base/"

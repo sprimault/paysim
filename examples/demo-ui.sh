@@ -110,6 +110,24 @@ enrole() {
 # affichage de fin de script.
 count() { curl -s "$API/$1" | grep -o "\"$2\":" | wc -l | tr -d ' '; }
 
+# Renvoie N fois la dernière livraison d'un paiement.
+#
+# L'identifiant n'est lu qu'une fois : rejouer un rejeu produit la même
+# chose, et l'identifiant ne s'empile plus depuis qu'il repart de la
+# livraison d'origine. La pause laisse la livraison se terminer — c'est
+# à ce moment-là qu'elle entre dans l'historique, donc dans le compte.
+rejouer() {
+  local livraison
+  livraison=$(curl -s "$API/webhooks?paymentUuid=$1" | field id)
+  [ -n "$livraison" ] || return 0
+  local i=0
+  while [ "$i" -lt "$2" ]; do
+    post "/webhooks/$livraison/replay" >/dev/null
+    sleep 1
+    i=$((i + 1))
+  done
+}
+
 echo "--- jeu de donnees ---"
 
 # Enrolement portant un contexte client complet : c'est celui-ci qui
@@ -180,6 +198,8 @@ for pair in "1001:51:CMD-1043" "1002:43:CMD-1046" "1004:91:CMD-1047"; do
   post "/payments/$U/simulate" '{"outcome":"PAID","channel":"ipn"}' >/dev/null
   echo "  refus $code : $order"
 done
+# Dernier tour de boucle : CMD-1047, gardé pour les rejeux plus bas.
+U47=$U
 
 post /payments '{"amount": 12500, "currency": "EUR", "orderId": "CMD-1044",
   "customer": {"email": "dave@example.com", "reference": "client-1044"}}' >/dev/null
@@ -240,8 +260,17 @@ for i in $(seq 1 30); do
   U=$(post /payments "{\"amount\": $amount, \"currency\": \"EUR\", \"orderId\": \"$order\",
     \"customer\": {\"email\": \"client$i@example.com\", \"reference\": \"client-2$i\"}}" | field uuid)
   [ "$issue" = NONE ] || post "/payments/$U/simulate" "{\"outcome\":\"$issue\",\"channel\":\"ipn\"}" >/dev/null
+  [ "$i" = 12 ] && U12=$U
 done
 echo "  volume : 30 paiements repartis sur les etats"
+
+# Des rejeux sur trois paiements, en nombres differents : c'est la
+# pastille du bouton de renvoi qui les compte, et sans eux elle ne
+# s'affiche nulle part — l'ecran ne montrerait pas ce qu'il sait faire.
+rejouer "$U2" 1
+rejouer "$U47" 2
+rejouer "$U12" 3
+echo "  rejeux : CMD-1042 (1), CMD-1047 (2), CMD-2012 (3)"
 
 sleep 2
 
@@ -258,5 +287,6 @@ echo "Charge utile vide    : CMD-1044, aucune livraison rattachee"
 echo "Etats des moyens     : REGISTER-2043 expire, REGISTER-2044 revoque"
 echo "Abonnements          : SUB-77 (2 echeances), SUB-78 (refusee), SUB-79 (annule), SUB-80 (aucune)"
 echo "Recherche            : taper « client-2 » pour filtrer le volume"
+echo "Pastille de rejeux   : CMD-1042 (1), CMD-1047 (2), CMD-2012 (3)"
 echo
 echo "Pour arreter : docker rm -f $NAME $SINK && docker network rm $NET"

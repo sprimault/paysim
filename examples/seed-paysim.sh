@@ -62,6 +62,24 @@ enrole() {
       \"formAction\":\"REGISTER\",\"card\":$2}" | field paymentMethodToken
 }
 
+# Renvoie N fois la dernière livraison d'un paiement.
+#
+# L'identifiant n'est lu qu'une fois : rejouer un rejeu produit la même
+# chose, et l'identifiant ne s'empile plus depuis qu'il repart de la
+# livraison d'origine. La pause laisse la livraison se terminer — c'est
+# à ce moment-là qu'elle entre dans l'historique, donc dans le compte.
+rejouer() {
+    local livraison
+    livraison=$(curl -s "$API/webhooks?paymentUuid=$1" | field id)
+    [ -n "$livraison" ] || return 0
+    local i=0
+    while [ "$i" -lt "$2" ]; do
+        post "/webhooks/$livraison/replay" >/dev/null
+        sleep 1
+        i=$((i + 1))
+    done
+}
+
 echo "==> 1. Enrolement portant un contexte client complet"
 T1=$(post /payments '{
   "amount": 0, "currency": "EUR", "orderId": "REGISTER-2041",
@@ -109,6 +127,7 @@ echo "==> 4. Paiement nominal (captured)"
 U=$(post /payments '{"amount":4990,"currency":"EUR","orderId":"CMD-1042",
   "customer":{"email":"bob@example.com","reference":"client-1042"}}' | field uuid)
 simulate "$U"
+U42=$U
 echo "  $U — captured"
 
 echo "==> 5. Trois refus, trois motifs"
@@ -119,6 +138,8 @@ for pair in "1001:51:CMD-1043" "1002:43:CMD-1046" "1004:91:CMD-1047"; do
     simulate "$U"
     echo "  $order — declined ($code)"
 done
+# Dernier tour de boucle : CMD-1047, gardé pour les rejeux plus bas.
+U47=$U
 
 echo "==> 6. Paiement en attente, sans issue jouée"
 post /payments '{"amount":12500,"currency":"EUR","orderId":"CMD-1044",
@@ -179,8 +200,17 @@ for i in $(seq 1 30); do
     U=$(post /payments "{\"amount\":$amount,\"currency\":\"EUR\",\"orderId\":\"$order\",
       \"customer\":{\"email\":\"client$i@example.com\",\"reference\":\"client-2$i\"}}" | field uuid)
     [ "$issue" = NONE ] || simulate "$U" "$issue"
+    [ "$i" = 12 ] && U12=$U
 done
 echo "  CMD-2001 à CMD-2030"
+
+echo "==> 13. Rejeux, pour que la pastille du bouton de renvoi compte"
+# Des nombres differents sur trois paiements : sans rejeu, la pastille
+# ne s'affiche nulle part et l'ecran ne montre pas ce qu'il sait faire.
+rejouer "$U42" 1
+rejouer "$U47" 2
+rejouer "$U12" 3
+echo "  CMD-1042 (1), CMD-1047 (2), CMD-2012 (3)"
 
 # Comptage : chaque entrée du tableau porte le champ scalaire attendu
 # une seule fois — grep -o compte les occurrences sans dépendance JSON.
@@ -193,4 +223,5 @@ echo "Subscriptions: $(count subscriptions id)"
 echo "Payment methods: $(count payment-methods token)"
 echo ""
 echo "Recherche : taper « client-2 » pour filtrer le volume"
+echo "Pastille de rejeux : CMD-1042 (1), CMD-1047 (2), CMD-2012 (3)"
 echo "UI : ${PAYSIM_URL:-http://localhost:30880}/"

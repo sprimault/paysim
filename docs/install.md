@@ -380,6 +380,10 @@ subscription with two successful renewals, one whose renewal is
 declined, a cancelled one, one with no billing yet, and a one-click
 replay.
 
+Replays too, in different numbers on three payments — one on
+`CMD-1042`, two on `CMD-1047`, three on `CMD-2012`. The badge on the
+replay button counts them, and without them it would never show.
+
 Volume next: thirty payments spread across the states. That part is
 not decoration — search, state filters, pagination and the sticky
 table header cannot be judged on eight rows. States are assigned by
