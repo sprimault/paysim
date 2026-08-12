@@ -299,7 +299,10 @@ ici.
 
 ---
 
-## Phase 6 — Sortie publique
+## Phase 6 — Adoption
+
+Le dépôt est public et l'image publiée depuis le 3 août 2026. Ce qui reste ne concerne plus
+la mise à disposition, mais le fait qu'on la trouve, qu'on l'intègre et qu'on y contribue.
 
 - [x] README avec la démonstration en premier écran et le renvoi vers `docs/install.md`.
 - [ ] Documentation par fournisseur, avec la version d'API visée.
