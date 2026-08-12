@@ -147,6 +147,10 @@ export function usePaysimEvents(
         // Rafales possibles sur les webhooks — refetch de la liste
         // plutôt qu'unitaire évite le cascade d'appels.
         void fetchWebhooks().then(setWebhookList).catch(() => undefined);
+        // Une livraison change aussi le compteur porté par la ligne du
+        // paiement. Le regroupement absorbe les rafales : une relecture
+        // après le calme, pas une par webhook.
+        planifierResync();
         return;
     }
   }, resynchroniser);
