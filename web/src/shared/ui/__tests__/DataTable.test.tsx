@@ -64,6 +64,47 @@ describe('<DataTable />', () => {
     expect(screen.getByText('Aucune donnée')).toBeInTheDocument();
   });
 
+  // La barre de filtres vit dans la table : la remplacer par un etat
+  // vide emportait le seul controle permettant de defiltrer, et
+  // l'ecran devenait un cul-de-sac.
+  it('garde la table quand un filtre ne ramene rien', () => {
+    render(
+      <DataTable
+        columns={cols}
+        rows={[]}
+        rowKey={(r) => r.id}
+        totalRows={12}
+        toolbar={<div data-testid="filtres">filtres</div>}
+        emptyState={<div>Aucune donnée</div>}
+      />,
+    );
+    expect(screen.getByTestId('filtres')).toBeInTheDocument();
+    expect(screen.getByText('Nom')).toBeInTheDocument();
+    expect(screen.getByText('Aucun résultat pour ce filtre')).toBeInTheDocument();
+    expect(screen.queryByText('Aucune donnée')).not.toBeInTheDocument();
+  });
+
+  // Une liste reellement vide n'a pas de filtre a defaire : l'etat vide
+  // dit ce qu'il faut faire pour la remplir, a l'endroit ou les lignes
+  // se poseront.
+  it('rend l\'etat vide dans la table, pas a sa place', () => {
+    render(
+      <DataTable
+        columns={cols}
+        rows={[]}
+        rowKey={(r) => r.id}
+        totalRows={0}
+        toolbar={<div data-testid="filtres">filtres</div>}
+        emptyState={<div>Aucune donnée</div>}
+      />,
+    );
+    expect(screen.getByText('Nom')).toBeInTheDocument();
+    expect(screen.getByTestId('filtres')).toBeInTheDocument();
+    const message = screen.getByText('Aucune donnée');
+    expect(message.closest('tbody')).not.toBeNull();
+    expect(screen.queryByText('Aucun résultat pour ce filtre')).not.toBeInTheDocument();
+  });
+
   it('affiche skeleton quand loading + rows vide', () => {
     const { container } = render(
       <DataTable columns={cols} rows={[]} rowKey={(r) => r.id} loading />,

@@ -66,8 +66,21 @@ export interface DataTableProps<T> {
   rows: T[];
   /** Extracteur d'identifiant unique pour la clé React. */
   rowKey: (row: T) => string;
-  /** Contenu rendu quand rows est vide et loading est false. */
+  /**
+   * Contenu rendu à la place des lignes quand il n'y a rien du tout à
+   * montrer — la table, elle, reste à l'écran.
+   */
   emptyState?: ReactNode;
+  /**
+   * Nombre de lignes avant filtrage, quand l'écran filtre.
+   *
+   * Sert à distinguer deux vides que rien ne séparait : une liste
+   * réellement vide, où l'état vide a tout dit, et un filtre qui ne
+   * ramène rien. Dans ce second cas la table reste à l'écran — barre de
+   * filtres comprise, puisqu'elle vit ici. La remplacer par un état
+   * vide emportait le seul contrôle permettant de défiltrer.
+   */
+  totalRows?: number;
   /** Affiche un Skeleton tant que loading + rows vide. */
   loading?: boolean;
   /**
@@ -120,6 +133,7 @@ export function DataTable<T>({
   pageSize,
   pageSizeOptions = [10, 25, 50, 100],
   toolbar,
+  totalRows,
 }: DataTableProps<T>) {
   const t = useT();
   const [sort, setSort] = useState<SortState>(null);
@@ -190,9 +204,11 @@ export function DataTable<T>({
       </div>
     );
   }
-  if (rows.length === 0) {
-    return <>{emptyState}</>;
-  }
+  // La table reste debout même sans rien à montrer, et le message vient
+  // là où se posent les lignes. La remplacer emportait la barre de
+  // filtres, qui vit ici : un filtre trop restrictif devenait un
+  // cul-de-sac, sans moyen de revenir en arrière.
+  const filtreSansResultat = rows.length === 0 && (totalRows ?? 0) > 0;
 
   /**
    * Cycle à trois temps : croissant, décroissant, puis retour à l'ordre
@@ -370,6 +386,19 @@ export function DataTable<T>({
           </tr>
         </thead>
         <tbody>
+          {rows.length === 0 && (
+            <tr>
+              <td
+                colSpan={columns.length}
+                className="px-4 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400"
+              >
+                {/* Deux vides que rien ne séparait : une liste
+                    réellement vide dit comment la remplir, un filtre
+                    trop restrictif dit qu'il faut le desserrer. */}
+                {filtreSansResultat ? t('common.table.noResults') : emptyState}
+              </td>
+            </tr>
+          )}
           {visibles.map((row, r) => (
             <tr
               key={rowKey(row)}

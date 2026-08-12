@@ -156,6 +156,7 @@ export function PaymentList() {
         rowKey={(p) => p.uuid}
         loading={loading}
         pageSize={10}
+        totalRows={total}
         toolbar={
           <ListFilters
             query={query}
