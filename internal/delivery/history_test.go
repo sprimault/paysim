@@ -5,6 +5,7 @@ package delivery
 
 import (
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -91,6 +92,24 @@ func runHistoryContract(t *testing.T, h HistoryStore) {
 		t.Errorf("ByPayment(vide) = %d, veut 0", len(empty))
 	}
 
+	// CountsByPayment doit s'accorder avec ByPayment : la colonne de la
+	// liste et la fiche du paiement lisent la meme chose, un ecart entre
+	// les deux ferait douter de l'une comme de l'autre.
+	counts := h.CountsByPayment()
+	if counts["pay-a"] != len(ofA) || counts["pay-a"] != 2 {
+		t.Errorf("counts[pay-a] = %d, veut 2", counts["pay-a"])
+	}
+	if counts["pay-b"] != 1 {
+		t.Errorf("counts[pay-b] = %d, veut 1", counts["pay-b"])
+	}
+	if _, present := counts["pay-inconnu"]; present {
+		t.Error("counts porte un paiement sans livraison")
+	}
+	// Les orphelins n'appartiennent a aucune ligne de la liste.
+	if _, present := counts[""]; present {
+		t.Error("counts compte les livraisons sans paiement rattache")
+	}
+
 	// DeleteAll purge tout.
 	n, err := h.DeleteAll()
 	if err != nil {
@@ -135,5 +154,26 @@ func TestMemoryHistoryRingWrapping(t *testing.T) {
 	// Recent ne doit pas dépasser la capacité.
 	if got := h.Recent(historyCap + 100); len(got) != historyCap {
 		t.Errorf("Recent len = %d, veut %d", len(got), historyCap)
+	}
+}
+
+// Le decompte ne peut pas depasser ce que le tampon retient : ce qui en
+// est sorti n'est plus consultable, et annoncer un nombre plus grand que
+// ce qu'on peut ouvrir serait un mensonge de plus qu'une approximation.
+func TestMemoryHistoryCountsBorneesParLeTampon(t *testing.T) {
+	t.Parallel()
+	h := NewMemoryHistory()
+	for i := 0; i < historyCap+50; i++ {
+		_ = h.Add(WebhookRecord{
+			Webhook: Webhook{ID: "wh-" + strconv.Itoa(i), PaymentUUID: "pay-a"},
+		})
+	}
+	counts := h.CountsByPayment()
+	if counts["pay-a"] != historyCap {
+		t.Errorf("counts[pay-a] = %d, veut %d", counts["pay-a"], historyCap)
+	}
+	if got := len(h.ByPayment("pay-a", historyCap+100)); got != counts["pay-a"] {
+		t.Errorf("ByPayment len = %d, counts = %d : les deux doivent s'accorder",
+			got, counts["pay-a"])
 	}
 }

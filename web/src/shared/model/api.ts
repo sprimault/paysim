@@ -146,6 +146,17 @@ export interface PaymentSummary {
    */
   declineCode?: string;
   declineMessage?: string;
+  /**
+   * WebhookCount compte les livraisons rattachées à ce paiement,
+   * rejeux compris — chaque tentative en est une.
+   * Compté sur ce que l'historique retient réellement, donc la même
+   * source que GET /webhooks?paymentUuid= : le nombre affiché
+   * correspond toujours à ce qu'on trouve en ouvrant la fiche. En
+   * mémoire, l'historique est un tampon circulaire ; les livraisons
+   * sorties de la fenêtre ne sont comptées nulle part, mais elles ne
+   * sont plus consultables non plus.
+   */
+  webhookCount: number /* int */;
 }
 /**
  * PaymentDetail ajoute le journal d'événements.

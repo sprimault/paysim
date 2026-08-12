@@ -225,6 +225,17 @@ type PaymentSummary struct {
 	// expiration — et sur tout paiement non refusé.
 	DeclineCode    string `json:"declineCode,omitempty"`
 	DeclineMessage string `json:"declineMessage,omitempty"`
+
+	// WebhookCount compte les livraisons rattachées à ce paiement,
+	// rejeux compris — chaque tentative en est une.
+	//
+	// Compté sur ce que l'historique retient réellement, donc la même
+	// source que GET /webhooks?paymentUuid= : le nombre affiché
+	// correspond toujours à ce qu'on trouve en ouvrant la fiche. En
+	// mémoire, l'historique est un tampon circulaire ; les livraisons
+	// sorties de la fenêtre ne sont comptées nulle part, mais elles ne
+	// sont plus consultables non plus.
+	WebhookCount int `json:"webhookCount"`
 }
 
 // PaymentDetail ajoute le journal d'événements.
@@ -1159,6 +1170,9 @@ func (h *Handler) listPayments(w http.ResponseWriter, r *http.Request) {
 	}
 	token := r.URL.Query().Get("paymentMethodToken")
 	subID := r.URL.Query().Get("subscriptionId")
+	// Une lecture pour toute la page : compter ligne par ligne ferait
+	// autant d'allers-retours que de paiements affichés.
+	counts := h.queue.WebhookCounts()
 	out := make([]PaymentSummary, 0, len(txs))
 	for _, tx := range txs {
 		if token != "" && tx.PaymentMethodToken != token {
@@ -1167,7 +1181,9 @@ func (h *Handler) listPayments(w http.ResponseWriter, r *http.Request) {
 		if subID != "" && tx.Metadata["subscriptionId"] != subID {
 			continue
 		}
-		out = append(out, toPaymentSummary(tx))
+		s := toPaymentSummary(tx)
+		s.WebhookCount = counts[tx.UUID]
+		out = append(out, s)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
