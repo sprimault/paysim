@@ -8,6 +8,15 @@
 
 > Faux prestataire de paiement qui provoque les échecs qu'une sandbox refuse de reproduire.
 
+> [!WARNING]
+> Paysim est un simulateur destiné au développement et aux tests
+> automatisés. Il ne traite aucun paiement réel, ne contacte aucun
+> établissement bancaire et ne doit en aucun cas être déployé en
+> production ni exposé sur un réseau public. Les identifiants et clés
+> HMAC fournis dans la documentation sont des valeurs de démonstration
+> publiques : toute instance accessible depuis Internet est réputée
+> ouverte à tous.
+
 ![Renvoi d'une livraison de webhook, examen d'un paiement refusé, et détection par l'interface de la coupure du serveur](docs/assets/demo.webp)
 
 <sub>Vingt secondes contre une instance réelle — [film complet (42 s)](docs/assets/demo-complete.webp).</sub>
@@ -294,6 +303,11 @@ revienne pas.
 Bugs, demandes de features, ou questions : ouvrir une issue sur
 https://github.com/sprimault/paysim/issues (français de préférence,
 anglais accepté).
+
+Pour envoyer un correctif, [`CONTRIBUTING.fr.md`](CONTRIBUTING.fr.md)
+énonce les règles sur lesquelles une pull request est jugée — elles ne se
+devinent pas à la lecture du code, et aucune ne se négocie dans une pull
+request.
 
 ## Licence
 

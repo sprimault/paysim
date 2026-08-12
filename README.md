@@ -8,6 +8,14 @@
 
 > Fake payment provider that provokes the failures a sandbox refuses to reproduce.
 
+> [!WARNING]
+> Paysim is a simulator built for development and automated testing. It
+> processes no real payment, contacts no financial institution, and must
+> never be deployed to production nor exposed on a public network. The
+> credentials and HMAC keys given throughout the documentation are public
+> demonstration values: any instance reachable from the Internet is to be
+> considered open to everyone.
+
 ![Replaying a webhook delivery, inspecting a declined payment, and watching the UI detect the server going down](docs/assets/demo.webp)
 
 <sub>Twenty seconds against a live instance — [full walkthrough (42 s)](docs/assets/demo-complete.webp).</sub>
@@ -287,6 +295,10 @@ that it cannot come back.
 Bugs, feature requests, or questions: open an issue at
 https://github.com/sprimault/paysim/issues (French preferred,
 English welcome).
+
+Planning to send a patch? [`CONTRIBUTING.md`](CONTRIBUTING.md) states the
+rules a pull request is judged against — they are not obvious from the
+code, and none of them is negotiable inside a pull request.
 
 ## License
 

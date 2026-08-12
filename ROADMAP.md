@@ -306,8 +306,10 @@ la mise à disposition, mais le fait qu'on la trouve, qu'on l'intègre et qu'on 
 
 - [x] README avec la démonstration en premier écran et le renvoi vers `docs/install.md`.
 - [ ] Documentation par fournisseur, avec la version d'API visée.
-- [ ] `CONTRIBUTING.md` expliquant comment ajouter un fournisseur — c'est la porte d'entrée
-  des contributeurs.
+- [x] `CONTRIBUTING.md` publiant les invariants, la mise en route et ce qu'on attend d'une
+  pull request — sans eux, un correctif propre se fait refuser sur une règle invisible.
+- [ ] La recette d'ajout d'un fournisseur, à écrire quand la phase 5 aura extrait la
+  couture : aujourd'hui `internal/api` dépend directement du paquet `payzen`.
 - [ ] Annonce ciblée : communautés PHP/Symfony francophones d'abord, puis plus large.
 
 ---
