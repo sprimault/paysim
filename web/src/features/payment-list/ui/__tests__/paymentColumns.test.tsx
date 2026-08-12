@@ -18,6 +18,7 @@ const p: PaymentSummary = {
   createdAt: '2026-08-01T12:00:00Z',
   updatedAt: '2026-08-01T12:05:00Z',
   webhookCount: 3,
+  webhookReplayCount: 2,
 };
 
 /**
@@ -107,7 +108,7 @@ describe('colonnes de la liste des paiements', () => {
   // Le zero est grise plutot que masque : c'est precisement le paiement
   // qu'on cherche, pas une case a ignorer.
   it('grise un paiement sans livraison plutot que de le laisser vide', () => {
-    renderRow({ ...p, webhookCount: 0 });
+    renderRow({ ...p, webhookCount: 0, webhookReplayCount: 0 });
     const zero = within(screen.getAllByRole('row')[1]).getByText('0');
     expect(zero.className).toContain('text-zinc-400');
   });

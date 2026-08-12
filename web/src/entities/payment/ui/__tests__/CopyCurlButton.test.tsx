@@ -25,6 +25,7 @@ const detail: PaymentDetail = {
   createdAt: '2026-08-11T10:00:00Z',
   updatedAt: '2026-08-11T10:00:01Z',
   webhookCount: 2,
+  webhookReplayCount: 1,
   events: [],
   customer: { email: 'bob@example.com' },
   metadata: { plan: 'pro' },

@@ -58,9 +58,27 @@ type WebhookRecord struct {
 	// réussi ou échoué, incrémente sur les rejeux.
 	Attempts int
 
+	// IsReplay marque une livraison rejouée à la demande.
+	IsReplay bool
+
 	// CreatedAt : entrée en file. CompletedAt : fin de tentative.
 	CreatedAt   time.Time
 	CompletedAt time.Time
+}
+
+// DeliveryCounts décompte les livraisons d'un paiement.
+//
+// Deux nombres et non un seul : le total répond à « a-t-il reçu quelque
+// chose », la part de rejeux à « combien de fois l'ai-je renvoyé ». La
+// liste affiche le premier, l'infobulle détaille le second — un total
+// seul confondait la livraison initiale avec ses rejeux.
+type DeliveryCounts struct {
+	// Total compte toutes les livraisons, rejeux compris.
+	Total int
+
+	// Replays compte celles qui sont des rejeux. Peut égaler Total
+	// quand la livraison d'origine est sortie de la fenêtre retenue.
+	Replays int
 }
 
 // WebhookRepository est le contrat de persistance de l'historique des
@@ -92,7 +110,7 @@ type WebhookRepository interface {
 	//
 	// Les entrées sans paiement rattaché sont hors décompte — elles
 	// n'appartiennent à aucune ligne.
-	CountsByPayment() (map[string]int, error)
+	CountsByPayment() (map[string]DeliveryCounts, error)
 
 	// DeleteAll purge l'historique. Retourne le nombre supprimé.
 	DeleteAll() (int, error)

@@ -58,6 +58,16 @@ type Webhook struct {
 	// concerne aucun.
 	PaymentUUID string
 
+	// Replay marque une livraison rejouée à la demande, par opposition
+	// à celle que le paiement a produite de lui-même.
+	//
+	// Champ explicite plutôt que préfixe d'identifiant : la convention
+	// « replay-… » existe pour être lisible, pas pour porter une donnée
+	// métier. La faire porter deux rôles est ce qui a produit
+	// l'empilement des préfixes, et une requête qui compte les rejeux
+	// par leur nom se casse au premier changement de format.
+	Replay bool
+
 	// Attempts compte les tentatives. Incrémenté par le worker avant
 	// chaque envoi. En phase 1 le worker ne tente qu'une fois ; la
 	// logique de retry arrive avec le chaos en phase 2.

@@ -17,6 +17,7 @@ const echeance: PaymentSummary = {
   createdAt: '2026-08-01T12:00:00Z',
   updatedAt: '2026-08-01T12:00:00Z',
   webhookCount: 0,
+  webhookReplayCount: 0,
 };
 
 /** Capture l'URL appelée et sert la réponse fournie. */

@@ -41,6 +41,7 @@ func (r *WebhooksRepository) migrate(ctx context.Context) error {
 			status_code INTEGER NOT NULL DEFAULT 0,
 			error_msg TEXT NOT NULL DEFAULT '',
 			attempts INTEGER NOT NULL DEFAULT 0,
+			is_replay INTEGER NOT NULL DEFAULT 0,
 			created_at TEXT NOT NULL,
 			completed_at TEXT NOT NULL
 		)`,
@@ -60,6 +61,11 @@ func (r *WebhooksRepository) migrate(ctx context.Context) error {
 	alters := []string{
 		`ALTER TABLE webhooks ADD COLUMN outcome TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE webhooks ADD COLUMN payment_uuid TEXT NOT NULL DEFAULT ''`,
+		// Les livraisons déjà historisées passent pour des envois
+		// d'origine : rien ne permet de reconnaître un rejeu après coup
+		// sans se fier au format de son identifiant, ce qu'on refuse
+		// justement de faire.
+		`ALTER TABLE webhooks ADD COLUMN is_replay INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, stmt := range alters {
 		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
@@ -89,8 +95,8 @@ func (r *WebhooksRepository) Save(rec *store.WebhookRecord) error {
 	const upsert = `
 		INSERT INTO webhooks (
 			id, url, headers_json, body, status, outcome, payment_uuid,
-			status_code, error_msg, attempts, created_at, completed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			status_code, error_msg, attempts, is_replay, created_at, completed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			url = excluded.url,
 			headers_json = excluded.headers_json,
@@ -101,12 +107,13 @@ func (r *WebhooksRepository) Save(rec *store.WebhookRecord) error {
 			status_code = excluded.status_code,
 			error_msg = excluded.error_msg,
 			attempts = excluded.attempts,
+			is_replay = excluded.is_replay,
 			completed_at = excluded.completed_at
 	`
 	_, err := r.db.Exec(upsert,
 		rec.ID, rec.URL, nonEmpty(rec.HeadersJSON), rec.Body,
 		rec.Status, rec.Outcome, rec.PaymentUUID,
-		rec.StatusCode, rec.ErrorMsg, rec.Attempts,
+		rec.StatusCode, rec.ErrorMsg, rec.Attempts, rec.IsReplay,
 		rec.CreatedAt.UTC().Format(time.RFC3339Nano),
 		rec.CompletedAt.UTC().Format(time.RFC3339Nano),
 	)
@@ -118,7 +125,7 @@ func (r *WebhooksRepository) Save(rec *store.WebhookRecord) error {
 // ajoutée ici sans l'être dans scanWebhook casse les trois d'un coup,
 // ce qui vaut mieux qu'une seule silencieusement décalée.
 const webhookColumns = `id, url, headers_json, body, status, outcome, payment_uuid,
-	status_code, error_msg, attempts, created_at, completed_at`
+	status_code, error_msg, attempts, is_replay, created_at, completed_at`
 
 // Recent retourne les `limit` dernières entrées, plus récente d'abord.
 func (r *WebhooksRepository) Recent(limit int) ([]*store.WebhookRecord, error) {
@@ -164,9 +171,9 @@ func (r *WebhooksRepository) ByPayment(paymentUUID string, limit int) ([]*store.
 // L'agrégation est faite par la base plutôt qu'en rapatriant les
 // enregistrements : la liste des paiements a besoin du seul nombre, et
 // l'historique persisté peut compter des milliers d'entrées.
-func (r *WebhooksRepository) CountsByPayment() (map[string]int, error) {
+func (r *WebhooksRepository) CountsByPayment() (map[string]store.DeliveryCounts, error) {
 	rows, err := r.db.Query(`
-		SELECT payment_uuid, COUNT(*)
+		SELECT payment_uuid, COUNT(*), SUM(is_replay)
 		FROM webhooks
 		WHERE payment_uuid <> ''
 		GROUP BY payment_uuid
@@ -175,14 +182,14 @@ func (r *WebhooksRepository) CountsByPayment() (map[string]int, error) {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	counts := make(map[string]int)
+	counts := make(map[string]store.DeliveryCounts)
 	for rows.Next() {
 		var uuid string
-		var n int
-		if err := rows.Scan(&uuid, &n); err != nil {
+		var c store.DeliveryCounts
+		if err := rows.Scan(&uuid, &c.Total, &c.Replays); err != nil {
 			return nil, err
 		}
-		counts[uuid] = n
+		counts[uuid] = c
 	}
 	return counts, rows.Err()
 }
@@ -239,7 +246,7 @@ func scanWebhook(sc paymentScanner) (*store.WebhookRecord, error) {
 	err := sc.Scan(
 		&rec.ID, &rec.URL, &rec.HeadersJSON, &rec.Body,
 		&rec.Status, &rec.Outcome, &rec.PaymentUUID,
-		&rec.StatusCode, &rec.ErrorMsg, &rec.Attempts,
+		&rec.StatusCode, &rec.ErrorMsg, &rec.Attempts, &rec.IsReplay,
 		&createdAtStr, &completedAtStr,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -28,6 +28,7 @@ const paiement: PaymentSummary = {
   createdAt: '2026-08-11T10:00:00Z',
   updatedAt: '2026-08-11T10:00:01Z',
   webhookCount: 1,
+  webhookReplayCount: 0,
 };
 
 /** Livraison minimale — seuls l'id et la date pèsent sur le choix. */

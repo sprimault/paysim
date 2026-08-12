@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sprimault/paysim/internal/bus"
+	"github.com/sprimault/paysim/internal/store"
 )
 
 // Sentinelles exportées : l'appelant doit pouvoir distinguer une file
@@ -249,7 +250,7 @@ func (q *Queue) WebhooksByPayment(paymentUUID string, limit int) []WebhookRecord
 
 // WebhookCounts compte les livraisons de chaque paiement, pour la
 // colonne de la liste. Une lecture unique plutôt qu'une par ligne.
-func (q *Queue) WebhookCounts() map[string]int {
+func (q *Queue) WebhookCounts() map[string]store.DeliveryCounts {
 	if q.history == nil {
 		return nil
 	}
