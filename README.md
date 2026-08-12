@@ -260,7 +260,7 @@ stability between two merges.
 
 ## Status
 
-Preview release, tag `v0.6.4`. Stripe support and a demo GIF are planned.
+Preview release, tag `v0.6.5`. Stripe support and a demo GIF are planned.
 
 **How it is validated.** Every pull request runs the linter, the unit tests
 with the race detector, a dependency audit, a drift check on the TypeScript
