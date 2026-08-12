@@ -115,7 +115,25 @@ Valeurs `formAction` autorisées :
   La vérification est **autorisée, jamais capturée** : chez Lyra, cette
   transaction « n'est jamais remise en banque et reste dans l'onglet
   Transactions en cours ». Il y a eu demande d'autorisation, pas de
-  mouvement de fonds.
+  mouvement de fonds. `PAYSIM_AUTOPLAY` ne la capture pas non plus — il
+  joue ce qui attendait le porteur, il ne change pas ce qui sort.
+
+  **Ce qui fait échouer une vérification tient au motif, pas au
+  montant.** Une carte expirée échoue toujours. Un PAN de refus n'échoue
+  que si son motif tient au statut de la carte :
+
+  | PAN de test | Motif | Vérification à `0` |
+  | --- | --- | --- |
+  | `4000000000000002` | `51` provision insuffisante | **acceptée**, alias créé |
+  | `5105105105105100` | `43` carte volée | refusée, aucun alias |
+  | `2223000000000007` | `05` refus de l'émetteur | refusée, aucun alias |
+  | `378282000000008` | `57` opération non permise | refusée, aucun alias |
+
+  La provision passe parce qu'une vérification n'engage aucun montant :
+  elle n'interroge pas le solde. La carte ne refusera qu'au premier
+  débit — c'est le seul levier produisant un abonnement dont les
+  échéances refusent pour ce motif, le montant d'une échéance étant
+  imposé par l'échéancier et donc indisponible comme montant magique.
 
   Un paiement refusé ne laisse donc **aucun** alias, et la réponse de
   création d'un `REGISTER_PAY` ne porte pas encore de token — il faut
@@ -513,8 +531,10 @@ Paysim embarque deux catégories de tweaks — cf.
 
 | Montant terminant par | Effet                                                          |
 | --------------------- | -------------------------------------------------------------- |
-| `01` (centimes)       | Force `UNPAID` quel que soit l'outcome demandé.                |
+| `01` (centimes)       | Force `UNPAID`, motif `51` — provision insuffisante.           |
+| `02` (centimes)       | Force `UNPAID`, motif `43` — carte volée, opposition.          |
 | `03` (centimes)       | Latence 30 s injectée sur la réponse `CreatePayment` (test timeout). |
+| `04` (centimes)       | Force `UNPAID`, motif `91` — émetteur inaccessible.            |
 
 **Par PAN (magic PANs)** — PANs de test Luhn-valides réservés pour
 refus systématique :

@@ -157,8 +157,9 @@ section qu'on cherche vraiment), et la persistance SQLite optionnelle.
 
 ## Quatre leviers de refus
 
-Montant magique se terminant par `01`, quatre PAN magiques
-canoniques, expiration de carte, révocation de token. Détails dans
+Montants magiques se terminant par `01`, `02` ou `04` — chacun son
+motif bancaire — quatre PAN magiques canoniques, expiration de carte,
+révocation de token. Détails dans
 [`docs/testing-cards.fr.md`](docs/testing-cards.fr.md).
 
 ## Scénarios (YAML)

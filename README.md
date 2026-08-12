@@ -153,8 +153,9 @@ actually looking for), and optional SQLite persistence.
 
 ## Four rejection levers
 
-Magic amount ending in `01`, four canonical magic PANs, card
-expiration, token revocation. Details in
+Magic amounts ending in `01`, `02` or `04` — each with its own bank
+reason — four canonical magic PANs, card expiration, token revocation.
+Details in
 [`docs/testing-cards.md`](docs/testing-cards.md).
 
 ## Scenarios (YAML)
