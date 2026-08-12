@@ -168,6 +168,85 @@ func TestGetPaymentByUUID(t *testing.T) {
 	}
 }
 
+// TestGetPaymentCompteSesLivraisons couvre un defaut qui ne se voyait
+// qu'en comparant les deux endpoints : le detail renvoyait toujours
+// webhookCount 0, alors que la liste comptait juste. PaymentDetail
+// embarque PaymentSummary, donc le champ partait quand meme — un zero
+// n'annoncait pas « non compte », il affirmait « aucune livraison ».
+//
+// L'assertion porte sur les deux endpoints a la fois : c'est leur
+// divergence qui est le bogue, pas la valeur prise isolement.
+func TestGetPaymentCompteSesLivraisons(t *testing.T) {
+	t.Parallel()
+	aval := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer aval.Close()
+
+	server, store, queue, _ := setup(t, "")
+	addPayment(t, store, "uuid-compte", "order-compte", 1500)
+	for _, w := range []struct {
+		id     string
+		replay bool
+	}{{"wh-1", false}, {"wh-2", true}, {"wh-3", true}} {
+		_ = queue.Enqueue(delivery.Webhook{
+			ID:          w.id,
+			URL:         aval.URL,
+			Body:        []byte(`{"x":1}`),
+			Headers:     map[string]string{"Content-Type": "application/json"},
+			PaymentUUID: "uuid-compte",
+			Replay:      w.replay,
+		})
+	}
+
+	detail := func() PaymentDetail {
+		t.Helper()
+		resp, err := http.Get(server.URL + "/paysim/api/v1/payments/uuid-compte")
+		if err != nil {
+			t.Fatalf("GET detail : %v", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var out PaymentDetail
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return out
+	}
+
+	// Les trois livraisons partent en file : on attend qu'elles soient
+	// historisees plutot que de supposer un delai.
+	deadline := time.Now().Add(2 * time.Second)
+	var got PaymentDetail
+	for time.Now().Before(deadline) {
+		got = detail()
+		if got.WebhookCount == 3 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if got.WebhookCount != 3 {
+		t.Fatalf("detail webhookCount = %d, veut 3", got.WebhookCount)
+	}
+	if got.WebhookReplayCount != 2 {
+		t.Errorf("detail webhookReplayCount = %d, veut 2", got.WebhookReplayCount)
+	}
+
+	resp, _ := http.Get(server.URL + "/paysim/api/v1/payments")
+	defer func() { _ = resp.Body.Close() }()
+	var liste []PaymentSummary
+	_ = json.NewDecoder(resp.Body).Decode(&liste)
+	if len(liste) != 1 {
+		t.Fatalf("liste = %d paiements, veut 1", len(liste))
+	}
+	// La comparaison porte sur le sommaire entier, pas sur les deux
+	// compteurs : c'est l'invariant qui a cede, et il attrape toute
+	// divergence future entre les deux vues du meme paiement — un champ
+	// ajoute a l'une et oublie dans l'autre, comme les compteurs l'ont
+	// ete, ou comme les moyens de paiement avant eux.
+	if !reflect.DeepEqual(liste[0], got.PaymentSummary) {
+		t.Errorf("le sommaire diverge entre les deux vues :\n  liste  = %+v\n  detail = %+v",
+			liste[0], got.PaymentSummary)
+	}
+}
+
 func TestGetPaymentUnknown(t *testing.T) {
 	t.Parallel()
 	server, _, _, _ := setup(t, "")
