@@ -124,27 +124,6 @@ export function usePaymentColumns({ onDelete, showProvider }: Options): Column<P
       ),
     },
     {
-      header: t('payment.list.column.webhooks'),
-      align: 'right',
-      hideBelow: 'lg',
-      sortValue: (p) => p.webhookCount,
-      // Un paiement sans livraison est ce qu'on cherche quand un
-      // marchand dit n'avoir rien reçu : le zéro est grisé plutôt que
-      // masqué, comme le compteur d'échéances des abonnements.
-      cell: (p) => (
-        <span
-          className={
-            'font-mono text-sm tabular ' +
-            (p.webhookCount === 0
-              ? 'text-zinc-400 dark:text-zinc-600'
-              : 'text-zinc-900 dark:text-zinc-100')
-          }
-        >
-          {p.webhookCount}
-        </span>
-      ),
-    },
-    {
       header: t('payment.list.column.uuid'),
       // Le chevron de la colonne d'actions ouvre la même fiche : c'est
       // le lien qu'on perd ici, pas l'accès.

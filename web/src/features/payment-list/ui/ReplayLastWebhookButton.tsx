@@ -48,17 +48,66 @@ export function ReplayLastWebhookButton({ payment }: { payment: PaymentSummary }
   }
 
   const libelle = t('payment.list.action.replayLastWebhook');
+  const rejeux = payment.webhookReplayCount;
   return (
-    <Tooltip label={libelle} focusExterne>
+    // L'infobulle dit ce que le clic va faire, puis ce qui s'est deja
+    // passe : c'est au moment de renvoyer qu'on veut savoir combien de
+    // fois on l'a deja fait.
+    <Tooltip
+      label={`${libelle} · ${detailLivraisons(t, payment.webhookCount, rejeux)}`}
+      focusExterne
+    >
       <button
         type="button"
         onClick={() => void rejouer()}
         disabled={busy}
         aria-label={libelle}
-        className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+        className="relative inline-flex rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
       >
         <Send size={14} className={busy ? 'animate-pulse' : ''} />
+        {/* Pastille de comptage, et seulement s'il y a eu un rejeu : un
+            « 0 » sur chaque ligne serait du bruit, alors que le geste
+            qu'on cherche a retrouver est justement celui qu'on a deja
+            fait.
+
+            Positionnee hors du cadre du bouton, ce que rien ne rogne —
+            le conteneur de la table n'a pas d'overflow-hidden, pour la
+            meme raison qui rend l'en-tete collant possible. */}
+        {rejeux > 0 && (
+          <span
+            className={
+              'absolute -right-1 -top-1 flex h-3.5 min-w-[0.875rem] items-center ' +
+              'justify-center rounded-full bg-brand-600 px-1 font-mono text-[9px] ' +
+              'font-semibold leading-none text-white dark:bg-brand-500'
+            }
+          >
+            {rejeux}
+          </span>
+        )}
       </button>
     </Tooltip>
   );
+}
+
+/**
+ * Rend le détail des livraisons d'un paiement, pour l'infobulle.
+ *
+ * Composé de deux fragments plutôt que d'une phrase par cas : les
+ * accords français de « livraison » et de « rejeu » sont indépendants,
+ * et une clé par combinaison en ferait six pour dire la même chose.
+ *
+ * Le cas « autant de rejeux que de livraisons » existe : l'envoi
+ * d'origine peut être sorti de la fenêtre retenue alors que ses rejeux
+ * y sont encore.
+ */
+function detailLivraisons(t: ReturnType<typeof useT>, total: number, rejeux: number): string {
+  if (total === 0) return t('payment.list.webhooks.tipNone');
+  const livraisons =
+    total === 1
+      ? t('payment.list.webhooks.tipOne')
+      : t('payment.list.webhooks.tipMany', { count: total });
+  if (rejeux === 0) return livraisons;
+  return rejeux === 1
+    ? t('payment.list.webhooks.tipReplayOne', { livraisons })
+    : t('payment.list.webhooks.tipReplayMany', { livraisons, replays: rejeux });
 }
