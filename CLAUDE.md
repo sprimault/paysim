@@ -52,7 +52,7 @@ permet de monter un Secret Kubernetes sans écrire la valeur en clair dans le ma
 | `PAYSIM_PUBLIC_URL` | Ce que voit le navigateur : hôte d'ingress, ou `localhost:30880`. |
 | `PAYSIM_CALLBACK_URL` | Cible des webhooks côté réseau interne : nom de service. |
 | `PAYSIM_BASE_PATH` | Préfixe quand l'ingress sert Paysim sous un sous-chemin. |
-| `PAYSIM_API_TOKEN` (+ `_FILE`) | Protège l'API de contrôle pour les appels serveur-à-serveur. Vide = ouvert, pour le local. Activer désactive l'UI web (SPA sans login) — utiliser une basic auth ingress pour protéger l'UI. |
+| `PAYSIM_API_TOKEN` (+ `_FILE`) | Protège l'API de contrôle pour les appels serveur-à-serveur. Vide = ouvert, pour le local. Ne couvre que l'API de contrôle : les routes du fournisseur restent ouvertes, et la SPA reste servie mais ses appels répondent 401 — utiliser une basic auth ingress pour protéger l'UI. |
 | `PAYSIM_MAX_PAYMENTS` | Plafond de rétention en mémoire. |
 | `PAYSIM_LOG_LEVEL` | Niveau de journalisation. |
 

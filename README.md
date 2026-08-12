@@ -300,6 +300,9 @@ Planning to send a patch? [`CONTRIBUTING.md`](CONTRIBUTING.md) states the
 rules a pull request is judged against — they are not obvious from the
 code, and none of them is negotiable inside a pull request.
 
+Security flaws go through the private channel described in
+[`SECURITY.md`](SECURITY.md), never through a public issue.
+
 ## License
 
 Apache 2.0 — see [`LICENSE`](LICENSE).
