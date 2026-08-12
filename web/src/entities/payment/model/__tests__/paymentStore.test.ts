@@ -15,6 +15,7 @@ const summary = (uuid: string, updatedAt: string): PaymentSummary => ({
   createdAt: '2026-08-01T10:00:00Z',
   updatedAt,
   webhookCount: 0,
+  webhookReplayCount: 0,
 });
 
 describe('paymentStore', () => {

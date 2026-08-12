@@ -96,11 +96,17 @@ func runHistoryContract(t *testing.T, h HistoryStore) {
 	// liste et la fiche du paiement lisent la meme chose, un ecart entre
 	// les deux ferait douter de l'une comme de l'autre.
 	counts := h.CountsByPayment()
-	if counts["pay-a"] != len(ofA) || counts["pay-a"] != 2 {
-		t.Errorf("counts[pay-a] = %d, veut 2", counts["pay-a"])
+	if counts["pay-a"].Total != len(ofA) || counts["pay-a"].Total != 2 {
+		t.Errorf("counts[pay-a].Total = %d, veut 2", counts["pay-a"].Total)
 	}
-	if counts["pay-b"] != 1 {
-		t.Errorf("counts[pay-b] = %d, veut 1", counts["pay-b"])
+	if counts["pay-b"].Total != 1 {
+		t.Errorf("counts[pay-b].Total = %d, veut 1", counts["pay-b"].Total)
+	}
+	// Aucun rejeu dans ce jeu : la part doit rester a zero, sans quoi
+	// l'infobulle annoncerait des renvois qui n'ont pas eu lieu.
+	if counts["pay-a"].Replays != 0 || counts["pay-b"].Replays != 0 {
+		t.Errorf("Replays = %d/%d, veut 0/0",
+			counts["pay-a"].Replays, counts["pay-b"].Replays)
 	}
 	if _, present := counts["pay-inconnu"]; present {
 		t.Error("counts porte un paiement sans livraison")
@@ -110,13 +116,34 @@ func runHistoryContract(t *testing.T, h HistoryStore) {
 		t.Error("counts compte les livraisons sans paiement rattache")
 	}
 
+	// Un rejeu compte dans le total et dans sa part. Le champ est
+	// explicite : rien ne se deduit du format de l'identifiant.
+	if err := h.Add(WebhookRecord{
+		Webhook: Webhook{
+			ID: "wh-4", URL: "http://x", Body: []byte("payload-wh-4"),
+			PaymentUUID: "pay-b", Replay: true, Attempts: 1,
+			CreatedAt: base.Add(4 * time.Second),
+		},
+		Status: "delivered", StatusCode: 200, CompletedAt: base.Add(4 * time.Second),
+	}); err != nil {
+		t.Fatalf("Add wh-4: %v", err)
+	}
+	apres := h.CountsByPayment()
+	if apres["pay-b"].Total != 2 || apres["pay-b"].Replays != 1 {
+		t.Errorf("apres rejeu : total=%d replays=%d, veut 2/1",
+			apres["pay-b"].Total, apres["pay-b"].Replays)
+	}
+	if apres["pay-a"].Replays != 0 {
+		t.Errorf("le rejeu d'un paiement a compte pour un autre")
+	}
+
 	// DeleteAll purge tout.
 	n, err := h.DeleteAll()
 	if err != nil {
 		t.Fatalf("DeleteAll: %v", err)
 	}
-	if n != 3 {
-		t.Errorf("deleted = %d, veut 3", n)
+	if n != 4 {
+		t.Errorf("deleted = %d, veut 4", n)
 	}
 	if r := h.Recent(10); len(r) != 0 {
 		t.Errorf("apres purge : Recent len = %d", len(r))
@@ -169,11 +196,11 @@ func TestMemoryHistoryCountsBorneesParLeTampon(t *testing.T) {
 		})
 	}
 	counts := h.CountsByPayment()
-	if counts["pay-a"] != historyCap {
-		t.Errorf("counts[pay-a] = %d, veut %d", counts["pay-a"], historyCap)
+	if counts["pay-a"].Total != historyCap {
+		t.Errorf("counts[pay-a].Total = %d, veut %d", counts["pay-a"].Total, historyCap)
 	}
-	if got := len(h.ByPayment("pay-a", historyCap+100)); got != counts["pay-a"] {
+	if got := len(h.ByPayment("pay-a", historyCap+100)); got != counts["pay-a"].Total {
 		t.Errorf("ByPayment len = %d, counts = %d : les deux doivent s'accorder",
-			got, counts["pay-a"])
+			got, counts["pay-a"].Total)
 	}
 }

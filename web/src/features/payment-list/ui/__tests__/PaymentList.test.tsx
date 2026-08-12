@@ -21,6 +21,7 @@ const samples: PaymentSummary[] = [
     createdAt: 't1',
     updatedAt: 't2',
     webhookCount: 0,
+    webhookReplayCount: 0,
   },
   {
     uuid: 'p2',
@@ -32,6 +33,7 @@ const samples: PaymentSummary[] = [
     createdAt: 't1',
     updatedAt: 't3',
     webhookCount: 0,
+    webhookReplayCount: 0,
   },
 ];
 

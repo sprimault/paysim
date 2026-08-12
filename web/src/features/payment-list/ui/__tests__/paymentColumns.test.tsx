@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { usePaymentColumns } from '@/features/payment-list/ui/paymentColumns';
 import { DataTable } from '@/shared/ui/DataTable';
@@ -18,6 +18,7 @@ const p: PaymentSummary = {
   createdAt: '2026-08-01T12:00:00Z',
   updatedAt: '2026-08-01T12:05:00Z',
   webhookCount: 3,
+  webhookReplayCount: 2,
 };
 
 /**
@@ -94,22 +95,6 @@ describe('colonnes de la liste des paiements', () => {
   it('sans motif, aucun badge de refus', () => {
     renderRow({ ...p, state: 'declined' });
     expect(screen.queryByTitle(/provision/)).not.toBeInTheDocument();
-  });
-
-  // Le nombre de livraisons repond a la question qui revient quand un
-  // marchand dit n'avoir rien recu, sans avoir a ouvrir chaque fiche.
-  it('affiche le nombre de livraisons', () => {
-    renderRow();
-    const ligne = screen.getAllByRole('row')[1];
-    expect(within(ligne).getByText('3')).toBeInTheDocument();
-  });
-
-  // Le zero est grise plutot que masque : c'est precisement le paiement
-  // qu'on cherche, pas une case a ignorer.
-  it('grise un paiement sans livraison plutot que de le laisser vide', () => {
-    renderRow({ ...p, webhookCount: 0 });
-    const zero = within(screen.getAllByRole('row')[1]).getByText('0');
-    expect(zero.className).toContain('text-zinc-400');
   });
 
   it('rend un bouton de copie pour l\'uuid', () => {

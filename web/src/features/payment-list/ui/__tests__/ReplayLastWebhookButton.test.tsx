@@ -1,7 +1,7 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReplayLastWebhookButton } from '@/features/payment-list/ui/ReplayLastWebhookButton';
 import { toast } from '@/shared/ui/toastStore';
@@ -28,6 +28,7 @@ const paiement: PaymentSummary = {
   createdAt: '2026-08-11T10:00:00Z',
   updatedAt: '2026-08-11T10:00:01Z',
   webhookCount: 1,
+  webhookReplayCount: 0,
 };
 
 /** Livraison minimale — seuls l'id et la date pèsent sur le choix. */
@@ -49,6 +50,66 @@ describe('<ReplayLastWebhookButton />', () => {
   });
 
   const bouton = () => screen.getByRole('button', { name: 'Rejouer la dernière livraison' });
+
+  // Une pastille de comptage, comme sur une cloche de notification :
+  // c'est ce qui dit qu'on a deja renvoye, sans rien survoler.
+  it('affiche le nombre de rejeux en pastille', () => {
+    render(<ReplayLastWebhookButton payment={{ ...paiement, webhookReplayCount: 2 }} />);
+    expect(within(bouton()).getByText('2')).toBeInTheDocument();
+  });
+
+  // Un zero sur chaque ligne serait du bruit : la pastille ne parle que
+  // de ce qui a eu lieu.
+  it('ne met aucune pastille sans rejeu', () => {
+    render(<ReplayLastWebhookButton payment={{ ...paiement, webhookReplayCount: 0 }} />);
+    expect(within(bouton()).queryByText('0')).not.toBeInTheDocument();
+  });
+
+  it('detaille livraisons et rejeux en infobulle', () => {
+    render(
+      <ReplayLastWebhookButton
+        payment={{ ...paiement, webhookCount: 3, webhookReplayCount: 2 }}
+      />,
+    );
+    fireEvent.mouseEnter(bouton());
+    expect(screen.getByRole('tooltip')).toHaveTextContent(
+      'Rejouer la dernière livraison · 3 livraisons, dont 2 rejeux',
+    );
+  });
+
+  it('accorde le singulier sur un seul rejeu', () => {
+    render(
+      <ReplayLastWebhookButton
+        payment={{ ...paiement, webhookCount: 2, webhookReplayCount: 1 }}
+      />,
+    );
+    fireEvent.mouseEnter(bouton());
+    expect(screen.getByRole('tooltip')).toHaveTextContent('2 livraisons, dont 1 rejeu');
+  });
+
+  // Annoncer « dont 0 rejeu » ferait douter d'un renvoi qui n'a pas eu
+  // lieu.
+  it('ne parle pas de rejeux quand il n\'y en a pas', () => {
+    render(
+      <ReplayLastWebhookButton
+        payment={{ ...paiement, webhookCount: 1, webhookReplayCount: 0 }}
+      />,
+    );
+    fireEvent.mouseEnter(bouton());
+    const bulle = screen.getByRole('tooltip');
+    expect(bulle).toHaveTextContent('1 livraison');
+    expect(bulle.textContent).not.toContain('rejeu ');
+  });
+
+  it('annonce l\'absence de livraison', () => {
+    render(
+      <ReplayLastWebhookButton
+        payment={{ ...paiement, webhookCount: 0, webhookReplayCount: 0 }}
+      />,
+    );
+    fireEvent.mouseEnter(bouton());
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Aucune livraison');
+  });
 
   // C'est la dernière livraison qu'on rejoue, et l'API ne garantit pas
   // l'ordre : le tri est ici, pas dans l'espoir qu'il vienne d'ailleurs.

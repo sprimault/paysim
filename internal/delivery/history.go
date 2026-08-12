@@ -25,7 +25,7 @@ type HistoryStore interface {
 	Recent(limit int) []WebhookRecord
 	ByID(id string) (WebhookRecord, bool)
 	ByPayment(paymentUUID string, limit int) []WebhookRecord
-	CountsByPayment() map[string]int
+	CountsByPayment() map[string]store.DeliveryCounts
 	DeleteAll() (int, error)
 }
 
@@ -138,7 +138,7 @@ func (m *MemoryHistory) ByPayment(paymentUUID string, limit int) []WebhookRecord
 // CountsByPayment compte les livraisons de chaque paiement présentes
 // dans le tampon. Ce qui en est sorti n'est plus comptable — ni
 // consultable, la fiche du paiement lisant le même tampon.
-func (m *MemoryHistory) CountsByPayment() map[string]int {
+func (m *MemoryHistory) CountsByPayment() map[string]store.DeliveryCounts {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -146,11 +146,18 @@ func (m *MemoryHistory) CountsByPayment() map[string]int {
 	if m.full {
 		total = historyCap
 	}
-	counts := make(map[string]int)
+	counts := make(map[string]store.DeliveryCounts)
 	for i := 0; i < total; i++ {
-		if uuid := m.buffer[i].Webhook.PaymentUUID; uuid != "" {
-			counts[uuid]++
+		uuid := m.buffer[i].Webhook.PaymentUUID
+		if uuid == "" {
+			continue
 		}
+		c := counts[uuid]
+		c.Total++
+		if m.buffer[i].Webhook.Replay {
+			c.Replays++
+		}
+		counts[uuid] = c
 	}
 	return counts
 }
@@ -221,7 +228,7 @@ func (s *SQLiteHistory) ByPayment(paymentUUID string, limit int) []WebhookRecord
 
 // CountsByPayment délègue l'agrégation au repository — la base compte
 // mieux que nous, et sur tout ce qu'elle garde.
-func (s *SQLiteHistory) CountsByPayment() map[string]int {
+func (s *SQLiteHistory) CountsByPayment() map[string]store.DeliveryCounts {
 	counts, err := s.repo.CountsByPayment()
 	if err != nil {
 		// Même parti que Recent : un décompte manquant laisse la page
@@ -284,6 +291,7 @@ func deliveryToRecord(w WebhookRecord) (*store.WebhookRecord, error) {
 		StatusCode:  w.StatusCode,
 		ErrorMsg:    w.ErrorMsg,
 		Attempts:    w.Webhook.Attempts,
+		IsReplay:    w.Webhook.Replay,
 		CreatedAt:   w.Webhook.CreatedAt,
 		CompletedAt: w.CompletedAt,
 	}, nil
@@ -305,6 +313,7 @@ func recordToDelivery(sr *store.WebhookRecord) (WebhookRecord, error) {
 			Outcome:     sr.Outcome,
 			PaymentUUID: sr.PaymentUUID,
 			Attempts:    sr.Attempts,
+			Replay:      sr.IsReplay,
 			CreatedAt:   sr.CreatedAt,
 		},
 		Status:      sr.Status,

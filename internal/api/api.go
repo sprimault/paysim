@@ -236,6 +236,16 @@ type PaymentSummary struct {
 	// sorties de la fenêtre ne sont comptées nulle part, mais elles ne
 	// sont plus consultables non plus.
 	WebhookCount int `json:"webhookCount"`
+
+	// WebhookReplayCount est la part de rejeux dans ce total.
+	//
+	// Le total seul confondait la livraison qu'un paiement produit de
+	// lui-même avec celles qu'on a redemandées : après deux rejeux il
+	// affichait trois, sans dire combien de fois on avait renvoyé.
+	//
+	// Peut égaler WebhookCount quand la livraison d'origine est sortie
+	// de la fenêtre retenue.
+	WebhookReplayCount int `json:"webhookReplayCount"`
 }
 
 // PaymentDetail ajoute le journal d'événements.
@@ -1182,7 +1192,8 @@ func (h *Handler) listPayments(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		s := toPaymentSummary(tx)
-		s.WebhookCount = counts[tx.UUID]
+		s.WebhookCount = counts[tx.UUID].Total
+		s.WebhookReplayCount = counts[tx.UUID].Replays
 		out = append(out, s)
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -1409,6 +1420,7 @@ func (h *Handler) replayWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	wh := rec.Webhook
 	wh.ID = "replay-" + racineLivraison(id) + "-" + time.Now().UTC().Format("150405.000000")
+	wh.Replay = true
 	wh.Attempts = 0
 	wh.Delay = 0
 	wh.CreatedAt = time.Now().UTC()

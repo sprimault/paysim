@@ -157,6 +157,15 @@ export interface PaymentSummary {
    * sont plus consultables non plus.
    */
   webhookCount: number /* int */;
+  /**
+   * WebhookReplayCount est la part de rejeux dans ce total.
+   * Le total seul confondait la livraison qu'un paiement produit de
+   * lui-même avec celles qu'on a redemandées : après deux rejeux il
+   * affichait trois, sans dire combien de fois on avait renvoyé.
+   * Peut égaler WebhookCount quand la livraison d'origine est sortie
+   * de la fenêtre retenue.
+   */
+  webhookReplayCount: number /* int */;
 }
 /**
  * PaymentDetail ajoute le journal d'événements.

@@ -19,6 +19,7 @@ const summary: PaymentSummary = {
   createdAt: 't1',
   updatedAt: 't2',
   webhookCount: 0,
+  webhookReplayCount: 0,
 };
 
 const detail: PaymentDetail = { ...summary, events: [{ at: 't', kind: 'created' }] };
