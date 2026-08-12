@@ -398,6 +398,11 @@ autorisation seule, un moyen expiré, un moyen révoqué, un abonnement à
 deux échéances jouées, un dont l'échéance est refusée, un annulé, un
 sans aucune échéance, et un rejeu one-click.
 
+Des rejeux enfin, en nombres différents sur trois paiements — un sur
+`CMD-1042`, deux sur `CMD-1047`, trois sur `CMD-2012`. C'est la
+pastille du bouton de renvoi qui les compte, et sans eux elle ne
+s'afficherait nulle part.
+
 Du volume ensuite : trente paiements répartis sur les états. Cette
 partie n'est pas décorative — la recherche, les filtres d'état, la
 pagination et l'en-tête collant du tableau ne se jugent pas sur huit

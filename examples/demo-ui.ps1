@@ -142,6 +142,23 @@ function Get-Count {
     return @($items).Count
 }
 
+# Renvoie N fois la derniere livraison d'un paiement.
+#
+# L'identifiant n'est lu qu'une fois : rejouer un rejeu produit la meme
+# chose, et l'identifiant ne s'empile plus depuis qu'il repart de la
+# livraison d'origine. La pause laisse la livraison se terminer — c'est
+# a ce moment-la qu'elle entre dans l'historique, donc dans le compte.
+function Invoke-Rejeu {
+    param([string]$Uuid, [int]$Fois)
+    $livraisons = @(Invoke-RestMethod -Uri "$Api/webhooks?paymentUuid=$Uuid")
+    if ($livraisons.Count -eq 0) { return }
+    $id = $livraisons[0].id
+    1..$Fois | ForEach-Object {
+        $null = Invoke-RestMethod -Method Post -Uri "$Api/webhooks/$id/replay"
+        Start-Sleep -Seconds 1
+    }
+}
+
 Write-Host '--- jeu de donnees ---'
 
 # Enrolement portant un contexte client complet : c'est celui-ci qui
@@ -208,6 +225,7 @@ $p = Invoke-JsonPost '/payments' @{
     customer = @{ email = 'bob@example.com'; reference = 'client-1042' }
 }
 $null = Invoke-JsonPost "/payments/$($p.uuid)/simulate" @{ outcome = 'PAID'; channel = 'ipn' }
+$U42 = $p.uuid
 Write-Host '  paiement capture : CMD-1042'
 
 # Les centimes portent le motif du refus : .01 donne un 51, .02 un 43,
@@ -221,6 +239,8 @@ foreach ($cas in @(
     }
     $null = Invoke-JsonPost "/payments/$($r.uuid)/simulate" @{ outcome = 'PAID'; channel = 'ipn' }
     Write-Host "  refus $($cas.code) : $($cas.order)"
+    # Dernier tour de boucle : CMD-1047, garde pour les rejeux plus bas.
+    $U47 = $r.uuid
 }
 
 $null = Invoke-JsonPost '/payments' @{
@@ -300,8 +320,17 @@ foreach ($i in 1..30) {
     if ($issue) {
         $null = Invoke-JsonPost "/payments/$($r.uuid)/simulate" @{ outcome = $issue; channel = 'ipn' }
     }
+    if ($i -eq 12) { $U12 = $r.uuid }
 }
 Write-Host '  volume : 30 paiements repartis sur les etats'
+
+# Des rejeux sur trois paiements, en nombres differents : c'est la
+# pastille du bouton de renvoi qui les compte, et sans eux elle ne
+# s'affiche nulle part — l'ecran ne montrerait pas ce qu'il sait faire.
+Invoke-Rejeu $U42 1
+Invoke-Rejeu $U47 2
+Invoke-Rejeu $U12 3
+Write-Host '  rejeux : CMD-1042 (1), CMD-1047 (2), CMD-2012 (3)'
 
 Start-Sleep -Seconds 2
 
@@ -320,5 +349,6 @@ Write-Host 'Charge utile vide    : CMD-1044, aucune livraison rattachee'
 Write-Host 'Etats des moyens     : REGISTER-2043 expire, REGISTER-2044 revoque'
 Write-Host 'Abonnements          : SUB-77 (2 echeances), SUB-78 (refusee), SUB-79 (annule), SUB-80 (aucune)'
 Write-Host 'Recherche            : taper « client-2 » pour filtrer le volume'
+Write-Host 'Pastille de rejeux   : CMD-1042 (1), CMD-1047 (2), CMD-2012 (3)'
 Write-Host ''
 Write-Host "Pour arreter : docker rm -f $Name $Sink; docker network rm $Net"
