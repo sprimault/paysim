@@ -314,6 +314,12 @@ func TestDeliverRespectsDelay(t *testing.T) {
 // TestOutOfOrderDelivery : deux webhooks, le premier avec délai, le
 // second sans → le second arrive avant le premier. C'est le mécanisme
 // de composition qui remplace un flag "out-of-order" dédié.
+//
+// Le délai vaut une seconde et non trois cents millisecondes : la marge
+// est ce qui sépare l'arrivée du second de celle du premier, et une
+// machine qui décroche plus longtemps que le délai inverse l'ordre sans
+// que rien ne soit cassé. Constaté sur un poste de développement, le
+// test échouant seul puis repassant huit fois de suite.
 func TestOutOfOrderDelivery(t *testing.T) {
 	t.Parallel()
 	receivedIDs := make(chan string, 2)
@@ -327,11 +333,11 @@ func TestOutOfOrderDelivery(t *testing.T) {
 	q := newQueue(t, 10)
 	cancel, wait := runInBackground(t, q)
 
-	// Enqueue "premier" (délai 300ms) puis "second" (immédiat).
+	// Enqueue "premier" (délai 1s) puis "second" (immédiat).
 	// Ordre d'arrivée attendu : "second", puis "premier".
 	if err := q.Enqueue(Webhook{
 		ID: "premier", URL: server.URL, Body: []byte("{}"),
-		Delay:   300 * time.Millisecond,
+		Delay:   time.Second,
 		Headers: map[string]string{"X-Test-ID": "premier"},
 	}); err != nil {
 		t.Fatal(err)
