@@ -142,7 +142,8 @@ func withBasicAuth(next http.Handler, logger *slog.Logger) http.Handler {
 		user, pass, ok := r.BasicAuth()
 		if !ok || user == "" || pass == "" {
 			w.Header().Set("WWW-Authenticate", `Basic realm="Paysim"`)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			ecrireErreurEnveloppee(w, http.StatusUnauthorized,
+				"authentification requise : Basic Auth absente ou incomplete")
 			return
 		}
 		logger.Debug("payzen_basic_auth", "user", user, "path", r.URL.Path)
@@ -165,7 +166,8 @@ func withBearerToken(next http.Handler, expected string, logger *slog.Logger) ht
 		want := "Bearer " + expected
 		if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="Paysim"`)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			ecrireErreurEnveloppee(w, http.StatusUnauthorized,
+				"authentification requise : jeton Bearer absent ou invalide")
 			logger.Debug("paysim_bearer_denied", "path", r.URL.Path)
 			return
 		}
@@ -1700,6 +1702,25 @@ func (h *Handler) writeSuccess(w http.ResponseWriter, answer any) {
 	resp := APIResponse{Status: "SUCCESS", Answer: raw}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// ecrireErreurEnveloppee répond avec un statut HTTP donné et le corps
+// enveloppé de PayZen, plutôt qu'avec du texte brut.
+//
+// Fonction libre et non méthode : les intercepteurs d'authentification
+// s'exécutent avant qu'un Handler soit en jeu, et n'en ont pas.
+//
+// Un client qui décode systématiquement le JSON de l'enveloppe prenait
+// une erreur de décodage là où il attendait un errorCode — le vrai
+// PayZen répond en JSON structuré, y compris sur un refus
+// d'authentification. Le statut HTTP, lui, reste celui du protocole :
+// 401, pas 200, une authentification refusée n'étant pas une erreur
+// métier.
+func ecrireErreurEnveloppee(w http.ResponseWriter, statut int, message string) {
+	raw, _ := json.Marshal(APIError{ErrorCode: ErrCodeUnauthorized, ErrorMessage: message})
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statut)
+	_ = json.NewEncoder(w).Encode(APIResponse{Status: "ERROR", Answer: raw})
 }
 
 // writeError emet une reponse 200 avec status=ERROR — format PayZen.

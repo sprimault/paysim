@@ -271,6 +271,56 @@ func TestBasicAuthMissing(t *testing.T) {
 	}
 }
 
+// Un refus d'authentification suit l'enveloppe comme le reste : un
+// client qui décode systématiquement le JSON prenait une erreur de
+// décodage là où il attendait un errorCode.
+//
+// Le statut HTTP reste 401 — une authentification refusée n'est pas une
+// erreur métier, et le vrai PayZen ne la traite pas comme telle.
+func TestBasicAuthManquanteSuitLEnveloppe(t *testing.T) {
+	t.Parallel()
+	server, _ := newTestServer(t)
+
+	req, _ := http.NewRequest(http.MethodPost,
+		server.URL+"/api-payment/V4/Charge/CreatePayment",
+		strings.NewReader(`{"orderId":"o","amount":100,"currency":"EUR"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do : %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, veut 401", resp.StatusCode)
+	}
+	if got := resp.Header.Get("WWW-Authenticate"); !strings.HasPrefix(got, "Basic") {
+		t.Errorf("WWW-Authenticate = %q, veut prefixe Basic", got)
+	}
+	if got := resp.Header.Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Errorf("Content-Type = %q, veut du JSON", got)
+	}
+
+	var body APIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("corps non decodable comme enveloppe : %v", err)
+	}
+	if body.Status != "ERROR" {
+		t.Errorf("status enveloppe = %q, veut ERROR", body.Status)
+	}
+	var apiErr APIError
+	if err := json.Unmarshal(body.Answer, &apiErr); err != nil {
+		t.Fatalf("answer n est pas un APIError : %v", err)
+	}
+	if apiErr.ErrorCode != ErrCodeUnauthorized {
+		t.Errorf("errorCode = %q, veut %q", apiErr.ErrorCode, ErrCodeUnauthorized)
+	}
+	if apiErr.ErrorMessage == "" {
+		t.Error("errorMessage vide — le code seul ne se lit pas")
+	}
+}
+
 func TestBasicAuthEmpty(t *testing.T) {
 	t.Parallel()
 	server, _ := newTestServer(t)

@@ -63,6 +63,12 @@ const (
 	// #nosec G101 -- code d'erreur, pas un secret.
 	ErrCodeInvalidCard = "PAYSIM_INVALID_CARD"
 
+	// ErrCodeUnauthorized accompagne un 401. Préfixé PAYSIM_ comme les
+	// autres : inventer un code d'erreur PayZen qui n'existe pas
+	// tromperait un intégrateur qui le chercherait dans leur
+	// documentation.
+	ErrCodeUnauthorized = "PAYSIM_UNAUTHORIZED"
+
 	// ErrCodeRefused habille un paiement refusé au niveau PSP. Le motif
 	// bancaire, lui, vit dans detailedErrorCode : c'est un code ISO 8583
 	// non préfixé, parce qu'il vient de l'acquéreur et non de nous.
