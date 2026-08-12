@@ -247,6 +247,15 @@ func (q *Queue) WebhooksByPayment(paymentUUID string, limit int) []WebhookRecord
 	return q.history.ByPayment(paymentUUID, limit)
 }
 
+// WebhookCounts compte les livraisons de chaque paiement, pour la
+// colonne de la liste. Une lecture unique plutôt qu'une par ligne.
+func (q *Queue) WebhookCounts() map[string]int {
+	if q.history == nil {
+		return nil
+	}
+	return q.history.CountsByPayment()
+}
+
 // PurgeWebhooks vide l'historique et retourne le nombre supprimé.
 func (q *Queue) PurgeWebhooks() (int, error) {
 	if q.history == nil {

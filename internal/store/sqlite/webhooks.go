@@ -159,6 +159,34 @@ func (r *WebhooksRepository) ByPayment(paymentUUID string, limit int) ([]*store.
 	return collectWebhooks(rows)
 }
 
+// CountsByPayment compte les livraisons par paiement, en une requête.
+//
+// L'agrégation est faite par la base plutôt qu'en rapatriant les
+// enregistrements : la liste des paiements a besoin du seul nombre, et
+// l'historique persisté peut compter des milliers d'entrées.
+func (r *WebhooksRepository) CountsByPayment() (map[string]int, error) {
+	rows, err := r.db.Query(`
+		SELECT payment_uuid, COUNT(*)
+		FROM webhooks
+		WHERE payment_uuid <> ''
+		GROUP BY payment_uuid
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	counts := make(map[string]int)
+	for rows.Next() {
+		var uuid string
+		var n int
+		if err := rows.Scan(&uuid, &n); err != nil {
+			return nil, err
+		}
+		counts[uuid] = n
+	}
+	return counts, rows.Err()
+}
+
 // collectWebhooks matérialise un curseur en enregistrements.
 //
 // Extrait des trois lectures qui parcourent les mêmes colonnes : sans

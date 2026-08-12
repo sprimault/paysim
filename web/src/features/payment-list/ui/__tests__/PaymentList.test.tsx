@@ -20,6 +20,7 @@ const samples: PaymentSummary[] = [
     state: 'captured',
     createdAt: 't1',
     updatedAt: 't2',
+    webhookCount: 0,
   },
   {
     uuid: 'p2',
@@ -30,6 +31,7 @@ const samples: PaymentSummary[] = [
     state: 'declined',
     createdAt: 't1',
     updatedAt: 't3',
+    webhookCount: 0,
   },
 ];
 

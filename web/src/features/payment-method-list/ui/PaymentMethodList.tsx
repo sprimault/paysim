@@ -175,6 +175,7 @@ export function PaymentMethodList() {
         rowKey={(m) => m.token}
         loading={loading}
         pageSize={10}
+        totalRows={total}
         toolbar={
           <ListFilters
             query={query}

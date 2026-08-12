@@ -14,6 +14,7 @@ const base: PaymentInStore = {
   state: 'captured',
   createdAt: '2026-08-11T10:00:00Z',
   updatedAt: '2026-08-11T10:00:01Z',
+  webhookCount: 0,
 };
 
 /** Le corps JSON, extrait de la commande, pour l'inspecter champ à champ. */

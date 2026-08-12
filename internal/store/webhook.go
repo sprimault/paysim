@@ -85,6 +85,15 @@ type WebhookRepository interface {
 	// existent toujours.
 	ByPayment(paymentUUID string, limit int) ([]*WebhookRecord, error)
 
+	// CountsByPayment compte les livraisons de chaque paiement, en une
+	// lecture. La liste des paiements en affiche le nombre par ligne :
+	// une requête par paiement ferait des centaines d'allers-retours
+	// pour une page.
+	//
+	// Les entrées sans paiement rattaché sont hors décompte — elles
+	// n'appartiennent à aucune ligne.
+	CountsByPayment() (map[string]int, error)
+
 	// DeleteAll purge l'historique. Retourne le nombre supprimé.
 	DeleteAll() (int, error)
 

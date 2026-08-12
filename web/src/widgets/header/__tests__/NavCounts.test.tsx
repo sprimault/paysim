@@ -29,6 +29,7 @@ const paiement = (uuid: string): PaymentSummary => ({
   state: 'captured',
   createdAt: '2026-08-01T10:00:00Z',
   updatedAt: '2026-08-01T10:00:00Z',
+  webhookCount: 0,
 });
 
 function renderHeader() {

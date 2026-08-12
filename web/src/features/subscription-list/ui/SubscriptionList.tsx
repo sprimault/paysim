@@ -191,6 +191,7 @@ export function SubscriptionList() {
         rowKey={(s) => s.id}
         loading={loading}
         pageSize={10}
+        totalRows={total}
         toolbar={
           <ListFilters
             query={query}

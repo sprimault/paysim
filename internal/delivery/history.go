@@ -25,6 +25,7 @@ type HistoryStore interface {
 	Recent(limit int) []WebhookRecord
 	ByID(id string) (WebhookRecord, bool)
 	ByPayment(paymentUUID string, limit int) []WebhookRecord
+	CountsByPayment() map[string]int
 	DeleteAll() (int, error)
 }
 
@@ -134,6 +135,26 @@ func (m *MemoryHistory) ByPayment(paymentUUID string, limit int) []WebhookRecord
 	return out
 }
 
+// CountsByPayment compte les livraisons de chaque paiement présentes
+// dans le tampon. Ce qui en est sorti n'est plus comptable — ni
+// consultable, la fiche du paiement lisant le même tampon.
+func (m *MemoryHistory) CountsByPayment() map[string]int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	total := m.idx
+	if m.full {
+		total = historyCap
+	}
+	counts := make(map[string]int)
+	for i := 0; i < total; i++ {
+		if uuid := m.buffer[i].Webhook.PaymentUUID; uuid != "" {
+			counts[uuid]++
+		}
+	}
+	return counts
+}
+
 // DeleteAll purge le ring buffer. Retourne le nombre d'entrées
 // supprimées avant reset.
 func (m *MemoryHistory) DeleteAll() (int, error) {
@@ -196,6 +217,18 @@ func (s *SQLiteHistory) ByPayment(paymentUUID string, limit int) []WebhookRecord
 		return nil
 	}
 	return convertAll(recs)
+}
+
+// CountsByPayment délègue l'agrégation au repository — la base compte
+// mieux que nous, et sur tout ce qu'elle garde.
+func (s *SQLiteHistory) CountsByPayment() map[string]int {
+	counts, err := s.repo.CountsByPayment()
+	if err != nil {
+		// Même parti que Recent : un décompte manquant laisse la page
+		// utilisable, le diagnostic passe par les logs du repo.
+		return nil
+	}
+	return counts
 }
 
 // convertAll traduit un lot d'enregistrements, en sautant ceux dont la
