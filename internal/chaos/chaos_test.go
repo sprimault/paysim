@@ -378,6 +378,43 @@ func TestDeclineReasonForPAN(t *testing.T) {
 	}
 }
 
+// Ce qui fait échouer une vérification sans débit tient au motif, pas
+// au chemin : un statut de carte vaut quel que soit le montant, une
+// provision ne s'interroge qu'à partir d'un montant.
+//
+// La distinction n'est pas propre à PayZen : elle porte sur des codes
+// ISO 8583, ceux que l'acquéreur remonte. Un enregistrement de moyen
+// chez n'importe quel fournisseur la rencontrera à l'identique.
+func TestRefuseUneVerification(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		nom    string
+		reason DeclineReason
+		want   bool
+	}{
+		{"opposition", ReasonStolenCard, true},
+		{"refus emetteur", ReasonDoNotHonour, true},
+		{"operation non permise", ReasonNotPermitted, true},
+		// Une carte à découvert s'enrôle : la vérification n'engage
+		// aucun montant, donc n'interroge pas le solde. Elle refusera
+		// au premier débit, et c'est le seul levier qui produise un
+		// abonnement dont les échéances refusent pour ce motif.
+		{"provision insuffisante", ReasonInsufficientFunds, false},
+		// Une panne d'émetteur est transitoire : elle ne dit rien de la
+		// carte, et refuser l'enrôlement pour ça reviendrait à traiter
+		// un incident réseau comme un défaut du porteur.
+		{"emetteur inaccessible", ReasonIssuerUnavailable, false},
+		{"aucun motif", DeclineReason{}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.nom, func(t *testing.T) {
+			if got := RefuseUneVerification(c.reason); got != c.want {
+				t.Errorf("RefuseUneVerification(%q) = %v, veut %v", c.reason.Code, got, c.want)
+			}
+		})
+	}
+}
+
 // Tout PAN de refus doit porter un motif, sans quoi le refus reste muet
 // sur le chemin récurrent — celui-là même qu'on veut rendre testable.
 func TestChaqueTestPANPorteUnMotif(t *testing.T) {

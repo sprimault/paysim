@@ -2024,11 +2024,15 @@ func TestCreatePaymentRefuseNAnnonceNiTokenNiMarque(t *testing.T) {
 	t.Parallel()
 	server, _ := setupWithPayzen(t, "")
 
-	// Enrôlement d'un PAN de test réservé au refus systématique.
+	// Enrôlement d'un PAN de test réservé au refus systématique. Celui
+	// de la provision insuffisante, le seul qui s'enrôle : la
+	// vérification n'engage aucun montant, donc n'interroge pas le
+	// solde. Les motifs tenant au statut de la carte échouent dès
+	// l'enrôlement et ne donneraient aucun alias à rejouer.
 	enrol, _ := json.Marshal(CreatePaymentInput{
 		Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "ENROL-KO",
 		FormAction: "REGISTER",
-		Card:       &payzen.Card{PAN: "5105105105105100", ExpiryMonth: 12, ExpiryYear: 2030},
+		Card:       &payzen.Card{PAN: "4000000000000002", ExpiryMonth: 12, ExpiryYear: 2030},
 	})
 	r1, _ := http.Post(server.URL+"/paysim/api/v1/payments",
 		"application/json", bytes.NewReader(enrol))

@@ -1664,52 +1664,104 @@ func TestMotifDeRefusDansLeKrAnswer(t *testing.T) {
 	_, store, queue := newTestServerFull(t, cfg)
 	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
 
+	// Seule la provision insuffisante s'enrôle : une carte à découvert
+	// passe la vérification, qui n'engage aucun montant, et ne refuse
+	// qu'au premier débit. Les trois autres motifs tiennent au statut
+	// de la carte et échouent dès l'enrôlement — ils sont couverts par
+	// TestVerificationRefuseeSelonLeMotif.
+	const panProvision = "4000000000000002"
+
+	enrol, err := h.Create(CreateInput{
+		Amount: 0, Currency: "EUR", OrderID: "ENROL", FormAction: "REGISTER",
+		Card: &Card{PAN: panProvision, ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if enrol.PaymentMethodToken == "" {
+		t.Fatal("aucun alias : une carte a decouvert doit s'enroler")
+	}
+	tx, err := h.Create(CreateInput{
+		Amount: 2500, Currency: "EUR", OrderID: "REJEU",
+		PaymentMethodToken: enrol.PaymentMethodToken,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(tx.Payment.State()); got != "declined" {
+		t.Fatalf("state = %q, veut declined", got)
+	}
+
+	pm, _ := store.MethodByToken(enrol.PaymentMethodToken)
+	answer := buildKrAnswer(tx, pm, nil, BrowserReturnOpts{
+		Outcome:       OutcomeUnpaid,
+		DeclineReason: chaos.DeclineReasonForPAN(panProvision),
+	}, "", "TEST")
+	if len(answer.Transactions) == 0 {
+		t.Fatal("aucune transaction dans le kr-answer")
+	}
+	if got := answer.Transactions[0].DetailedErrorCode; got != "51" {
+		t.Errorf("detailedErrorCode = %q, veut 51", got)
+	}
+	if answer.Transactions[0].DetailedErrorMessage == "" {
+		t.Error("detailedErrorMessage vide — le code seul n'est pas lisible")
+	}
+}
+
+// Ce qui fait échouer une vérification à zéro euro tient au motif, pas
+// au chemin : une carte en opposition est refusée sans qu'aucun montant
+// soit engagé, une carte à découvert ne l'est pas.
+//
+// L'enjeu dépasse le confort de test. Refuser la provision à
+// l'enrôlement supprimerait le seul levier produisant un abonnement
+// dont les échéances refusent pour ce motif : sur un échéancier, le
+// montant est imposé, donc le montant magique n'est pas disponible.
+func TestVerificationRefuseeSelonLeMotif(t *testing.T) {
+	t.Parallel()
+	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"}
+	_, store, queue := newTestServerFull(t, cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+
 	cases := []struct {
-		nom      string
-		pan      string
-		wantCode string
+		nom       string
+		pan       string
+		wantState string
+		wantCode  string
 	}{
-		{"provision insuffisante", "4000000000000002", "51"},
-		{"carte volee", "5105105105105100", "43"},
-		{"refus generique", "2223000000000007", "05"},
-		{"operation non permise", "378282000000008", "57"},
+		{"provision insuffisante s'enrole", "4000000000000002", "authorized", ""},
+		{"carte volee refuse", "5105105105105100", "declined", "43"},
+		{"refus generique refuse", "2223000000000007", "declined", "05"},
+		{"operation non permise refuse", "378282000000008", "declined", "57"},
 	}
 	for _, c := range cases {
 		t.Run(c.nom, func(t *testing.T) {
-			enrol, err := h.Create(CreateInput{
+			tx, err := h.Create(CreateInput{
 				Amount: 0, Currency: "EUR", OrderID: "ENROL", FormAction: "REGISTER",
 				Card: &Card{PAN: c.pan, ExpiryMonth: 12, ExpiryYear: 2030},
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			tx, err := h.Create(CreateInput{
-				Amount: 2500, Currency: "EUR", OrderID: "REJEU",
-				PaymentMethodToken: enrol.PaymentMethodToken,
-			})
-			if err != nil {
-				t.Fatal(err)
+			if got := string(tx.Payment.State()); got != c.wantState {
+				t.Fatalf("state = %q, veut %q", got, c.wantState)
 			}
-			if got := string(tx.Payment.State()); got != "declined" {
-				t.Fatalf("state = %q, veut declined", got)
+			// Un refus ne laisse aucun alias — c'est la règle Lyra :
+			// « l'alias ne sera pas créé si la demande d'autorisation
+			// ou de renseignement est refusée ».
+			aliasAttendu := c.wantState == "authorized"
+			if aliasAttendu != (tx.PaymentMethodToken != "") {
+				t.Fatalf("alias = %q alors qu'on en veut %v",
+					tx.PaymentMethodToken, aliasAttendu)
 			}
-
-			pm, _ := store.MethodByToken(enrol.PaymentMethodToken)
-			answer := buildKrAnswer(tx, pm, BrowserReturnOpts{
-				Outcome:       OutcomeUnpaid,
-				DeclineReason: chaos.DeclineReasonForPAN(c.pan),
-			}, "", "TEST")
-			if len(answer.Transactions) == 0 {
-				t.Fatal("aucune transaction dans le kr-answer")
+			if got := tx.DeclineCode; got != c.wantCode {
+				t.Errorf("declineCode = %q, veut %q", got, c.wantCode)
 			}
-			if got := answer.Transactions[0].DetailedErrorCode; got != c.wantCode {
-				t.Errorf("detailedErrorCode = %q, veut %q", got, c.wantCode)
-			}
-			if answer.Transactions[0].DetailedErrorMessage == "" {
-				t.Error("detailedErrorMessage vide — le code seul n'est pas lisible")
+			if c.wantCode != "" && tx.DeclineMessage == "" {
+				t.Error("declineMessage vide — le code seul n'est pas lisible")
 			}
 		})
 	}
+	_ = store
 }
 
 // Le montant magique est le levier du parcours utilisateur ; le PAN
@@ -1727,6 +1779,7 @@ func TestMotifDeRefusParMontantMagique(t *testing.T) {
 				UUID: "u", OrderID: "O", Amount: amount, Currency: "EUR",
 				Payment: newDeclinedPayment(t, amount),
 			},
+			nil,
 			nil,
 			BrowserReturnOpts{
 				Outcome:       OutcomeUnpaid,
@@ -1746,7 +1799,7 @@ func TestSuccesSansMotifDeRefus(t *testing.T) {
 		UUID: "u", OrderID: "O", Amount: 1000, Currency: "EUR",
 		Payment: newCapturedPayment(t),
 	}
-	answer := buildKrAnswer(tx, nil, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
+	answer := buildKrAnswer(tx, nil, nil, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
 	if got := answer.Transactions[0].DetailedErrorCode; got != "" {
 		t.Errorf("detailedErrorCode = %q sur un succes, veut vide", got)
 	}
@@ -1785,7 +1838,7 @@ func TestRefusPorteLeCodePSP(t *testing.T) {
 		UUID: "u", OrderID: "O", Amount: 1001, Currency: "EUR",
 		Payment: newDeclinedPayment(t, 1001),
 	}
-	answer := buildKrAnswer(tx, nil, BrowserReturnOpts{
+	answer := buildKrAnswer(tx, nil, nil, BrowserReturnOpts{
 		Outcome:       OutcomeUnpaid,
 		DeclineReason: chaos.ReasonInsufficientFunds,
 	}, "", "TEST")
@@ -1923,5 +1976,207 @@ func TestSignatureParCanal(t *testing.T) {
 				t.Fatal("aucun webhook recu")
 			}
 		})
+	}
+}
+
+// Sonde 1 — à carte identique, seule l'issue change : le bloc
+// cardDetails doit décrire la même carte, acceptée comme refusée.
+//
+// Le refus est le scénario pour lequel on installe ce simulateur. Un
+// marchand qui journalise le PAN masqué d'un refus enregistrait
+// jusqu'ici un numéro qui n'a jamais été présenté.
+func TestCardDetailsIdentiqueAcceptationEtRefus(t *testing.T) {
+	t.Parallel()
+	carte := &Card{
+		PAN: "4111111111111111", ExpiryMonth: 6, ExpiryYear: 2030,
+		HolderName: "PROBE KR", Country: "US",
+		ProductCategory: "DEBIT", IssuerName: "BANQUE DE TEST",
+	}
+
+	lire := func(t *testing.T, outcome string) *KrCardDetails {
+		t.Helper()
+		merchant, hits := newMerchantServer(t)
+		cfg := HandlerConfig{
+			HMACKey: "k", RESTPassword: "pwd-rest",
+			DefaultCallbackURL: merchant.URL,
+		}
+		server, _, _ := newTestServerFull(t, cfg)
+
+		// Création par la route native : c'est elle qui porte la carte,
+		// et le serveur de test câble le handler complet.
+		create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreatePayment",
+			CreatePaymentRequest{
+				OrderID: "SONDE", Amount: 2500, Currency: "EUR", Card: carte,
+			}, "u", "p")
+		var ca CreatePaymentAnswer
+		if err := json.Unmarshal(create.Answer, &ca); err != nil {
+			t.Fatalf("reponse de creation illisible : %v", err)
+		}
+		if _, status := simulate(t, server.URL+"/paysim/simulate/browserReturn",
+			BrowserReturnRequest{
+				FormToken: ca.FormToken,
+				ReturnURL: merchant.URL,
+				Outcome:   outcome,
+			}, ""); status != http.StatusOK {
+			t.Fatalf("simulate status = %d", status)
+		}
+
+		select {
+		case wh := <-hits:
+			var answer KrAnswer
+			if err := json.Unmarshal([]byte(wh.Values.Get("kr-answer")), &answer); err != nil {
+				t.Fatalf("kr-answer illisible : %v", err)
+			}
+			if len(answer.Transactions) == 0 {
+				t.Fatal("aucune transaction dans le kr-answer")
+			}
+			cd := answer.Transactions[0].TransactionDetails.CardDetails
+			if cd == nil {
+				t.Fatal("aucun bloc cardDetails")
+			}
+			return cd
+		case <-time.After(2 * time.Second):
+			t.Fatal("aucune notification")
+			return nil
+		}
+	}
+
+	accepte := lire(t, OutcomePaid)
+	refuse := lire(t, OutcomeUnpaid)
+
+	if accepte.PAN != refuse.PAN {
+		t.Errorf("PAN masque : accepte=%q refuse=%q — la carte presentee est la meme",
+			accepte.PAN, refuse.PAN)
+	}
+	if refuse.HolderName != "PROBE KR" {
+		t.Errorf("holderName sur refus = %q, veut PROBE KR", refuse.HolderName)
+	}
+	if refuse.Country != "US" || refuse.ProductCategory != "DEBIT" {
+		t.Errorf("attributs emetteur sur refus = %q/%q, veut US/DEBIT",
+			refuse.Country, refuse.ProductCategory)
+	}
+	if refuse.IssuerName != "BANQUE DE TEST" {
+		t.Errorf("issuerName sur refus = %q, veut BANQUE DE TEST", refuse.IssuerName)
+	}
+}
+
+// Sonde 3 (contrôle) — une carte expirée échoue toujours la
+// vérification, quel que soit le motif : il n'y a rien à interroger.
+func TestVerificationCarteExpireeRefuseToujours(t *testing.T) {
+	t.Parallel()
+	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"}
+	_, store, queue := newTestServerFull(t, cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+
+	tx, err := h.Create(CreateInput{
+		Amount: 0, Currency: "EUR", OrderID: "EXPIREE", FormAction: "REGISTER",
+		Card: &Card{PAN: "4111111111111111", ExpiryMonth: 1, ExpiryYear: 2020},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(tx.Payment.State()); got != "declined" {
+		t.Errorf("state = %q, veut declined", got)
+	}
+	if tx.PaymentMethodToken != "" {
+		t.Errorf("alias = %q sur une carte expiree, veut aucun", tx.PaymentMethodToken)
+	}
+}
+
+// Sonde 4 — l'autoplay ne capture pas une vérification à zéro euro, et
+// notifie quand même.
+//
+// Le statut racine reste PAID : c'est lui qu'un marchand filtre pour
+// reconnaître un succès, la nuance vivant dans detailedStatus. Émettre
+// AUTHORISED à la racine ferait ignorer l'IPN d'enrôlement en silence,
+// et l'alias ne serait jamais stocké côté marchand.
+func TestAutoplayNeCapturePasUneVerification(t *testing.T) {
+	t.Parallel()
+	merchant, hits := newMerchantServer(t)
+	cfg := HandlerConfig{
+		HMACKey: "k", RESTPassword: "pwd-rest",
+		DefaultCallbackURL: merchant.URL, Autoplay: true,
+	}
+	_, store, queue := newTestServerFull(t, cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+
+	tx, err := h.Create(CreateInput{
+		Amount: 0, Currency: "EUR", OrderID: "VERIF-AUTO", FormAction: "REGISTER",
+		Card: &Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(tx.Payment.State()); got != "authorized" {
+		t.Fatalf("state = %q, veut authorized — une verification n'est jamais capturee", got)
+	}
+	if tx.PaymentMethodToken == "" {
+		t.Error("aucun alias sur une verification acceptee")
+	}
+
+	select {
+	case wh := <-hits:
+		answer := wh.Values.Get("kr-answer")
+		if !strings.Contains(answer, `"orderStatus":"PAID"`) {
+			t.Errorf("orderStatus racine absent ou different de PAID : %s", answer)
+		}
+		if !strings.Contains(answer, `"detailedStatus":"AUTHORISED"`) {
+			t.Errorf("detailedStatus attendu AUTHORISED : %s", answer)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("aucune notification : un marchand attendant l IPN d enrolement resterait suspendu")
+	}
+}
+
+// Sonde croisée 2 × 1 — le refus d'une vérification pour opposition ne
+// crée aucun alias, et c'est précisément ce cas que le repli sur la
+// carte de démonstration attrapait.
+//
+// Chaque correctif testé isolément laisse passer ce croisement : le
+// premier ne le produit pas, le second ne le regarde pas.
+func TestVerificationRefuseeDecritLaCartePresentee(t *testing.T) {
+	t.Parallel()
+	merchant, hits := newMerchantServer(t)
+	cfg := HandlerConfig{
+		HMACKey: "k", RESTPassword: "pwd-rest",
+		DefaultCallbackURL: merchant.URL, Autoplay: true,
+	}
+	_, store, queue := newTestServerFull(t, cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+
+	// Carte en opposition : la vérification refuse, aucun alias.
+	tx, err := h.Create(CreateInput{
+		Amount: 0, Currency: "EUR", OrderID: "VERIF-KO", FormAction: "REGISTER",
+		Card: &Card{
+			PAN: "5105105105105100", ExpiryMonth: 12, ExpiryYear: 2030,
+			HolderName: "PROBE KR",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tx.PaymentMethodToken != "" {
+		t.Fatal("un alias est ne d une verification refusee")
+	}
+
+	select {
+	case wh := <-hits:
+		var answer KrAnswer
+		if err := json.Unmarshal([]byte(wh.Values.Get("kr-answer")), &answer); err != nil {
+			t.Fatalf("kr-answer illisible : %v", err)
+		}
+		cd := answer.Transactions[0].TransactionDetails.CardDetails
+		if cd == nil {
+			t.Fatal("aucun bloc cardDetails")
+		}
+		if want := maskPAN("5105105105105100"); cd.PAN != want {
+			t.Errorf("PAN masque = %q, veut %q — la carte de demonstration a repris la main",
+				cd.PAN, want)
+		}
+		if cd.HolderName != "PROBE KR" {
+			t.Errorf("holderName = %q, veut PROBE KR", cd.HolderName)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("aucune notification sur une verification refusee")
 	}
 }

@@ -157,14 +157,20 @@ func applyOutcome(tx *Transaction, outcome, reason string, decline chaos.Decline
 // requête de simulation. Retourne la structure JSON à signer. Ne
 // modifie rien, n'écrit pas.
 //
-// pm porte la carte réellement enrôlée : quand il est non-nil, le bloc
-// cardDetails en est dérivé plutôt que fabriqué. Le laisser nil est le
-// cas légitime du paiement one-shot où aucune carte n'a été saisie —
-// on retombe alors sur une carte de démonstration.
+// pm porte la carte réellement enrôlée, presentee celle qui a été
+// soumise sans l'être — le cas d'un refus, où aucun alias ne naît. Le
+// bloc cardDetails dérive de l'un ou de l'autre.
+//
+// La carte de démonstration ne sert que lorsque les deux sont nils,
+// c'est-à-dire quand rien n'a jamais été présenté : un paiement joué
+// depuis l'UI sans qu'aucun numéro n'ait été saisi. Annoncer une carte
+// fictive alors qu'on connaît celle qui a été refusée ferait journaliser
+// au marchand un PAN masqué qui n'a jamais existé — et le refus est
+// précisément le scénario pour lequel on installe ce simulateur.
 //
 // Défauts appliqués : paymentMethodType=CARDS, cardBrand=VISA,
 // threeDSStatus=SUCCESS, authenticationType déduit du status.
-func buildKrAnswer(tx *Transaction, pm *PaymentMethod, opts BrowserReturnOpts, serverURL string, mode string) *KrAnswer {
+func buildKrAnswer(tx *Transaction, pm *PaymentMethod, presentee *Card, opts BrowserReturnOpts, serverURL string, mode string) *KrAnswer {
 	spec := outcomeSpecs[opts.Outcome]
 	now := time.Now().UTC().Format(time.RFC3339)
 
@@ -205,7 +211,8 @@ func buildKrAnswer(tx *Transaction, pm *PaymentMethod, opts BrowserReturnOpts, s
 		productCategory := "CREDIT"
 		issuerName := "PAYSIM"
 
-		if pm != nil {
+		switch {
+		case pm != nil:
 			pan = pm.PANMasked
 			expiryMonth = pm.ExpiryMonth
 			expiryYear = pm.ExpiryYear
@@ -221,6 +228,27 @@ func buildKrAnswer(tx *Transaction, pm *PaymentMethod, opts BrowserReturnOpts, s
 			}
 			if pm.IssuerName != "" {
 				issuerName = pm.IssuerName
+			}
+		case presentee != nil:
+			// Refusée, donc jamais enrôlée : le masquage se fait ici, à
+			// partir du numéro soumis. C'est la même règle que celle
+			// appliquée à l'enrôlement, pour que le marchand lise les
+			// mêmes quatre derniers chiffres dans les deux cas.
+			pan = maskPAN(presentee.PAN)
+			expiryMonth = presentee.ExpiryMonth
+			expiryYear = presentee.ExpiryYear
+			holderName = presentee.HolderName
+			if presentee.Brand != "" {
+				cardBrand = presentee.Brand
+			}
+			if presentee.Country != "" {
+				country = presentee.Country
+			}
+			if presentee.ProductCategory != "" {
+				productCategory = presentee.ProductCategory
+			}
+			if presentee.IssuerName != "" {
+				issuerName = presentee.IssuerName
 			}
 		}
 		cardDetails = &KrCardDetails{

@@ -286,14 +286,63 @@ func (h *Handler) Create(in CreateInput) (*Transaction, error) {
 	// Un REGISTER_PAY, lui, reste suspendu au parcours : son alias
 	// naîtra du simulate, comme le paiement qui le porte.
 	if tx.Card != nil && isRegisterOnly(tx) {
+		// Capturée avant la vérification, qui l'écarte quand elle
+		// refuse. C'est ce refus-là qu'un marchand veut voir décrit
+		// avec le vrai numéro masqué.
+		presentee := tx.Card
 		if err := h.verifyCard(tx); err != nil {
 			return nil, err
 		}
+		// L'autoplay ne rejoue pas une issue déjà tranchée. Le faire
+		// capturerait la vérification, que Lyra ne remet jamais en
+		// banque — et l'autoplay a pour rôle de jouer ce qui attendait
+		// le porteur, pas de changer ce qui sort.
+		//
+		// La notification part quand même, avec l'issue décidée
+		// ci-dessus : un marchand qui attend l'IPN de son enrôlement
+		// resterait suspendu sans elle.
+		if h.cfg.Autoplay {
+			h.notifierVerification(tx, presentee)
+		}
+		return tx, nil
 	}
 	if h.cfg.Autoplay {
 		h.autoplay(tx)
 	}
 	return tx, nil
+}
+
+// notifierVerification émet la notification d'une vérification à zéro
+// euro, sans toucher à l'état : verifyCard l'a déjà fixé.
+//
+// L'issue et le motif se relisent sur la transaction plutôt que d'être
+// passés en paramètre — ils viennent d'être écrits, et les faire
+// voyager en double invite à ce que les deux divergent.
+func (h *Handler) notifierVerification(tx *Transaction, presentee *Card) {
+	outcome := OutcomeAuthorised
+	if tx.Payment.State() == domain.StateDeclined {
+		outcome = OutcomeUnpaid
+	}
+	target := h.callbackTarget(tx.NotificationURL, tx.UUID, "autoplay")
+	if target == "" || h.cfg.HMACKey == "" {
+		return
+	}
+	var pm *PaymentMethod
+	if tx.PaymentMethodToken != "" {
+		var err error
+		if pm, err = h.store.MethodByToken(tx.PaymentMethodToken); err != nil {
+			h.logger.Warn("payment_method_lookup_failed",
+				"uuid", tx.UUID, "token", tx.PaymentMethodToken, "err", err)
+			pm = nil
+		}
+	}
+	if err := h.emitAutoplayWebhook(
+		tx, pm, presentee, outcome, tx.DeclineMessage, chaos.DeclineReason{
+			Code: tx.DeclineCode, Message: tx.DeclineMessage,
+		}, target,
+	); err != nil {
+		h.logger.Warn("verification_webhook_emit_failed", "uuid", tx.UUID, "err", err)
+	}
 }
 
 // isRegisterOnly reconnaît l'enrôlement sans paiement : aucun montant à
@@ -318,17 +367,29 @@ func isRegisterOnly(tx *Transaction) bool {
 // lui apprendrait rien.
 func (h *Handler) verifyCard(tx *Transaction) error {
 	// Une vérification ne débite pas : elle contrôle que la carte est
-	// utilisable, pas qu'elle est approvisionnée. Un PAN de refus
-	// « provision insuffisante » s'enrôle donc très bien — c'est même
-	// tout l'intérêt du levier, obtenir un alias qui refusera aux
-	// échéances. Seule une carte hors d'usage, expirée, échoue ici.
+	// utilisable, pas qu'elle est approvisionnée. Ce qui la fait échouer
+	// dépend donc du motif du refus, pas du chemin emprunté.
+	//
+	// Une carte expirée échoue toujours — il n'y a rien à interroger. Un
+	// PAN de refus n'échoue que si son motif tient au statut de la
+	// carte : opposition, refus d'émetteur, opération interdite. La
+	// provision insuffisante passe, et l'alias naît : c'est le seul
+	// levier qui produise ensuite un abonnement dont les échéances
+	// refusent pour provision, le montant d'une échéance étant imposé
+	// par l'échéancier et donc indisponible comme montant magique.
 	usable, reason := MethodUsability(
 		tx.Card.PAN, tx.Card.ExpiryMonth, tx.Card.ExpiryYear, false, h.clock().Now())
 	outcome := ""
-	if !usable && reason == ReasonExpired {
-		outcome = OutcomeUnpaid
-	}
 	var decline chaos.DeclineReason
+	switch {
+	case !usable && reason == ReasonExpired:
+		outcome = OutcomeUnpaid
+	case !usable && reason == ReasonDeclinedTestPAN:
+		if motif := chaos.DeclineReasonForPAN(tx.Card.PAN); chaos.RefuseUneVerification(motif) {
+			outcome = OutcomeUnpaid
+			decline = motif
+		}
+	}
 	if outcome == OutcomeUnpaid {
 		if err := applyOutcome(tx, outcome, reason, decline); err != nil {
 			return fmt.Errorf("transition domain: %w", err)
@@ -386,6 +447,10 @@ func (h *Handler) autoplay(tx *Transaction) {
 			"uuid", tx.UUID, "outcome", outcome, "err", err)
 		return
 	}
+	// Capturée avant l'enrôlement, qui l'écarte sur un refus. C'est
+	// pourtant sur un refus qu'on en a le plus besoin : sans elle, le
+	// webhook décrirait une carte de démonstration.
+	presentee := tx.Card
 	// L'alias naît ici, une fois l'issue connue, et pas avant.
 	pm, err := h.enrollIfAccepted(tx)
 	if err != nil {
@@ -409,7 +474,7 @@ func (h *Handler) autoplay(tx *Transaction) {
 	})
 
 	if target := h.callbackTarget(tx.NotificationURL, tx.UUID, "autoplay"); target != "" && h.cfg.HMACKey != "" {
-		if err := h.emitAutoplayWebhook(tx, pm, outcome, reason, decline, target); err != nil {
+		if err := h.emitAutoplayWebhook(tx, pm, presentee, outcome, reason, decline, target); err != nil {
 			h.logger.Warn("autoplay_webhook_emit_failed", "uuid", tx.UUID, "err", err)
 		}
 	}
@@ -419,14 +484,14 @@ func (h *Handler) autoplay(tx *Transaction) {
 // le moyen de paiement peut être absent, un paiement sans carte n'ayant
 // pas de marque à annoncer.
 func (h *Handler) emitAutoplayWebhook(
-	tx *Transaction, pm *PaymentMethod,
+	tx *Transaction, pm *PaymentMethod, presentee *Card,
 	outcome, reason string, decline chaos.DeclineReason, targetURL string,
 ) error {
 	opts := BrowserReturnOpts{Outcome: outcome, ErrorMessage: reason, DeclineReason: decline}
 	if pm != nil {
 		opts.CardBrand = pm.Brand
 	}
-	answer := buildKrAnswer(tx, pm, opts, "", "TEST")
+	answer := buildKrAnswer(tx, pm, presentee, opts, "", "TEST")
 
 	deliveryID, err := newUUID()
 	if err != nil {
@@ -718,7 +783,9 @@ func (h *Handler) emitReplayWebhook(
 		ErrorMessage:  reason,
 		DeclineReason: decline,
 	}
-	answer := buildKrAnswer(tx, pm, opts, "", "TEST")
+	// Rejeu sur un alias : aucune carte n'a été présentée, c'est le
+	// token qui a servi. Le moyen enrôlé décrit donc tout.
+	answer := buildKrAnswer(tx, pm, nil, opts, "", "TEST")
 
 	deliveryID, err := newUUID()
 	if err != nil {
@@ -1539,6 +1606,10 @@ func (h *Handler) simulate(
 	// L'issue est connue : la carte présentée devient un alias, ou
 	// disparaît avec la tentative refusée. Le moyen est relu plus bas
 	// depuis le token que l'enrôlement vient de poser.
+	//
+	// Capturée avant, pour que le webhook d'un refus décrive le numéro
+	// réellement soumis et non une carte de démonstration.
+	presentee := tx.Card
 	if _, err := h.enrollIfAccepted(tx); err != nil {
 		return "", "", fmt.Errorf("enrolement: %w", err)
 	}
@@ -1574,7 +1645,7 @@ func (h *Handler) simulate(
 	// serverURL vide en phase 1 (arrivera avec cmd/paysim qui saura
 	// son propre PublicURL). Mode "TEST" en dur — un simulateur n'a
 	// pas de "PRODUCTION".
-	answer := buildKrAnswer(tx, pm, opts, "", "TEST")
+	answer := buildKrAnswer(tx, pm, presentee, opts, "", "TEST")
 
 	deliveryID, err = newUUID()
 	if err != nil {
