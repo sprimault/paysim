@@ -409,10 +409,16 @@ pagination et l'en-tête collant du tableau ne se jugent pas sur huit
 lignes. Les états sont attribués par le rang plutôt qu'au hasard, si
 bien que deux exécutions donnent le même écran.
 
-À noter : l'échéance refusée vient d'un moyen révoqué *après* création
-de l'abonnement. Enrôler une carte de test refusée ne marcherait pas —
-une autorisation déclinée ne crée aucun alias, il n'y aurait donc rien
-à abonner.
+**Deux échéances refusées, deux motifs à comparer.** `SUB-78` refuse
+parce que son moyen a été révoqué *après* création de l'abonnement :
+pas de code bancaire, ce n'est pas un émetteur qui refuse. `SUB-81`
+refuse pour provision insuffisante et porte un `51`.
+
+Le second cas passe par le PAN de test à découvert, qui s'enrôle : une
+vérification n'engage aucun montant, donc n'interroge pas le solde. La
+carte ne refuse qu'au premier débit — et c'est le seul levier
+disponible sur un échéancier, dont le montant est imposé et ne peut
+donc pas servir de montant magique.
 
 ### Tout monter d'une commande
 

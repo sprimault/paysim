@@ -114,7 +114,25 @@ below).
   The verification is **authorized, never captured**: at Lyra this
   transaction "is never settled and stays in the Transactions in
   progress tab". There was an authorization request, no movement of
-  funds.
+  funds. `PAYSIM_AUTOPLAY` does not capture it either — it plays what
+  was waiting for the cardholder, it does not change the outcome.
+
+  **What makes a verification fail depends on the reason, not on the
+  amount.** An expired card always fails. A declining test PAN fails
+  only when its reason is tied to the card's status:
+
+  | Test PAN | Reason | Verification at `0` |
+  | --- | --- | --- |
+  | `4000000000000002` | `51` insufficient funds | **accepted**, alias created |
+  | `5105105105105100` | `43` stolen card | declined, no alias |
+  | `2223000000000007` | `05` do not honour | declined, no alias |
+  | `378282000000008` | `57` not permitted | declined, no alias |
+
+  Insufficient funds passes because a verification commits no amount:
+  it does not query the balance. The card only declines on the first
+  debit — the only lever that produces a subscription whose instalments
+  decline for that reason, since an instalment amount is set by the
+  schedule and cannot be used as a magic amount.
 
   A declined payment therefore leaves **no** alias, and the creation
   response of a `REGISTER_PAY` carries no token yet — read the payment
@@ -508,8 +526,10 @@ Paysim ships two categories of built-in behaviour tweaks — cf.
 
 | Amount ending in | Effect                                                          |
 | ---------------- | --------------------------------------------------------------- |
-| `01` (cents)     | Force `UNPAID` regardless of requested outcome.                 |
+| `01` (cents)     | Force `UNPAID`, reason `51` — insufficient funds.               |
+| `02` (cents)     | Force `UNPAID`, reason `43` — stolen card.                      |
 | `03` (cents)     | 30-second latency injected on `CreatePayment` response (timeout test). |
+| `04` (cents)     | Force `UNPAID`, reason `91` — issuer unavailable.               |
 
 **PAN-based (magic PANs)** — Luhn-valid test PANs reserved for
 systematic declines:

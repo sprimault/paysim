@@ -218,10 +218,19 @@ Both fields are **derived at read time, never stored**: all three causes
 follow from data already held, and a frozen flag would turn wrong the
 first time the month rolls over on an expiring card.
 
-Note that a declined payment does not return a `paymentMethodToken` in
-its creation response, even though the method is registered. Announcing
-an alias alongside a decline would suggest it can be charged. Read the
-collection to get it.
+Note that **a declined payment creates no alias at all.** The card goes
+away with the attempt, so the creation response carries no
+`paymentMethodToken` — there is none. That is the platform rule: "the
+alias will not be created if the authorization or verification request
+is declined".
+
+One apparent exception, which is not one: the insufficient-funds PAN
+does enrol at zero euro. A verification commits no amount, so it does
+not query the balance — the card is accepted and only declines on the
+first debit. That is what makes it possible to build a subscription
+whose instalments decline for that reason, since an instalment amount
+is set by the schedule. Reasons tied to the card's status — `43`, `05`,
+`57` — do make the verification itself fail.
 
 ## Security reminder
 

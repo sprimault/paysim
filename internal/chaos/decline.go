@@ -101,3 +101,33 @@ var declineReasonByPAN = map[string]DeclineReason{
 func DeclineReasonForPAN(pan string) DeclineReason {
 	return declineReasonByPAN[pan]
 }
+
+// motifsTenantAuStatut liste les refus qui découlent de l'état de la
+// carte, indépendamment de ce qu'on demande à l'acquéreur.
+//
+// Une opposition, un refus d'émetteur ou une opération interdite au
+// porteur valent quel que soit le montant : une demande de
+// renseignement à zéro euro les rencontre comme un débit les
+// rencontrerait.
+//
+// La provision n'y figure pas, et c'est le cœur de la distinction. Une
+// carte à découvert s'enrôle parfaitement chez un vrai PSP : la
+// vérification n'engage aucun montant, donc n'interroge pas le solde.
+// Elle ne refuse qu'au premier débit — le cas d'impayé le plus banal,
+// et l'un de ceux que ce simulateur existe pour produire. La refuser
+// dès l'enrôlement ne serait pas plus fidèle, seulement faux dans
+// l'autre sens.
+var motifsTenantAuStatut = map[string]bool{
+	ReasonStolenCard.Code:  true,
+	ReasonDoNotHonour.Code: true,
+	ReasonNotPermitted.Code: true,
+}
+
+// RefuseUneVerification dit si ce motif fait échouer une vérification
+// sans débit — celle qui décide de la création d'un alias.
+//
+// Un motif vide ne refuse rien : c'est le cas d'une carte qui ne
+// correspond à aucun PAN de test.
+func RefuseUneVerification(r DeclineReason) bool {
+	return motifsTenantAuStatut[r.Code]
+}

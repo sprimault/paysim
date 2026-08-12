@@ -229,10 +229,20 @@ causes se déduisent de ce qui est déjà là, et un indicateur figé
 deviendrait faux au premier changement de mois sur une carte qui arrive
 à expiration.
 
-À noter : un paiement refusé ne retourne pas de `paymentMethodToken`
-dans sa réponse de création, alors même que le moyen est enregistré.
-Annoncer un alias à côté d'un refus laisserait croire qu'il est
-débitable. C'est la collection qui le donne.
+À noter : **un paiement refusé ne crée aucun alias.** La carte disparaît
+avec la tentative, et la réponse de création ne porte donc pas de
+`paymentMethodToken` — il n'y en a pas. C'est la règle de la
+plateforme : « l'alias ne sera pas créé si la demande d'autorisation ou
+de renseignement est refusée ».
+
+Une exception apparente, qui n'en est pas une : le PAN de provision
+insuffisante s'enrôle à zéro euro. La vérification n'engage aucun
+montant, donc n'interroge pas le solde — la carte est acceptée, et ne
+refusera qu'au premier débit. C'est ce qui permet d'obtenir un
+abonnement dont les échéances refusent pour ce motif, le montant d'une
+échéance étant imposé par l'échéancier. Les motifs tenant au statut de
+la carte — `43`, `05`, `57` — font au contraire échouer la vérification
+elle-même.
 
 ## Rappel de sécurité
 

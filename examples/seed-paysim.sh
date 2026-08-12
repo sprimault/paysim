@@ -161,9 +161,9 @@ post "/subscriptions/$S1/trigger-billing" >/dev/null
 echo "  $S1 — SUB-77, 2 échéances"
 
 echo "==> 9. Moyen révoqué, puis échéance refusée"
-# L'échéance refusée vient d'un moyen devenu inexploitable après coup, et
-# non d'une carte de refus enrôlée : celle-là ne produirait aucun alias,
-# donc aucun abonnement à porter.
+# Refus sans motif bancaire : ce n'est pas un émetteur qui refuse, c'est
+# le moyen qui n'est plus utilisable. À comparer avec SUB-81 plus bas,
+# qui refuse pour provision et porte un code 51.
 T4=$(enrole REGISTER-2044 '{"pan":"2223000048400011","expiryMonth":10,"expiryYear":2030}')
 S2=$(post /subscriptions "{\"paymentMethodToken\":\"$T4\",\"amount\":990,
   \"currency\":\"EUR\",\"orderId\":\"SUB-78\",\"rrule\":\"RRULE:FREQ=MONTHLY\"}" | field id)
@@ -179,12 +179,26 @@ post /subscriptions "{\"paymentMethodToken\":\"$T2\",\"amount\":1490,
   \"currency\":\"EUR\",\"orderId\":\"SUB-80\",\"rrule\":\"RRULE:FREQ=WEEKLY\"}" >/dev/null
 echo "  SUB-79 annulé, SUB-80 sans échéance"
 
-echo "==> 11. Rejeu one-click sur l'alias enrôlé"
+echo "==> 11. Abonnement dont l'échéance refuse pour provision"
+# Le seul levier qui produise ce cas : sur un échéancier le montant est
+# imposé, donc le montant magique n'est pas disponible. La carte à
+# découvert s'enrôle — une vérification n'engage aucun montant, donc
+# n'interroge pas le solde — et ne refuse qu'au débit, avec son code 51.
+#
+# À comparer avec SUB-78, refusé par révocation et sans code bancaire :
+# le marchand ne traite pas les deux de la même façon.
+T7=$(enrole REGISTER-2047 '{"pan":"4000000000000002","expiryMonth":12,"expiryYear":2030}')
+S4=$(post /subscriptions "{\"paymentMethodToken\":\"$T7\",\"amount\":2490,
+  \"currency\":\"EUR\",\"orderId\":\"SUB-81\",\"rrule\":\"RRULE:FREQ=MONTHLY\"}" | field id)
+post "/subscriptions/$S4/trigger-billing" >/dev/null
+echo "  $S4 — SUB-81, échéance refusée avec le motif 51"
+
+echo "==> 12. Rejeu one-click sur l'alias enrôlé"
 post /payments "{\"amount\":1990,\"currency\":\"EUR\",\"orderId\":\"CMD-1045\",
   \"paymentMethodToken\":\"$T1\"}" >/dev/null
 echo "  CMD-1045"
 
-echo "==> 12. Volume : 30 paiements répartis sur les états"
+echo "==> 13. Volume : 30 paiements répartis sur les états"
 # Répartis par le rang et non tirés au hasard : deux exécutions donnent
 # le même écran, ce qui rend une capture ou une comparaison reproductible.
 for i in $(seq 1 30); do
@@ -204,7 +218,7 @@ for i in $(seq 1 30); do
 done
 echo "  CMD-2001 à CMD-2030"
 
-echo "==> 13. Rejeux, pour que la pastille du bouton de renvoi compte"
+echo "==> 14. Rejeux, pour que la pastille du bouton de renvoi compte"
 # Des nombres differents sur trois paiements : sans rejeu, la pastille
 # ne s'affiche nulle part et l'ecran ne montre pas ce qu'il sait faire.
 rejouer "$U42" 1
@@ -224,4 +238,5 @@ echo "Payment methods: $(count payment-methods token)"
 echo ""
 echo "Recherche : taper « client-2 » pour filtrer le volume"
 echo "Pastille de rejeux : CMD-1042 (1), CMD-1047 (2), CMD-2012 (3)"
+echo "Deux refus d'échéance à comparer : SUB-78 sans code, SUB-81 en 51"
 echo "UI : ${PAYSIM_URL:-http://localhost:30880}/"

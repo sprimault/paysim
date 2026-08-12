@@ -389,10 +389,16 @@ not decoration — search, state filters, pagination and the sticky
 table header cannot be judged on eight rows. States are assigned by
 rank rather than at random, so two runs give the same screen.
 
-Note the failing renewal comes from a payment method revoked *after*
-the subscription was created. Enrolling a declining test PAN would not
-work: a refused authorization creates no alias, so there would be
-nothing to subscribe.
+**Two declined instalments, two reasons to compare.** `SUB-78` fails
+because its payment method was revoked *after* the subscription was
+created: no bank code, it is not an issuer declining. `SUB-81` fails
+for insufficient funds and carries a `51`.
+
+The second case uses the overdrawn test PAN, which does enrol: a
+verification commits no amount, so it does not query the balance. The
+card only declines on the first debit — and that is the only lever
+available on a schedule, whose amount is fixed and therefore cannot be
+used as a magic amount.
 
 Options: `--purge` (bash) / `-Purge` (PowerShell) clears existing
 payments first. Set `NOTIF_URL` if you want webhooks delivered

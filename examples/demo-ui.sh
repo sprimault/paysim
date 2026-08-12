@@ -219,9 +219,9 @@ post "/subscriptions/$S1/trigger-billing" >/dev/null
 post "/subscriptions/$S1/trigger-billing" >/dev/null
 echo "  abonnement + 2 echeances : SUB-77"
 
-# L'echeance refusee vient d'un moyen devenu inexploitable apres coup, et
-# non d'une carte de refus enrolee : celle-la ne produirait aucun alias,
-# donc aucun abonnement a porter.
+# Refus sans motif bancaire : ce n'est pas un emetteur qui refuse, c'est
+# le moyen qui n'est plus utilisable. A comparer avec SUB-81, qui refuse
+# pour provision et porte un code 51.
 S2=$(post /subscriptions "{\"paymentMethodToken\": \"$T4\",
   \"amount\": 990, \"currency\": \"EUR\", \"orderId\": \"SUB-78\",
   \"rrule\": \"RRULE:FREQ=MONTHLY\"}" | field id)
@@ -239,6 +239,18 @@ post /subscriptions "{\"paymentMethodToken\": \"$T2\",
   \"amount\": 1490, \"currency\": \"EUR\", \"orderId\": \"SUB-80\",
   \"rrule\": \"RRULE:FREQ=WEEKLY\"}" >/dev/null
 echo "  abonnement sans echeance : SUB-80"
+
+# Le seul levier qui produise une echeance refusee pour provision : sur
+# un echeancier le montant est impose, donc le montant magique n'est pas
+# disponible. La carte a decouvert s'enrole — une verification n'engage
+# aucun montant, donc n'interroge pas le solde — et ne refuse qu'au
+# debit, avec son code 51.
+T7=$(enrole REGISTER-2047 '{"pan":"4000000000000002","expiryMonth":12,"expiryYear":2030}')
+S4=$(post /subscriptions "{\"paymentMethodToken\": \"$T7\",
+  \"amount\": 2490, \"currency\": \"EUR\", \"orderId\": \"SUB-81\",
+  \"rrule\": \"RRULE:FREQ=MONTHLY\"}" | field id)
+post "/subscriptions/$S4/trigger-billing" >/dev/null
+echo "  abonnement dont l'echeance refuse en 51 : SUB-81"
 
 post /payments "{\"amount\": 1990, \"currency\": \"EUR\", \"orderId\": \"CMD-1045\",
   \"paymentMethodToken\": \"$T1\"}" >/dev/null
@@ -285,7 +297,7 @@ echo "Motifs de refus      : CMD-1043 (51), CMD-1046 (43), CMD-1047 (91)"
 echo "Charges utiles       : comparer CMD-1042 et CMD-1043"
 echo "Charge utile vide    : CMD-1044, aucune livraison rattachee"
 echo "Etats des moyens     : REGISTER-2043 expire, REGISTER-2044 revoque"
-echo "Abonnements          : SUB-77 (2 echeances), SUB-78 (refusee), SUB-79 (annule), SUB-80 (aucune)"
+echo "Abonnements          : SUB-77 (2 echeances), SUB-78 (refus sans code), SUB-79 (annule), SUB-80 (aucune), SUB-81 (refus 51)"
 echo "Recherche            : taper « client-2 » pour filtrer le volume"
 echo "Pastille de rejeux   : CMD-1042 (1), CMD-1047 (2), CMD-2012 (3)"
 echo
