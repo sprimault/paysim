@@ -299,13 +299,16 @@ ici.
 
 ---
 
-## Phase 6 — Sortie publique
+## Phase 6 — Adoption
 
-- README avec le GIF en premier écran et le renvoi vers `docs/install.md`.
-- Documentation par fournisseur, avec la version d'API visée.
-- `CONTRIBUTING.md` expliquant comment ajouter un fournisseur — c'est la porte d'entrée des
-  contributeurs.
-- Annonce ciblée : communautés PHP/Symfony francophones d'abord, puis plus large.
+Le dépôt est public et l'image publiée depuis le 3 août 2026. Ce qui reste ne concerne plus
+la mise à disposition, mais le fait qu'on la trouve, qu'on l'intègre et qu'on y contribue.
+
+- [x] README avec la démonstration en premier écran et le renvoi vers `docs/install.md`.
+- [ ] Documentation par fournisseur, avec la version d'API visée.
+- [ ] `CONTRIBUTING.md` expliquant comment ajouter un fournisseur — c'est la porte d'entrée
+  des contributeurs.
+- [ ] Annonce ciblée : communautés PHP/Symfony francophones d'abord, puis plus large.
 
 ---
 

@@ -8,6 +8,10 @@
 
 > Fake payment provider that provokes the failures a sandbox refuses to reproduce.
 
+![Replaying a webhook delivery, inspecting a declined payment, and watching the UI detect the server going down](docs/assets/demo.webp)
+
+<sub>Twenty seconds against a live instance — [full walkthrough (42 s)](docs/assets/demo-complete.webp).</sub>
+
 ## What Paysim is
 
 Paysim is a self-hosted fake payment provider. It reproduces the wire
@@ -261,7 +265,7 @@ stability between two merges.
 
 ## Status
 
-Preview release, tag `v0.6.6`. Stripe support and a demo GIF are planned.
+Preview release, tag `v0.6.6`. Stripe support is planned.
 
 **How it is validated.** Every pull request runs the linter, the unit tests
 with the race detector, a dependency audit, a drift check on the TypeScript
