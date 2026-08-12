@@ -25,36 +25,16 @@ Cibles standard du projet.
 
 ## Architecture
 
-```
-cmd/paysim/            point d'entrée, câblage des dépendances
-internal/
-  domain/              Payment, machine à états, événements
-  providers/           adaptateurs de protocole (payzen, puis stripe)
-  chaos/               injection de pannes
-  delivery/            file de livraison des webhooks
-  scenarios/           chargement et exécution des scénarios YAML
-  store/               persistance (mémoire circulaire, puis SQLite optionnel)
-  api/                 API de contrôle consommée par le front et les tests
-  format/              formatage partagé : date.go, text.go, number.go, money.go
-web/
-  src/lib/             équivalent front : dates.ts, strings.ts, numbers.ts
-deploy/
-  Dockerfile           multi-étapes, image finale minimale
-  compose.yml          exemple à côté d'une application
-  k8s/                 Deployment, Service, Ingress, ConfigMap, Secret
-docs/
-```
-
-<!-- Cette arborescence est ici parce que le code n'existe pas encore. Dès que le domaine
-     est livrée, elle devient déductible du dépôt : la supprimer et laisser Claude lire
-     l'arborescence réelle. Passer /doctor pour vérifier ce qui peut encore être coupé. -->
+L'arborescence se lit dans le dépôt. Ne sont notés ici que les choix qu'elle ne révèle
+pas d'elle-même.
 
 Le découpage `domain` / `providers` / `delivery` n'est pas cosmétique : c'est lui qui rend
 le moteur de chaos uniforme et l'ajout d'un fournisseur mécanique. Voir les invariants.
 
-`internal/format` et `web/src/lib` existent dès le début, même presque vides. Un
-formatage de date, de montant ou de troncature de chaîne écrit en ligne dans un composant
-ou un handler est une erreur à corriger, pas un raccourci acceptable.
+`internal/format` et `web/src/shared/lib` sont les bibliothèques partagées de formatage —
+dates, chaînes, nombres, montants. Un formatage de date, de montant ou de troncature de
+chaîne écrit en ligne dans un composant ou un handler est une erreur à corriger, pas un
+raccourci acceptable.
 
 ## Contrat de conteneur et de cluster
 
