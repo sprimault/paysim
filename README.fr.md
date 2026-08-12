@@ -8,6 +8,10 @@
 
 > Faux prestataire de paiement qui provoque les échecs qu'une sandbox refuse de reproduire.
 
+![Renvoi d'une livraison de webhook, examen d'un paiement refusé, et détection par l'interface de la coupure du serveur](docs/assets/demo.webp)
+
+<sub>Vingt secondes contre une instance réelle — [film complet (42 s)](docs/assets/demo-complete.webp).</sub>
+
 ## Ce qu'est Paysim
 
 Paysim est un faux prestataire de paiement auto-hébergé. Il reproduit
@@ -267,8 +271,7 @@ d'une interface entre deux fusions.
 
 ## Statut
 
-Préversion, tag `v0.6.6`. Le support Stripe et un GIF de démonstration
-sont prévus.
+Préversion, tag `v0.6.6`. Le support Stripe est prévu.
 
 **Comment c'est validé.** Chaque pull request exécute le linter, les tests
 unitaires avec le détecteur de concurrence, un audit des dépendances, un

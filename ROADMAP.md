@@ -301,11 +301,11 @@ ici.
 
 ## Phase 6 — Sortie publique
 
-- README avec le GIF en premier écran et le renvoi vers `docs/install.md`.
-- Documentation par fournisseur, avec la version d'API visée.
-- `CONTRIBUTING.md` expliquant comment ajouter un fournisseur — c'est la porte d'entrée des
-  contributeurs.
-- Annonce ciblée : communautés PHP/Symfony francophones d'abord, puis plus large.
+- [x] README avec la démonstration en premier écran et le renvoi vers `docs/install.md`.
+- [ ] Documentation par fournisseur, avec la version d'API visée.
+- [ ] `CONTRIBUTING.md` expliquant comment ajouter un fournisseur — c'est la porte d'entrée
+  des contributeurs.
+- [ ] Annonce ciblée : communautés PHP/Symfony francophones d'abord, puis plus large.
 
 ---
 
