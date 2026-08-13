@@ -629,7 +629,7 @@ func (r *Runner) doCancelSubscription(ctx context.Context, st *state, in *Cancel
 // deux vocabulaires se croisent — les autres actions n'utilisent que
 // le vocabulaire domain, puisque l'API expose l'état sous ce nom-là.
 //
-// Ce mapping restera valide pour Stripe (phase 5) : ses statuts natifs
+// Ce mapping restera valide pour Stripe (phase 7) : ses statuts natifs
 // (`succeeded`, `requires_capture`, `canceled`) sont couverts par les
 // mêmes états domain. Un scénario écrit une fois s'exécute contre
 // n'importe quel provider.

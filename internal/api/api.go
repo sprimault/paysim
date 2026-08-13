@@ -513,7 +513,7 @@ type ReplayWebhookResponse struct {
 // de création cross-provider. Délègue à l'adaptateur du provider demandé
 // après validation. Motivation : les scénarios de test et les intégrateurs
 // qui veulent orchestrer un paiement sans dépendre du format natif d'un
-// PSP. L'ajout de Stripe (phase 5) se fera par ajout d'un cas au switch.
+// PSP. L'ajout de Stripe (phase 7) se fera par ajout d'un cas au switch.
 //
 // Provider vide → payzen par défaut (log Debug pour tracer l'implicite,
 // visible en `PAYSIM_LOG_LEVEL=debug`).
@@ -1022,7 +1022,7 @@ func (h *Handler) listPaymentMethods(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	// Aujourd'hui un seul provider (payzen) — quand Stripe arrive en
-	// phase 5, on itère sur la liste des providers ou on expose un
+	// phase 7, on itère sur la liste des providers ou on expose un
 	// filtre ?provider= comme sur payments.
 	recs, err := h.paymentMethodRepo.ByProvider("payzen")
 	if err != nil {

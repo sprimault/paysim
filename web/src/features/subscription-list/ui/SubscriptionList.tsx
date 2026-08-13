@@ -31,7 +31,7 @@ const ETATS_ABONNEMENT: FilterState[] = [
 /**
  * Liste des abonnements. Structure alignée sur PaymentList — table
  * dense, cross-provider par défaut (l'API retourne uniquement payzen
- * aujourd'hui, Stripe arrivera en phase 5).
+ * aujourd'hui, Stripe arrivera en phase 7).
  */
 export function SubscriptionList() {
   const t = useT();
