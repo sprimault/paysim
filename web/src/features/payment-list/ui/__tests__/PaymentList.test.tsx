@@ -72,7 +72,7 @@ describe('PaymentList', () => {
 
   it('affiche EmptyState quand store vide et fetch retourne []', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response('[]', { status: 200 }),
+      new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     render(
       <MemoryRouter>

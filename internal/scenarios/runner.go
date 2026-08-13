@@ -171,6 +171,8 @@ func (r *Runner) exec(ctx context.Context, st *state, step Step) error {
 		return r.doInject(ctx, st, step.Inject)
 	case ActionWait:
 		return r.doWait(ctx, step.Wait)
+	case ActionAdvanceTime:
+		return r.doAdvanceTime(ctx, step.AdvanceTime)
 	case ActionAssertWebhook:
 		return r.doAssertWebhook(ctx, st, step.AssertWebhook)
 	case ActionAssertState:
@@ -317,6 +319,13 @@ func (r *Runner) doWait(ctx context.Context, in *Wait) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// doAdvanceTime fait vieillir l'instance sans dormir. L'inverse exact de
+// doWait, qui dort sans faire vieillir : l'un attend une livraison,
+// l'autre franchit des jours.
+func (r *Runner) doAdvanceTime(ctx context.Context, in *AdvanceTime) error {
+	return r.client.AdvanceClock(ctx, time.Duration(in.Duration))
 }
 
 // doAssertWebhook compte les webhooks livrés depuis le début du

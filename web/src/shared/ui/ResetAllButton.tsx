@@ -41,7 +41,7 @@ export function ResetAllButton() {
     setLoading(true);
     try {
       const out = await apiPostJson<Record<string, never>, ResetOutput>(
-        '/paysim/api/v1/reset',
+        '/reset',
         {},
       );
       toast.success(

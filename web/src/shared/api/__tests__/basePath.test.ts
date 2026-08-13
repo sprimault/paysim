@@ -45,13 +45,15 @@ describe('apiUrl', () => {
     }
   });
 
-  it('préfixe le chemin par le base path', () => {
-    window.__PAYSIM_BASE_PATH__ = '/paysim';
-    expect(apiUrl('/api/v1/payments')).toBe('/paysim/api/v1/payments');
+  // Le chemin passé est relatif à la racine de l'API : c'est apiUrl qui
+  // porte /paysim/api/v1, pour que l'oublier soit impossible.
+  it('préfixe le chemin par la racine d’API et le base path', () => {
+    window.__PAYSIM_BASE_PATH__ = '/sous-chemin';
+    expect(apiUrl('/payments')).toBe('/sous-chemin/paysim/api/v1/payments');
   });
 
-  it('renvoie le chemin nu quand base path absent', () => {
+  it('préfixe par la seule racine d’API quand base path absent', () => {
     delete window.__PAYSIM_BASE_PATH__;
-    expect(apiUrl('/api/v1/payments')).toBe('/api/v1/payments');
+    expect(apiUrl('/payments')).toBe('/paysim/api/v1/payments');
   });
 });

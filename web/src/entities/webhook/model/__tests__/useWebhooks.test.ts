@@ -38,7 +38,7 @@ describe('useWebhooks', () => {
 
   it('useWebhooksList fetch au mount si store vide', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify([entry]), { status: 200 }),
+      new Response(JSON.stringify([entry]), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     const { result } = renderHook(() => useWebhooksList());
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -48,7 +48,7 @@ describe('useWebhooks', () => {
   it('useWebhook fetch le détail si body absent', async () => {
     useWebhookStore.getState().upsert(entry);
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify(detail), { status: 200 }),
+      new Response(JSON.stringify(detail), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     const { result } = renderHook(() => useWebhook('wh-1'));
     await waitFor(() => expect(result.current.webhook?.body).toBe('B'));
@@ -57,7 +57,7 @@ describe('useWebhooks', () => {
   it('useWebhook ne fetch pas si body déjà chargé', () => {
     useWebhookStore.getState().setDetail(detail);
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response('null', { status: 200 }),
+      new Response('null', { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     renderHook(() => useWebhook('wh-1'));
     expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -69,7 +69,7 @@ describe('useWebhooks', () => {
   it('useWebhooksOfPayment filtre côté serveur', async () => {
     const ofA: WebhookEntry = { ...entry, id: 'wh-a', paymentUuid: 'pay-a' };
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify([ofA]), { status: 200 }),
+      new Response(JSON.stringify([ofA]), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     const { result } = renderHook(() => useWebhooksOfPayment('pay-a'));
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -87,7 +87,7 @@ describe('useWebhooks', () => {
 
     const ofA: WebhookEntry = { ...entry, id: 'wh-a', paymentUuid: 'pay-a' };
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify([ofA]), { status: 200 }),
+      new Response(JSON.stringify([ofA]), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     const { result } = renderHook(() => useWebhooksOfPayment('pay-a'));
     await waitFor(() => expect(result.current.loading).toBe(false));

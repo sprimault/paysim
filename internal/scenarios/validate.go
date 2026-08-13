@@ -56,6 +56,11 @@ func (s Step) Validate() error {
 			return errors.New("payload wait manquant")
 		}
 		return s.Wait.Validate()
+	case ActionAdvanceTime:
+		if s.AdvanceTime == nil {
+			return errors.New("payload advance_time manquant")
+		}
+		return s.AdvanceTime.Validate()
 	case ActionAssertWebhook:
 		if s.AssertWebhook == nil {
 			return errors.New("payload assert_webhook manquant")
@@ -243,6 +248,16 @@ func (i *Inject) Validate() error {
 // le YAML, valeur zéro par défaut).
 func (w *Wait) Validate() error {
 	if time.Duration(w.Duration) <= 0 {
+		return errors.New("duration doit etre strictement positive")
+	}
+	return nil
+}
+
+// Validate contrôle qu'un advance_time porte une durée strictement
+// positive. Le recul est refusé ici comme il l'est côté serveur : un
+// scénario doit échouer au chargement plutôt qu'à mi-parcours.
+func (a *AdvanceTime) Validate() error {
+	if time.Duration(a.Duration) <= 0 {
 		return errors.New("duration doit etre strictement positive")
 	}
 	return nil

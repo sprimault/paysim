@@ -80,6 +80,9 @@ gênant, la réponse est de sortir l'état dans `internal/store`, pas d'ajouter 
   `refactor:`), description en français puis en anglais dans le même message. Idem pour les
   descriptions de PR et les notes de release.
 - Une branche et une PR par livraison de la feuille de route.
+- **Un endpoint ajouté à l'API de contrôle appelle une contrepartie dans l'interface.**
+  Au minimum ce qui rend son effet visible — une capacité qu'on ne peut ni déclencher ni
+  constater depuis l'UI laisse l'interface décrire un état qui n'est plus le vrai.
 - Pour toute modification touchant `internal/domain` ou l'interface `Provider` : proposer
   le plan avant d'écrire du code.
 

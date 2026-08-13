@@ -10,7 +10,7 @@ import type { PaymentMethodOutput } from '@/shared/model';
  * paymentMethodStore qui garde la donnée.
  */
 
-const BASE = '/paysim/api/v1/payment-methods';
+const BASE = '/payment-methods';
 
 export function fetchPaymentMethods(signal?: AbortSignal): Promise<PaymentMethodOutput[]> {
   return apiGetJson<PaymentMethodOutput[]>(BASE, signal);

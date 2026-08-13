@@ -15,7 +15,7 @@ import type {
  * paymentStore qui garde la donnée.
  */
 
-const BASE = '/paysim/api/v1/payments';
+const BASE = '/payments';
 
 /** Tous les paiements, plus récemment modifié d'abord. */
 export function fetchPayments(signal?: AbortSignal): Promise<PaymentSummary[]> {

@@ -86,7 +86,7 @@ function resynchroniser(): void {
  * connexion SSE de l'app, celle qui pilote les témoins du Header.
  */
 export function usePaysimEvents(
-  streamPath = '/paysim/api/v1/events/stream',
+  streamPath = '/events/stream',
 ): { connected: boolean; lastEventAt?: number } {
   const setPaymentDetail = usePaymentStore((s) => s.setDetail);
   const upsertPayment = usePaymentStore((s) => s.upsert);

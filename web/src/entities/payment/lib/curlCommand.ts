@@ -57,7 +57,7 @@ export function buildReplayCurl(
   }
   if (payment.paymentMethodToken) corps.paymentMethodToken = payment.paymentMethodToken;
 
-  const url = `${origin}${apiUrl('/paysim/api/v1/payments')}`;
+  const url = `${origin}${apiUrl('/payments')}`;
   return (
     `curl -X POST ${quoteShell(url)} ` +
     `-H 'Content-Type: application/json' ` +

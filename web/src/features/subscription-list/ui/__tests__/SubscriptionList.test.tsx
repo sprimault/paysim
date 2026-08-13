@@ -28,7 +28,7 @@ function makeSub(overrides: Partial<SubscriptionOutput> = {}): SubscriptionOutpu
 describe('<SubscriptionList />', () => {
   beforeEach(() => {
     useSubscriptionStore.setState({ subscriptions: {}, listLoaded: true });
-    vi.spyOn(global, 'fetch').mockImplementation(async () => new Response('[]'));
+    vi.spyOn(global, 'fetch').mockImplementation(async () => new Response('[]', { headers: { 'Content-Type': 'application/json' } }));
   });
 
   afterEach(() => {

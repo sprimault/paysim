@@ -99,6 +99,34 @@ bancaire : c'est Paysim qui refuse, pas un émetteur.
 Cette action est propre à Paysim et n'existe pas chez PayZen — elle vit
 dans l'API de contrôle, jamais dans les routes du fournisseur.
 
+### Faire vieillir l'instance plutôt que forcer l'expiration
+
+`expire` marque un moyen comme périmé. L'autre chemin est de laisser le
+temps faire son travail — plus fidèle, puisque c'est ce qui arrive en
+vrai :
+
+```bash
+# avance l'horloge de trente jours ; les avances se cumulent
+curl -X POST http://localhost:30880/paysim/api/v1/clock/advance \
+  -H 'Content-Type: application/json' -d '{"duration":"720h"}'
+
+# où en est l'instance
+curl http://localhost:30880/paysim/api/v1/clock
+# → {"now":"...","offset":"720h0m0s","offsetSeconds":2592000}
+
+# retour à l'heure réelle
+curl -X POST http://localhost:30880/paysim/api/v1/clock/reset
+```
+
+Le décalage porte sur tout ce que Paysim horodate : journal
+d'événements, `serverDate` des webhooks, dates de livraison. Un paiement
+créé après une avance est daté d'après elle. Le recul est refusé — il
+produirait un paiement modifié avant sa création.
+
+Le décalage **n'est pas persisté** : une instance qui redémarre repart à
+l'heure réelle, y compris en mode SQLite. En scénario, l'action
+`advance_time` fait la même chose.
+
 **Sémantique d'expiration** (convention bancaire française) : une
 carte est valide jusqu'au dernier jour du mois d'expiration inclus.
 `expiryMonth: 8, expiryYear: 2026` reste valide durant tout août 2026

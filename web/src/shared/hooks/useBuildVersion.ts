@@ -29,7 +29,7 @@ export function useBuildVersion(): { updateAvailable: boolean } {
     let cancelled = false;
     const check = async () => {
       try {
-        const r = await apiGetJson<VersionResponse>('/paysim/api/v1/version');
+        const r = await apiGetJson<VersionResponse>('/version');
         if (cancelled) return;
         if (initialRef.current === null) {
           initialRef.current = r.hash;

@@ -1,0 +1,103 @@
+// Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
+// SPDX-License-Identifier: Apache-2.0
+
+package api
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+)
+
+// ClockState décrit où en est l'horloge de l'instance.
+type ClockState struct {
+	// Now est l'heure que voit le simulateur, décalage compris. C'est
+	// elle qui horodate les événements et les webhooks, pas l'heure du
+	// serveur.
+	Now time.Time `json:"now"`
+
+	// Offset est le décalage cumulé, au format Go ("96h0m0s"). Zéro
+	// signifie que l'instance est à l'heure réelle.
+	Offset string `json:"offset"`
+
+	// OffsetSeconds redonne le même décalage en secondes, pour les
+	// appelants qui ne savent pas lire un format Go.
+	OffsetSeconds float64 `json:"offsetSeconds"`
+}
+
+// AdvanceRequest demande de déplacer l'horloge.
+type AdvanceRequest struct {
+	// Duration est une durée Go : "96h", "45m", "3h30m". Les avances se
+	// cumulent.
+	Duration string `json:"duration"`
+}
+
+// horlogeIndisponible répond quand l'instance n'a pas d'horloge
+// pilotable. Ne devrait pas arriver — main.go en fournit toujours une —
+// mais mieux vaut une erreur explicite qu'un panic ou, pire, une route
+// qui répond comme si elle avait avancé quelque chose.
+func (h *Handler) horlogeIndisponible(w http.ResponseWriter) bool {
+	if h.clock != nil {
+		return false
+	}
+	h.logger.Error("api_clock_absente")
+	http.Error(w, "horloge non configuree", http.StatusInternalServerError)
+	return true
+}
+
+func (h *Handler) etatHorloge() ClockState {
+	offset := h.clock.Offset()
+	return ClockState{
+		Now:           h.clock.Now(),
+		Offset:        offset.String(),
+		OffsetSeconds: offset.Seconds(),
+	}
+}
+
+// getClock expose l'heure du simulateur et son décalage.
+func (h *Handler) getClock(w http.ResponseWriter, _ *http.Request) {
+	if h.horlogeIndisponible(w) {
+		return
+	}
+	writeJSON(w, http.StatusOK, h.etatHorloge())
+}
+
+// advanceClock déplace l'horloge vers l'avant.
+//
+// Le recul est refusé : il produirait un paiement modifié avant d'avoir
+// été créé, et un journal d'événements qui remonte le temps. Un
+// simulateur qui ment sur la chronologie ne sert plus à rien — pour
+// revenir en arrière, il y a reset.
+func (h *Handler) advanceClock(w http.ResponseWriter, r *http.Request) {
+	if h.horlogeIndisponible(w) {
+		return
+	}
+	var req AdvanceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	d, err := time.ParseDuration(req.Duration)
+	if err != nil {
+		http.Error(w, "duration invalide : attendu une duree Go, ex. \"96h\"", http.StatusBadRequest)
+		return
+	}
+	if d < 0 {
+		http.Error(w, "duration negative : le temps ne recule pas, utiliser reset", http.StatusBadRequest)
+		return
+	}
+	h.clock.Advance(d)
+	etat := h.etatHorloge()
+	h.logger.Info("horloge avancee", "duration", d.String(), "offset", etat.Offset)
+	writeJSON(w, http.StatusOK, etat)
+}
+
+// resetClock ramène l'instance à l'heure réelle. Idempotent.
+func (h *Handler) resetClock(w http.ResponseWriter, _ *http.Request) {
+	if h.horlogeIndisponible(w) {
+		return
+	}
+	h.clock.Reset()
+	h.logger.Info("horloge reinitialisee")
+	writeJSON(w, http.StatusOK, h.etatHorloge())
+}

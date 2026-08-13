@@ -93,6 +93,33 @@ bank code: Paysim declines here, not an issuer.
 This action is Paysim's own and has no PayZen equivalent — it lives in
 the control API, never in the provider routes.
 
+### Age the instance instead of forcing expiry
+
+`expire` marks a method as stale. The other path is to let time do the
+work — closer to reality, since that is what actually happens:
+
+```bash
+# move the clock thirty days forward; advances accumulate
+curl -X POST http://localhost:30880/paysim/api/v1/clock/advance \
+  -H 'Content-Type: application/json' -d '{"duration":"720h"}'
+
+# where the instance stands
+curl http://localhost:30880/paysim/api/v1/clock
+# → {"now":"...","offset":"720h0m0s","offsetSeconds":2592000}
+
+# back to real time
+curl -X POST http://localhost:30880/paysim/api/v1/clock/reset
+```
+
+The offset applies to everything Paysim timestamps: event log, webhook
+`serverDate`, delivery dates. A payment created after an advance is
+dated after it. Going backwards is refused — it would produce a payment
+updated before it was created.
+
+The offset is **not persisted**: a restarting instance returns to real
+time, SQLite mode included. In a scenario, the `advance_time` action
+does the same.
+
 **Expiry semantics** (French banking convention): a card is valid up
 to and including the last day of its expiry month. `expiryMonth: 8,
 expiryYear: 2026` is valid throughout August 2026 and declined from

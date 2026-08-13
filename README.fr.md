@@ -221,7 +221,7 @@ Un fichier scénario minimal ressemble à :
   state: captured
 ```
 
-11 actions supportées. Voir [`docs/scenarios.fr.md`](docs/scenarios.fr.md).
+12 actions supportées. Voir [`docs/scenarios.fr.md`](docs/scenarios.fr.md).
 
 ## Exemple d'intégration PHP
 

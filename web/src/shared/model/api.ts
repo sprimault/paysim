@@ -70,6 +70,12 @@ export interface Deps {
    * se requêter elle-même.
    */
   PayzenHandler?: any /* payzen.Handler */;
+  /**
+   * Clock est l'horloge que l'API pilote. Type concret et non
+   * interface : une abstraction bâtie sur une seule implémentation se
+   * révèle presque toujours fausse à la deuxième.
+   */
+  Clock?: any /* clock.Controllable */;
 }
 /**
  * Handler regroupe les dépendances nécessaires pour servir les
@@ -699,4 +705,39 @@ export interface ResetOutput {
   subscriptions: number /* int */;
   paymentMethods: number /* int */;
   webhooks: number /* int */;
+}
+
+//////////
+// source: clock.go
+
+/**
+ * ClockState décrit où en est l'horloge de l'instance.
+ */
+export interface ClockState {
+  /**
+   * Now est l'heure que voit le simulateur, décalage compris. C'est
+   * elle qui horodate les événements et les webhooks, pas l'heure du
+   * serveur.
+   */
+  now: string /* RFC 3339 */;
+  /**
+   * Offset est le décalage cumulé, au format Go ("96h0m0s"). Zéro
+   * signifie que l'instance est à l'heure réelle.
+   */
+  offset: string;
+  /**
+   * OffsetSeconds redonne le même décalage en secondes, pour les
+   * appelants qui ne savent pas lire un format Go.
+   */
+  offsetSeconds: number /* float64 */;
+}
+/**
+ * AdvanceRequest demande de déplacer l'horloge.
+ */
+export interface AdvanceRequest {
+  /**
+   * Duration est une durée Go : "96h", "45m", "3h30m". Les avances se
+   * cumulent.
+   */
+  duration: string;
 }

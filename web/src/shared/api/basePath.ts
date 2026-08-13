@@ -29,9 +29,21 @@ export function getBasePath(): string {
 }
 
 /**
- * apiUrl construit une URL API relative en préfixant le base path.
- * Le `path` doit commencer par `/`.
+ * Racine commune de l'API de contrôle. Portée ici et nulle part
+ * ailleurs : elle était recopiée dans cinq constantes `BASE`, et
+ * l'oublier ne produit pas une erreur mais une réponse 200 — la SPA
+ * répond du HTML sur tout chemin inconnu, si bien que l'appel semble
+ * réussir. La version y figure, ce qui donnera un seul endroit à
+ * changer le jour d'une v2.
+ */
+export const API_ROOT = '/paysim/api/v1';
+
+/**
+ * apiUrl construit une URL de l'API de contrôle. Le `path` est relatif
+ * à la racine de l'API et doit commencer par `/` — `apiUrl('/payments')`
+ * rend `/paysim/api/v1/payments`, préfixé du base path quand Paysim est
+ * servi sous un sous-chemin.
  */
 export function apiUrl(path: string): string {
-  return `${getBasePath()}${path}`;
+  return `${getBasePath()}${API_ROOT}${path}`;
 }

@@ -135,7 +135,12 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 	// quelque chose d'observable. Ce qui mesure une durée — journal
 	// HTTP, durée d'une étape de scénario — ne la reçoit pas : une
 	// mesure qui suivrait une horloge simulée deviendrait absurde.
-	clk := clock.System{}
+	//
+	// Pilotable, mais à décalage nul au démarrage : la capacité existe
+	// et ne fait rien tant qu'on ne l'actionne pas, comme l'exige la
+	// règle du chaos jamais actif par défaut. Le décalage n'est pas
+	// persisté — un redémarrage repart à l'heure réelle.
+	clk := clock.NewControllable()
 
 	var (
 		payzenStore       payzen.Store
@@ -212,6 +217,7 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		Logger:            logger,
 		Token:             cfg.APIToken,
 		PayzenHandler:     payzenHandler,
+		Clock:             clk,
 	})
 
 	var ready atomic.Bool

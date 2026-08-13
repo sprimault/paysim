@@ -43,6 +43,7 @@ const (
 	ActionCancelSubscription = "cancel_subscription"
 	ActionAssertPaymentMethod = "assert_payment_method"
 	ActionAssertCustomer      = "assert_customer"
+	ActionAdvanceTime         = "advance_time"
 )
 
 // Scenario est un scénario complet chargé depuis un fichier YAML. Une fois
@@ -92,6 +93,9 @@ type Step struct {
 	// Wait suspend l'exécution, pour laisser une livraison différée
 	// arriver avant une assertion.
 	Wait *Wait
+
+	// AdvanceTime fait vieillir l'instance sans dormir.
+	AdvanceTime *AdvanceTime
 
 	// AssertWebhook compte les livraisons, AssertState vérifie l'état
 	// du paiement courant. Toutes deux échouent avec ErrAssertion, que
@@ -460,6 +464,18 @@ type Wait struct {
 	Duration Duration `yaml:"duration"`
 }
 
+// AdvanceTime déplace l'horloge du simulateur vers l'avant, sans
+// attendre. À ne pas confondre avec wait, qui dort réellement : wait
+// laisse une livraison arriver, advance_time fait vieillir l'instance.
+//
+// C'est ce qui rend testable en CI ce qui se mesure en jours — un alias
+// qui expire, une échéance qui tombe. Le recul est refusé par le
+// serveur.
+type AdvanceTime struct {
+	// Duration au format Go — 96h, 45m. Les avances se cumulent.
+	Duration Duration `yaml:"duration"`
+}
+
 // AssertWebhook vérifie qu'un certain nombre de webhooks ont été livrés
 // depuis le début du scénario, avec optionnellement un filtre sur le statut
 // (vocabulaire natif du fournisseur, par exemple `PAID` pour PayZen). Un
@@ -559,6 +575,9 @@ func (s *Step) UnmarshalYAML(node *yaml.Node) error {
 	case ActionWait:
 		s.Wait = &Wait{}
 		return node.Decode(s.Wait)
+	case ActionAdvanceTime:
+		s.AdvanceTime = &AdvanceTime{}
+		return node.Decode(s.AdvanceTime)
 	case ActionAssertWebhook:
 		s.AssertWebhook = &AssertWebhook{}
 		return node.Decode(s.AssertWebhook)

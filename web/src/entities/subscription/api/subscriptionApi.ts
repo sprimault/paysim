@@ -14,7 +14,7 @@ import type {
  * subscriptionStore qui garde la donnée.
  */
 
-const BASE = '/paysim/api/v1/subscriptions';
+const BASE = '/subscriptions';
 
 export function fetchSubscriptions(signal?: AbortSignal): Promise<SubscriptionOutput[]> {
   return apiGetJson<SubscriptionOutput[]>(BASE, signal);
