@@ -1191,10 +1191,7 @@ func (h *Handler) listPayments(w http.ResponseWriter, r *http.Request) {
 		if subID != "" && tx.Metadata["subscriptionId"] != subID {
 			continue
 		}
-		s := toPaymentSummary(tx)
-		s.WebhookCount = counts[tx.UUID].Total
-		s.WebhookReplayCount = counts[tx.UUID].Replays
-		out = append(out, s)
+		out = append(out, toPaymentSummary(tx, counts[tx.UUID]))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -1211,7 +1208,7 @@ func (h *Handler) getPayment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, toPaymentDetail(tx))
+	writeJSON(w, http.StatusOK, toPaymentDetail(tx, h.queue.WebhookCounts()[tx.UUID]))
 }
 
 // deletePayment supprime un paiement précis. Idempotent : un UUID
@@ -1665,7 +1662,13 @@ func writeEvent(w http.ResponseWriter, flusher http.Flusher, evt bus.Event, logg
 // liste de plusieurs centaines d'entrées n'a pas à transporter tout
 // cela. Ce qui s'y ajoute doit donc justifier sa place, comme le token
 // du moyen et le motif de refus, qu'on veut lire d'un coup d'œil.
-func toPaymentSummary(tx *payzen.Transaction) PaymentSummary {
+// Les compteurs sont un paramètre et non un remplissage laissé à
+// l'appelant : ils sont sérialisés quoi qu'il arrive, et un zéro oublié
+// se lit « aucune livraison » au lieu de « non compté ». La fiche de
+// paiement les a rendus à zéro pendant plusieurs versions pour cette
+// seule raison. Exigés à la construction, c'est le compilateur qui tient
+// la garantie plutôt que la vigilance du prochain appelant.
+func toPaymentSummary(tx *payzen.Transaction, counts store.DeliveryCounts) PaymentSummary {
 	return PaymentSummary{
 		UUID:               tx.UUID,
 		Provider:           "payzen",
@@ -1678,6 +1681,8 @@ func toPaymentSummary(tx *payzen.Transaction) PaymentSummary {
 		DeclineMessage:     tx.DeclineMessage,
 		CreatedAt:          tx.CreatedAt,
 		UpdatedAt:          tx.UpdatedAt,
+		WebhookCount:       counts.Total,
+		WebhookReplayCount: counts.Replays,
 	}
 }
 
@@ -1688,10 +1693,10 @@ func toPaymentSummary(tx *payzen.Transaction) PaymentSummary {
 // champs — les deux vues avaient divergé par le passé sur les moyens de
 // paiement, un même objet portant des attributs différents selon la
 // route interrogée.
-func toPaymentDetail(tx *payzen.Transaction) PaymentDetail {
+func toPaymentDetail(tx *payzen.Transaction, counts store.DeliveryCounts) PaymentDetail {
 	events := tx.Payment.Events()
 	dto := PaymentDetail{
-		PaymentSummary: toPaymentSummary(tx),
+		PaymentSummary: toPaymentSummary(tx, counts),
 		Events:         make([]EventEntry, 0, len(events)),
 		Customer:       tx.Customer,
 		Metadata:       tx.Metadata,

@@ -210,9 +210,10 @@ Détails dans [subscriptions.fr.md](subscriptions.fr.md#cross-provider).
 
 ## Reconnaître un moyen de paiement inexploitable
 
-Une carte que tout débit refusera reste **enregistrée** : c'est ce qui
-permet de rejouer un scénario d'impayé dessus. Mais elle ne doit pas
-ressembler à une carte valide, aussi
+Une carte dont le refus tient au solde et non au statut reste
+**enregistrée** — `4000000000000002` s'enrôle alors que tout débit
+refusera. C'est ce qui permet de rejouer un scénario d'impayé dessus.
+Mais elle ne doit pas ressembler à une carte valide, aussi
 `GET /paysim/api/v1/payment-methods` porte-t-il un verdict sur chaque
 entrée :
 

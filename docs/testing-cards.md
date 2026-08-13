@@ -201,9 +201,10 @@ Details in [subscriptions.md](subscriptions.md#cross-provider).
 
 ## Telling an unusable payment method apart
 
-A card that every charge will decline stays **registered**: that is what
-lets you replay a dunning scenario on it. But it must not look like a
-valid card, so `GET /paysim/api/v1/payment-methods` reports a verdict on
+A card whose decline is tied to funds rather than status stays
+**registered** — `4000000000000002` enrols even though every charge will
+decline. That is what lets you replay a dunning scenario on it. But it
+must not look like a valid card, so `GET /paysim/api/v1/payment-methods` reports a verdict on
 every entry:
 
 ```json
