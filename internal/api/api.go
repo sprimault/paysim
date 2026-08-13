@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/sprimault/paysim/internal/bus"
+	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/domain"
 	"github.com/sprimault/paysim/internal/format"
@@ -72,6 +73,11 @@ type Deps struct {
 	// L'API de contrôle appelle directement l'adaptateur plutôt que de
 	// se requêter elle-même.
 	PayzenHandler *payzen.Handler
+
+	// Clock est l'horloge que l'API pilote. Type concret et non
+	// interface : une abstraction bâtie sur une seule implémentation se
+	// révèle presque toujours fausse à la deuxième.
+	Clock *clock.Controllable
 }
 
 // Handler regroupe les dépendances nécessaires pour servir les
@@ -86,6 +92,7 @@ type Handler struct {
 	logger            *slog.Logger
 	token             string
 	payzenHandler     *payzen.Handler
+	clock             *clock.Controllable
 }
 
 // NewHandler retourne un http.Handler qui multiplexe les endpoints
@@ -101,6 +108,7 @@ func NewHandler(deps Deps) http.Handler {
 		logger:            deps.Logger,
 		token:             deps.Token,
 		payzenHandler:     deps.PayzenHandler,
+		clock:             deps.Clock,
 	}
 
 	mux := http.NewServeMux()
@@ -123,6 +131,9 @@ func NewHandler(deps Deps) http.Handler {
 	mux.HandleFunc("GET /paysim/api/v1/subscriptions/{id}", h.getSubscription)
 	mux.HandleFunc("POST /paysim/api/v1/subscriptions/{id}/trigger-billing", h.triggerBilling)
 	mux.HandleFunc("POST /paysim/api/v1/subscriptions/{id}/cancel", h.cancelSubscription)
+	mux.HandleFunc("GET /paysim/api/v1/clock", h.getClock)
+	mux.HandleFunc("POST /paysim/api/v1/clock/advance", h.advanceClock)
+	mux.HandleFunc("POST /paysim/api/v1/clock/reset", h.resetClock)
 	mux.HandleFunc("GET /paysim/api/v1/events/stream", h.streamEvents)
 	mux.HandleFunc("GET /paysim/api/v1/version", h.getVersion)
 
