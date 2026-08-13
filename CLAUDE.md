@@ -77,7 +77,8 @@ gênant, la réponse est de sortir l'état dans `internal/store`, pas d'ajouter 
 ## Conventions de travail
 
 - Commits conventionnels : préfixe imposé par la norme (`feat:`, `fix:`, `test:`, `docs:`,
-  `refactor:`), description en français.
+  `refactor:`), description en français puis en anglais dans le même message. Idem pour les
+  descriptions de PR et les notes de release.
 - Une branche et une PR par livraison de la feuille de route.
 - Pour toute modification touchant `internal/domain` ou l'interface `Provider` : proposer
   le plan avant d'écrire du code.
