@@ -43,3 +43,8 @@ steps:
   - action: assert_payment_method
     usable: false
     unusable_reason: moyen de paiement expire
+  # Remet l'instance a l'heure reelle. Sans cette etape, les scenarios
+  # suivants s'executeraient soixante jours en avant : leurs assertions
+  # « depuis le debut du scenario » compteraient les livraisons de
+  # celui-ci. Un scenario laisse l'instance comme il l'a trouvee.
+  - action: reset_time

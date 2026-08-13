@@ -1212,6 +1212,11 @@ func TestRunner_advanceTime(t *testing.T) {
 	t.Parallel()
 	var recu string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Le runner lit l'horloge au démarrage pour poser son curseur.
+		if r.Method == http.MethodGet && r.URL.Path == "/paysim/api/v1/clock" {
+			_, _ = w.Write([]byte(`{"now":"2026-01-01T00:00:00Z","offset":"0s","offsetSeconds":0}`))
+			return
+		}
 		if r.URL.Path != "/paysim/api/v1/clock/advance" {
 			t.Errorf("chemin = %q", r.URL.Path)
 		}
