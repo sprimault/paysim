@@ -324,8 +324,13 @@ Aucune dépendance extérieure — c'est ce qui la place devant les fournisseurs
 - Supprimer les appels directs à `time.Now()` hors du point d'injection.
 - Exposer l'avance du temps dans l'API de contrôle et dans les scénarios.
 
-**Fini quand** : un scénario vérifie la deuxième tentative d'un webhook sans attendre son
-délai, et la suite de tests ne dort nulle part.
+**Fini quand** : un scénario canonique fait basculer un alias en expiré par une avance du
+temps, sans toucher au dépôt ni dormir.
+
+Le critère portait d'abord sur la deuxième tentative d'un webhook. Il était inatteignable :
+`internal/delivery` ne réessaie pas — une tentative unique, les réessais étant annoncés
+depuis la phase 2 sans avoir jamais été livrés. Ils forment leur propre phase, et l'horloge
+est ce qui les rendra vérifiables.
 
 ---
 
@@ -401,6 +406,11 @@ contrainte déjà rencontrée par la famille Lyra, et c'est là qu'elle doit avo
 Idées valides mais hors périmètre. On les note ici plutôt que de les commencer.
 
 - Fournisseurs supplémentaires : Sips/Worldline (Mercanet, Sogenactif), Mollie, Adyen.
+- Réessais de livraison avec temporisation exponentielle. `internal/delivery` ne tente
+  qu'une fois ; les réessais sont annoncés en commentaire depuis la phase 2 sans avoir
+  jamais été écrits. Ils changent le comportement de livraison, donc leur propre validation
+  et leurs propres notes de release. L'horloge de la phase 5 est ce qui les rendra
+  vérifiables sans dormir.
 - SEPA et R-transactions — la plus grosse lacune du marché : cycle de vie du mandat, rejets
   et retours qui tombent à J+3/J+5. Hors périmètre pour le moment. À reprendre en sachant
   que ça élargit délibérément le domaine, et que ça suppose l'horloge de la phase 5.
