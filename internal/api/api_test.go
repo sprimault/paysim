@@ -38,7 +38,7 @@ func discardLogger() *slog.Logger {
 // implementation distincte du contrat.
 func newMemStore() payzen.Store {
 	return payzen.NewRepoStore(
-		inmem.NewPaymentsRepository(),
+		inmem.NewPaymentsRepository(0, nil),
 		inmem.NewSubscriptionsRepository(),
 		inmem.NewPaymentMethodsRepository(),
 	)
@@ -912,7 +912,7 @@ func setupWithSQLite(t *testing.T) *httptest.Server {
 func setupWithRepos(t *testing.T, token string) (*httptest.Server, payzen.Store) {
 	t.Helper()
 	logger := discardLogger()
-	paymentRepo := inmem.NewPaymentsRepository()
+	paymentRepo := inmem.NewPaymentsRepository(0, nil)
 	subsRepo := inmem.NewSubscriptionsRepository()
 	methodsRepo := inmem.NewPaymentMethodsRepository()
 	store := payzen.NewRepoStore(paymentRepo, subsRepo, methodsRepo)

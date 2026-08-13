@@ -20,7 +20,7 @@ import (
 // plus est precisement ce qui a laisse passer le defaut de la v0.6.1.
 func newMemStore() Store {
 	return NewRepoStore(
-		inmem.NewPaymentsRepository(),
+		inmem.NewPaymentsRepository(0, nil),
 		inmem.NewSubscriptionsRepository(),
 		inmem.NewPaymentMethodsRepository(),
 	)

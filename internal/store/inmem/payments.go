@@ -5,6 +5,7 @@ package inmem
 
 import (
 	"errors"
+	"log/slog"
 	"sort"
 	"sync"
 
@@ -22,11 +23,48 @@ import (
 type PaymentsRepository struct {
 	mu       sync.RWMutex
 	payments map[string]store.PaymentRecord
+
+	// ordre est la file d'éviction, en ordre de création. Un UUID n'y
+	// entre qu'à sa première écriture : ré-empiler à chaque transition
+	// d'état ferait enfler la file sans borne, et l'éviction porterait
+	// alors sur des paiements encore vivants.
+	//
+	// Le défilement par reslice laisse la tête dans le tableau
+	// sous-jacent jusqu'au prochain agrandissement, qui ne recopie que
+	// les éléments vivants. L'empreinte reste donc bornée à environ deux
+	// fois le plafond, pour un coût amorti constant.
+	ordre []string
+
+	// max borne le nombre de paiements retenus. Zéro ou négatif :
+	// rétention illimitée, ce dont se servent les tests qui vérifient
+	// autre chose.
+	max int
+
+	logger *slog.Logger
+
+	// plafondAtteint fait passer la première éviction en Info et les
+	// suivantes en Debug. Une ligne par éviction noierait le journal :
+	// une instance saturée en produit autant qu'elle reçoit d'appels.
+	plafondAtteint bool
 }
 
-// NewPaymentsRepository construit un dépôt vide.
-func NewPaymentsRepository() *PaymentsRepository {
-	return &PaymentsRepository{payments: make(map[string]store.PaymentRecord)}
+// NewPaymentsRepository construit un dépôt vide retenant au plus max
+// paiements, les plus anciennement créés étant évincés au-delà.
+//
+// Le plafond porte sur la rétention et non sur le débit : rien
+// n'empêche d'en créer davantage, seuls les plus anciens cessent d'être
+// consultables. C'est ce que PAYSIM_MAX_PAYMENTS annonce, et ce qui
+// borne l'empreinte d'une instance longue durée — sans lui, la map
+// grandit jusqu'à ce que l'ordonnanceur tue le processus.
+func NewPaymentsRepository(max int, logger *slog.Logger) *PaymentsRepository {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	return &PaymentsRepository{
+		payments: make(map[string]store.PaymentRecord),
+		max:      max,
+		logger:   logger,
+	}
 }
 
 // copyRecord isole le record du monde extérieur. Le slice d'événements
@@ -59,11 +97,45 @@ func (r *PaymentsRepository) Save(rec *store.PaymentRecord) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	cp := copyRecord(*rec)
-	if existing, ok := r.payments[rec.UUID]; ok {
+	existing, connu := r.payments[rec.UUID]
+	if connu {
 		cp.CreatedAt = existing.CreatedAt
 	}
 	r.payments[rec.UUID] = cp
+	if !connu {
+		r.ordre = append(r.ordre, rec.UUID)
+		r.evincer()
+	}
 	return nil
+}
+
+// evincer ramène la rétention sous le plafond en supprimant les
+// paiements les plus anciennement créés. Appelé sous verrou.
+//
+// Les UUID déjà disparus de la map sont sautés plutôt que retirés de la
+// file au moment du delete : purger la file à chaque suppression
+// coûterait un parcours linéaire, alors qu'ici l'entrée morte est
+// rencontrée une fois puis oubliée.
+func (r *PaymentsRepository) evincer() {
+	if r.max < 1 {
+		return
+	}
+	for len(r.payments) > r.max && len(r.ordre) > 0 {
+		uuid := r.ordre[0]
+		r.ordre = r.ordre[1:]
+		if _, vivant := r.payments[uuid]; !vivant {
+			continue
+		}
+		delete(r.payments, uuid)
+		if r.plafondAtteint {
+			r.logger.Debug("paiement evince", "uuid", uuid, "max", r.max)
+			continue
+		}
+		r.plafondAtteint = true
+		r.logger.Info("plafond de retention atteint",
+			"max", r.max,
+			"detail", "les paiements les plus anciens cessent d'etre consultables")
+	}
 }
 
 // ByUUID retourne le paiement, ou nil, nil si inconnu.
@@ -176,6 +248,7 @@ func (r *PaymentsRepository) DeleteAll() (int, error) {
 	defer r.mu.Unlock()
 	n := len(r.payments)
 	r.payments = make(map[string]store.PaymentRecord)
+	r.ordre = nil
 	return n, nil
 }
 

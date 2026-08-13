@@ -35,7 +35,7 @@ pour monter un Secret K8s sans écrire la valeur en clair.
 | `PAYSIM_API_TOKEN` (+ `_FILE`) | Jeton Bearer qui protège l'API de contrôle pour les **appels serveur-à-serveur** (CI, scripts, tests). **Désactive l'UI web** si défini — la SPA n'a pas de flow de login et n'injecte pas de Bearer dans ses fetch. Pour protéger l'UI dans un environnement partagé, utiliser une basic auth au niveau de l'ingress (voir [Option 3 — Ingress](#option-3--kubernetes-derrière-un-ingress-domaine--tls--auth)). Vide = ouvert. |
 | `PAYSIM_PAYZEN_HMAC_KEY` (+ `_FILE`) | Clé HMAC-SHA-256 qui signe le **retour navigateur** (`kr-hash-key: sha256_hmac`). |
 | `PAYSIM_PAYZEN_REST_PASSWORD` (+ `_FILE`) | Mot de passe d'API REST qui signe les **notifications serveur à serveur** (`kr-hash-key: password`). **Obligatoire** dès que la clé HMAC est définie — voir ci-dessous. |
-| `PAYSIM_MAX_PAYMENTS` | Plafond de rétention pour le stockage mémoire. Défaut 10000. |
+| `PAYSIM_MAX_PAYMENTS` | Plafond de rétention pour `PAYSIM_STORE=memory`. Défaut 10000. Au-delà, les paiements les plus anciennement créés cessent d'être retenus — la création n'échoue jamais, ils deviennent simplement illisibles. Sans effet en mode SQLite, où la rétention est bornée par le disque. |
 | `PAYSIM_LOG_LEVEL` | Niveau de log (`debug`, `info`, `warn`, `error`). Défaut `info`. |
 | `PAYSIM_STORE` | Backend de stockage : `memory` (défaut, sans état) ou `sqlite`. |
 | `PAYSIM_SQLITE_PATH` | Chemin du fichier SQLite quand `PAYSIM_STORE=sqlite`. Défaut `/data/paysim.db`. Nécessite un volume writable. |
