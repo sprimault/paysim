@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/format"
 )
 
@@ -16,7 +17,7 @@ import (
 // n'importe quel état sans dupliquer la mécanique dans chaque test.
 func atState(t *testing.T, s State) *Payment {
 	t.Helper()
-	p, err := New("pay-1", 10000, "EUR")
+	p, err := New(clock.System{}, "pay-1", 10000, "EUR")
 	if err != nil {
 		t.Fatalf("création : %v", err)
 	}
@@ -81,7 +82,7 @@ func TestNew(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			before := time.Now().UTC()
-			p, err := New(c.id, c.amount, c.currency)
+			p, err := New(clock.System{}, c.id, c.amount, c.currency)
 			after := time.Now().UTC()
 
 			if !errors.Is(err, c.wantErr) {

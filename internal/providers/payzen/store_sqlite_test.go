@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/domain"
 	sqlitepkg "github.com/sprimault/paysim/internal/store/sqlite"
 )
@@ -37,7 +38,7 @@ func openTestStore(t *testing.T, path string) *RepoStore {
 		t.Fatalf("NewPaymentMethodsRepository: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return NewRepoStore(repo, subsRepo, methodsRepo)
+	return NewRepoStore(clock.System{}, repo, subsRepo, methodsRepo)
 }
 
 // runContract lance le même scénario sur une Store — vérifie que
@@ -126,7 +127,7 @@ func runContract(t *testing.T, s Store) {
 // (créé + capturé = 2 events, state=captured).
 func buildSampleTx(t *testing.T) *Transaction {
 	t.Helper()
-	p, err := domain.New("uuid-1", 4990, "EUR")
+	p, err := domain.New(clock.System{}, "uuid-1", 4990, "EUR")
 	if err != nil {
 		t.Fatalf("domain.New: %v", err)
 	}
@@ -309,7 +310,7 @@ func TestRepoStoreSurvivesReopen(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		s1 := NewRepoStore(repo, subsRepo, methodsRepo)
+		s1 := NewRepoStore(clock.System{}, repo, subsRepo, methodsRepo)
 		if err := s1.Save(buildSampleTx(t)); err != nil {
 			t.Fatal(err)
 		}

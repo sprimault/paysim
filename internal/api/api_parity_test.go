@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sprimault/paysim/internal/bus"
+	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/providers/payzen"
 	"github.com/sprimault/paysim/internal/store"
@@ -77,7 +78,7 @@ func newParityEnv(t *testing.T, backend string) *parityEnv {
 			t.Fatalf("repo payment methods : %v", err)
 		}
 		paymentRepo, subsRepo, methodsRepo = pr, sr, mr
-		payzenStore = payzen.NewRepoStore(pr, sr, mr)
+		payzenStore = payzen.NewRepoStore(clock.System{}, pr, sr, mr)
 		t.Cleanup(func() { _ = db.Close() })
 	default:
 		// Même montage que la branche mémoire de main.go : trois dépôts
@@ -87,7 +88,7 @@ func newParityEnv(t *testing.T, backend string) *parityEnv {
 		paymentRepo = inmem.NewPaymentsRepository(0, nil)
 		subsRepo = inmem.NewSubscriptionsRepository()
 		methodsRepo = inmem.NewPaymentMethodsRepository()
-		payzenStore = payzen.NewRepoStore(paymentRepo, subsRepo, methodsRepo)
+		payzenStore = payzen.NewRepoStore(clock.System{}, paymentRepo, subsRepo, methodsRepo)
 	}
 
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
@@ -102,7 +103,7 @@ func newParityEnv(t *testing.T, backend string) *parityEnv {
 		_ = queue.Run(ctx)
 	}()
 
-	ph := payzen.NewHandler(payzenStore, queue, logger, payzen.HandlerConfig{
+	ph := payzen.NewHandler(payzenStore, queue, logger, clock.System{}, payzen.HandlerConfig{
 		HMACKey:   "k", RESTPassword: "pwd-rest",
 		Publisher: b,
 	})

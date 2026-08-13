@@ -17,6 +17,7 @@ import (
 
 	"github.com/sprimault/paysim/internal/bus"
 	"github.com/sprimault/paysim/internal/chaos"
+	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/domain"
 	"github.com/sprimault/paysim/internal/format"
@@ -60,11 +61,6 @@ type HandlerConfig struct {
 	// ou part le webhook.
 	DefaultCallbackURL string
 
-	// Clock permet aux tests d'injecter une source de temps
-	// déterministe pour la vérification d'expiration des moyens de
-	// paiement enregistrés. Nil = SystemClock (production).
-	Clock Clock
-
 	// Autoplay joue l'acte de paiement dès la création, sans attendre
 	// d'appel de simulation. Alimenté depuis PAYSIM_AUTOPLAY. Faux par
 	// défaut : un paiement neuf reste `initiated` tant que personne ne
@@ -82,6 +78,7 @@ type Handler struct {
 	store  Store
 	queue  *delivery.Queue
 	logger *slog.Logger
+	clk    clock.Clock
 	cfg    HandlerConfig
 }
 
@@ -89,8 +86,9 @@ type Handler struct {
 // obtenu ensuite via Routes() — deux étapes pour que les consommateurs
 // qui ont besoin d'un *Handler concret (ex. api.Handler pour Simulate)
 // puissent le récupérer sans caster un http.Handler.
-func NewHandler(store Store, queue *delivery.Queue, logger *slog.Logger, cfg HandlerConfig) *Handler {
-	return &Handler{store: store, queue: queue, logger: logger, cfg: cfg}
+func NewHandler(store Store, queue *delivery.Queue, logger *slog.Logger,
+	clk clock.Clock, cfg HandlerConfig) *Handler {
+	return &Handler{store: store, queue: queue, logger: logger, clk: clk, cfg: cfg}
 }
 
 // storeErr traduit une erreur de persistance en réponse PayZen —
@@ -230,15 +228,6 @@ type CreateInput struct {
 // ErrPaymentMethodUnknown est retournée par Create en mode rejeu quand
 // le paymentMethodToken fourni n'existe pas dans le store.
 var ErrPaymentMethodUnknown = errors.New("moyen de paiement inconnu")
-
-// clock retourne l'horloge configurée ou SystemClock par défaut. Encapsulé
-// pour permettre l'injection dans les tests via HandlerConfig.Clock.
-func (h *Handler) clock() Clock {
-	if h.cfg.Clock == nil {
-		return SystemClock{}
-	}
-	return h.cfg.Clock
-}
 
 // Create matérialise un paiement PayZen. Trois modes selon l'input :
 //
@@ -380,7 +369,7 @@ func (h *Handler) verifyCard(tx *Transaction) error {
 	// refusent pour provision, le montant d'une échéance étant imposé
 	// par l'échéancier et donc indisponible comme montant magique.
 	usable, reason := MethodUsability(
-		tx.Card.PAN, tx.Card.ExpiryMonth, tx.Card.ExpiryYear, false, h.clock().Now())
+		tx.Card.PAN, tx.Card.ExpiryMonth, tx.Card.ExpiryYear, false, h.clk.Now())
 	outcome := ""
 	var decline chaos.DeclineReason
 	switch {
@@ -397,7 +386,7 @@ func (h *Handler) verifyCard(tx *Transaction) error {
 			return fmt.Errorf("transition domain: %w", err)
 		}
 		tx.Card = nil
-		tx.UpdatedAt = h.clock().Now()
+		tx.UpdatedAt = h.clk.Now()
 		return h.store.Save(tx)
 	}
 	// Vérification acceptée : autorisée, jamais capturée. Chez Lyra la
@@ -414,7 +403,7 @@ func (h *Handler) verifyCard(tx *Transaction) error {
 	if _, err := h.enrollCardPending(tx); err != nil {
 		return err
 	}
-	tx.UpdatedAt = h.clock().Now()
+	tx.UpdatedAt = h.clk.Now()
 	return h.store.Save(tx)
 }
 
@@ -458,7 +447,7 @@ func (h *Handler) autoplay(tx *Transaction) {
 	if err != nil {
 		h.logger.Warn("autoplay_enroll_failed", "uuid", tx.UUID, "err", err)
 	}
-	tx.UpdatedAt = h.clock().Now()
+	tx.UpdatedAt = h.clk.Now()
 	if err := h.store.Save(tx); err != nil {
 		h.logger.Warn("autoplay_save_failed", "uuid", tx.UUID, "err", err)
 		return
@@ -519,7 +508,7 @@ func (h *Handler) createNominal(in CreateInput) (*Transaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("generation uuid: %w", err)
 	}
-	payment, err := domain.New(uuid, in.Amount, in.Currency)
+	payment, err := domain.New(h.clk, uuid, in.Amount, in.Currency)
 	if err != nil {
 		return nil, err
 	}
@@ -527,7 +516,7 @@ func (h *Handler) createNominal(in CreateInput) (*Transaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("generation formToken: %w", err)
 	}
-	now := h.clock().Now()
+	now := h.clk.Now()
 	tx := &Transaction{
 		FormToken:       token,
 		UUID:            uuid,
@@ -576,7 +565,7 @@ func (h *Handler) createNominal(in CreateInput) (*Transaction, error) {
 func (h *Handler) decideCardOutcome(tx *Transaction) (outcome, reason string, decline chaos.DeclineReason) {
 	if tx.Card != nil {
 		if o, r, d := outcomeFromUsability(
-			tx.Card.PAN, tx.Card.ExpiryMonth, tx.Card.ExpiryYear, false, h.clock().Now()); o != "" {
+			tx.Card.PAN, tx.Card.ExpiryMonth, tx.Card.ExpiryYear, false, h.clk.Now()); o != "" {
 			return o, r, d
 		}
 	}
@@ -598,11 +587,11 @@ func (h *Handler) conditionsDuMoyen(tx *Transaction) (outcome, reason string, de
 		if err != nil || pm == nil {
 			return "", "", chaos.DeclineReason{}
 		}
-		return evaluateMethodOutcome(pm, h.clock().Now())
+		return evaluateMethodOutcome(pm, h.clk.Now())
 	}
 	if tx.Card != nil {
 		return outcomeFromUsability(
-			tx.Card.PAN, tx.Card.ExpiryMonth, tx.Card.ExpiryYear, false, h.clock().Now())
+			tx.Card.PAN, tx.Card.ExpiryMonth, tx.Card.ExpiryYear, false, h.clk.Now())
 	}
 	return "", "", chaos.DeclineReason{}
 }
@@ -647,7 +636,7 @@ func (h *Handler) enrollCard(tx *Transaction, card *Card) (*PaymentMethod, error
 	if err != nil {
 		return nil, fmt.Errorf("generation payment method token: %w", err)
 	}
-	pm := NewPaymentMethod(token, *card, tx.Customer, h.clock().Now())
+	pm := NewPaymentMethod(token, *card, tx.Customer, h.clk.Now())
 	if err := h.store.SaveMethod(pm); err != nil {
 		return nil, fmt.Errorf("store SaveMethod: %w", err)
 	}
@@ -708,7 +697,7 @@ func (h *Handler) createFromToken(in CreateInput) (*Transaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("generation uuid: %w", err)
 	}
-	payment, err := domain.New(uuid, in.Amount, in.Currency)
+	payment, err := domain.New(h.clk, uuid, in.Amount, in.Currency)
 	if err != nil {
 		return nil, err
 	}
@@ -716,7 +705,7 @@ func (h *Handler) createFromToken(in CreateInput) (*Transaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("generation formToken: %w", err)
 	}
-	now := h.clock().Now()
+	now := h.clk.Now()
 	tx := &Transaction{
 		FormToken:          formToken,
 		UUID:               uuid,
@@ -737,7 +726,7 @@ func (h *Handler) createFromToken(in CreateInput) (*Transaction, error) {
 	if err := applyOutcome(tx, outcome, reason, decline); err != nil {
 		return nil, fmt.Errorf("apply outcome: %w", err)
 	}
-	tx.UpdatedAt = h.clock().Now()
+	tx.UpdatedAt = h.clk.Now()
 
 	if err := h.store.Save(tx); err != nil {
 		return nil, fmt.Errorf("store Save: %w", err)
@@ -1101,7 +1090,7 @@ func (h *Handler) CreateSubscription(in CreateSubscriptionInput) (*Subscription,
 		EffectDate:         in.EffectDate,
 		Rrule:              in.Rrule,
 		Metadata:           in.Metadata,
-		CreatedAt:          h.clock().Now(),
+		CreatedAt:          h.clk.Now(),
 	}
 	if err := h.store.SaveSubscription(sub); err != nil {
 		return nil, fmt.Errorf("store SaveSubscription: %w", err)
@@ -1175,7 +1164,7 @@ func (h *Handler) TriggerBilling(subID string) (*Transaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("generation uuid: %w", err)
 	}
-	payment, err := domain.New(uuid, sub.Amount, sub.Currency)
+	payment, err := domain.New(h.clk, uuid, sub.Amount, sub.Currency)
 	if err != nil {
 		return nil, err
 	}
@@ -1183,7 +1172,7 @@ func (h *Handler) TriggerBilling(subID string) (*Transaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("generation formToken: %w", err)
 	}
-	now := h.clock().Now()
+	now := h.clk.Now()
 	// Lien Transaction ↔ Subscription : via metadata (choix Q2(a)).
 	// Enrichit la metadata existante de la sub sans la remplacer.
 	meta := map[string]string{"subscriptionId": subID}
@@ -1209,7 +1198,7 @@ func (h *Handler) TriggerBilling(subID string) (*Transaction, error) {
 	if err := applyOutcome(tx, outcome, reason, decline); err != nil {
 		return nil, fmt.Errorf("apply outcome: %w", err)
 	}
-	tx.UpdatedAt = h.clock().Now()
+	tx.UpdatedAt = h.clk.Now()
 
 	if err := h.store.Save(tx); err != nil {
 		return nil, fmt.Errorf("store Save: %w", err)

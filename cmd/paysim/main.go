@@ -24,6 +24,7 @@ import (
 	"github.com/sprimault/paysim/internal/api"
 	"github.com/sprimault/paysim/internal/bus"
 	"github.com/sprimault/paysim/internal/chaos"
+	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/config"
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/httplog"
@@ -129,6 +130,13 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 	// de part et d'autre. Une seule traduction payzen ↔ store, donc
 	// aucune divergence possible entre les deux modes. Le nom mérite
 	// de changer, mais pas dans le même commit qu'un correctif.
+
+	// L'horloge est construite ici et descend dans tout ce qui horodate
+	// quelque chose d'observable. Ce qui mesure une durée — journal
+	// HTTP, durée d'une étape de scénario — ne la reçoit pas : une
+	// mesure qui suivrait une horloge simulée deviendrait absurde.
+	clk := clock.System{}
+
 	var (
 		payzenStore       payzen.Store
 		paymentRepo       store.PaymentRepository
@@ -158,7 +166,7 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		}
 		subscriptionRepo = subsRepo
 		paymentMethodRepo = methodsRepo
-		payzenStore = payzen.NewRepoStore(repo, subsRepo, methodsRepo)
+		payzenStore = payzen.NewRepoStore(clk, repo, subsRepo, methodsRepo)
 
 		webhookRepo, err := sqlitepkg.NewWebhooksRepository(db)
 		if err != nil {
@@ -177,11 +185,11 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		paymentRepo = inmem.NewPaymentsRepository(cfg.MaxPayments, logger)
 		subscriptionRepo = inmem.NewSubscriptionsRepository()
 		paymentMethodRepo = inmem.NewPaymentMethodsRepository()
-		payzenStore = payzen.NewRepoStore(paymentRepo, subscriptionRepo, paymentMethodRepo)
+		payzenStore = payzen.NewRepoStore(clk, paymentRepo, subscriptionRepo, paymentMethodRepo)
 		logger.Info("store_backend", "backend", "memory")
 	}
 	queue.SetPublisher(eventBus)
-	payzenHandler := payzen.NewHandler(payzenStore, queue, logger, payzen.HandlerConfig{
+	payzenHandler := payzen.NewHandler(payzenStore, queue, logger, clk, payzen.HandlerConfig{
 		HMACKey:            cfg.PayzenHMACKey,
 		RESTPassword:       cfg.PayzenRESTPassword,
 		APIToken:           cfg.APIToken,

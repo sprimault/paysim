@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/domain"
 	"github.com/sprimault/paysim/internal/store"
 )
@@ -41,6 +42,10 @@ import (
 // propriété et la responsabilité de leur fermeture — un
 // RepoStore.Close() ne les ferme pas.
 type RepoStore struct {
+	// clk est réinjectée dans chaque Payment relu : domain.Load l'exige,
+	// et un paiement rechargé depuis le dépôt doit horodater ses
+	// transitions suivantes comme celui qui n'en est jamais sorti.
+	clk     clock.Clock
 	repo    store.PaymentRepository
 	subRepo store.SubscriptionRepository
 	pmRepo  store.PaymentMethodRepository
@@ -51,11 +56,13 @@ const providerName = "payzen"
 
 // NewRepoStore construit un RepoStore autour des trois repositories.
 func NewRepoStore(
+	clk clock.Clock,
 	payments store.PaymentRepository,
 	subs store.SubscriptionRepository,
 	methods store.PaymentMethodRepository,
 ) *RepoStore {
 	return &RepoStore{
+		clk:     clk,
 		repo:    payments,
 		subRepo: subs,
 		pmRepo:  methods,
@@ -91,7 +98,7 @@ func (s *RepoStore) ByToken(token string) (*Transaction, error) {
 	if rec == nil {
 		return nil, nil
 	}
-	return recordToPayzen(rec)
+	return recordToPayzen(s.clk, rec)
 }
 
 // ByUUID cherche via l'UUID (indépendant du provider).
@@ -109,7 +116,7 @@ func (s *RepoStore) ByUUID(uuid string) (*Transaction, error) {
 	if rec.Provider != providerName {
 		return nil, nil
 	}
-	return recordToPayzen(rec)
+	return recordToPayzen(s.clk, rec)
 }
 
 // Len compte les paiements PayZen uniquement.
@@ -130,7 +137,7 @@ func (s *RepoStore) AllTransactions() ([]*Transaction, error) {
 	}
 	out := make([]*Transaction, 0, len(recs))
 	for _, rec := range recs {
-		tx, err := recordToPayzen(rec)
+		tx, err := recordToPayzen(s.clk, rec)
 		if err != nil {
 			return nil, err
 		}
@@ -411,7 +418,7 @@ func recordToPayzenMethod(rec *store.PaymentMethodRecord) *PaymentMethod {
 // recordToPayzen désérialise un PaymentRecord vers Transaction PayZen.
 // Le domain.Payment est reconstruit via domain.Load (pas de rejeu des
 // transitions — l'état persisté est présumé cohérent).
-func recordToPayzen(rec *store.PaymentRecord) (*Transaction, error) {
+func recordToPayzen(clk clock.Clock, rec *store.PaymentRecord) (*Transaction, error) {
 	if rec == nil {
 		return nil, nil
 	}
@@ -434,7 +441,7 @@ func recordToPayzen(rec *store.PaymentRecord) (*Transaction, error) {
 	// équivalents en pratique pour un simulateur, et le premier event
 	// (created) reste la source de vérité pour la vraie date de
 	// création côté domaine.
-	pay := domain.Load(rec.UUID, rec.Amount, rec.Currency, rec.State,
+	pay := domain.Load(clk, rec.UUID, rec.Amount, rec.Currency, rec.State,
 		rec.Refunded, rec.Events, rec.CreatedAt, rec.UpdatedAt)
 	return &Transaction{
 		FormToken:          rec.ProviderRef,

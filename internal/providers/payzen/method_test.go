@@ -151,20 +151,6 @@ func TestNewPaymentMethod_brandExpliciteGardeLaMain(t *testing.T) {
 	}
 }
 
-func TestSystemClock_Now(t *testing.T) {
-	t.Parallel()
-	c := SystemClock{}
-	before := time.Now().UTC()
-	got := c.Now()
-	after := time.Now().UTC()
-	if got.Before(before) || got.After(after) {
-		t.Errorf("Now() = %v, veut entre %v et %v", got, before, after)
-	}
-	if got.Location() != time.UTC {
-		t.Errorf("Now().Location() = %v, veut UTC", got.Location())
-	}
-}
-
 // TestNewPaymentMethod_attributsCarte verifie que les attributs
 // descriptifs de la carte survivent a l'enrolement. Sans eux, le
 // kr-answer ne pouvait qu'annoncer ses valeurs par defaut.

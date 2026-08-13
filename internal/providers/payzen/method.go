@@ -159,21 +159,6 @@ func NewPaymentMethod(token string, card Card, customer Customer, now time.Time)
 	}
 }
 
-// Clock permet d'injecter une source de temps déterministe dans les
-// tests. La production utilise SystemClock qui renvoie time.Now().UTC().
-// Interface volontairement minimale — les besoins hors « heure
-// courante » (durée, delai) restent gérés par time.After / time.Sleep.
-type Clock interface {
-	Now() time.Time
-}
-
-// SystemClock est l'implémentation production de Clock. Instance
-// exportée pour être injectée sans construction (le zéro-valeur suffit).
-type SystemClock struct{}
-
-// Now retourne l'heure actuelle en UTC.
-func (SystemClock) Now() time.Time { return time.Now().UTC() }
-
 // maskPAN retourne le PAN masqué au format PayZen : 6 premiers
 // chiffres visibles + X pour le milieu + 4 derniers visibles. C'est
 // la représentation qu'on trouve dans les kr-answer et les logs

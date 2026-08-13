@@ -11,6 +11,7 @@ package domain
 import (
 	"time"
 
+	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/format"
 )
 
@@ -30,13 +31,23 @@ type Payment struct {
 	events    []Event
 	createdAt time.Time
 	updatedAt time.Time
+
+	// clk horodate le journal. Fourni à la construction et jamais nul :
+	// New et Load l'exigent, donc le compilateur garantit qu'un chemin
+	// ne peut pas l'oublier. Un repli « nil vaut l'heure réelle »
+	// rendrait un paiement sourd à l'avance du temps sans que rien ne
+	// le signale.
+	clk clock.Clock
 }
 
 // New instancie un paiement dans l'état initié et enregistre l'événement de
 // création. Le montant doit être strictement positif ; la devise doit avoir
 // la forme d'un code ISO 4217 (trois lettres majuscules ASCII) — l'existence
 // effective du code n'est pas vérifiée, c'est le rôle de la couche d'entrée.
-func New(id string, amount format.Amount, currency string) (*Payment, error) {
+func New(clk clock.Clock, id string, amount format.Amount, currency string) (*Payment, error) {
+	if clk == nil {
+		return nil, ErrInvalidPayment
+	}
 	if id == "" {
 		return nil, ErrInvalidPayment
 	}
@@ -56,6 +67,7 @@ func New(id string, amount format.Amount, currency string) (*Payment, error) {
 		amount:   amount,
 		currency: currency,
 		state:    StateInitiated,
+		clk:      clk,
 	}
 	p.record(EventCreated, 0, "")
 	// createdAt et updatedAt partagent le timestamp du premier événement,
@@ -192,7 +204,7 @@ func (p *Payment) Chargeback() error {
 // c'est le seul moyen de garantir que updatedAt et le dernier événement du
 // journal partagent bien le même horodatage.
 func (p *Payment) record(kind EventKind, amount format.Amount, note string) {
-	now := time.Now().UTC()
+	now := p.clk.Now()
 	p.events = append(p.events, Event{
 		At:     now,
 		Kind:   kind,
@@ -217,7 +229,7 @@ func (p *Payment) record(kind EventKind, amount format.Amount, note string) {
 //
 // Les slices sont recopiées pour éviter de partager la propriété
 // avec l'appelant.
-func Load(id string, amount format.Amount, currency string, state State,
+func Load(clk clock.Clock, id string, amount format.Amount, currency string, state State,
 	refunded format.Amount, events []Event, createdAt, updatedAt time.Time) *Payment {
 	eventsCopy := make([]Event, len(events))
 	copy(eventsCopy, events)
@@ -230,6 +242,7 @@ func Load(id string, amount format.Amount, currency string, state State,
 		events:    eventsCopy,
 		createdAt: createdAt,
 		updatedAt: updatedAt,
+		clk:       clk,
 	}
 }
 
