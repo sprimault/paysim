@@ -26,6 +26,8 @@ import type {
   CreateSubscriptionInput,
   TriggerBillingOutput,
   PaymentMethodOutput,
+  ClockState,
+  AdvanceRequest,
 } from './api';
 import type {
   PaymentState,
@@ -89,6 +91,10 @@ export type {
   CreateSubscriptionInput,
   TriggerBillingOutput,
   PaymentMethodOutput,
+  // L'horloge n'a pas d'union à affiner : `now` est une date RFC 3339,
+  // `offset` une durée Go, les deux libres côté front.
+  ClockState,
+  AdvanceRequest,
 };
 export type {
   PaymentState,

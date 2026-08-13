@@ -19,13 +19,35 @@ import { useLangStore } from './store';
  */
 export function useT(): (key: MessageKey, params?: Record<string, string | number>) => string {
   const lang = useLangStore((s) => s.lang);
-  return (key, params) => {
-    let msg = messages[lang][key] as string;
-    if (params) {
-      for (const [k, v] of Object.entries(params)) {
-        msg = msg.replace('{' + k + '}', String(v));
-      }
+  return (key, params) => traduire(lang, key, params);
+}
+
+/**
+ * translate résout une clé hors de React, pour le code qui n'a pas de
+ * hook à sa disposition — le client HTTP, par exemple, dont les
+ * messages d'erreur remontent jusqu'à un toast et doivent donc être
+ * lisibles dans la langue courante.
+ *
+ * Lit la langue à l'appel plutôt que de s'y abonner : un message
+ * d'erreur est produit une fois, il n'a pas à se retraduire ensuite.
+ */
+export function translate(
+  key: MessageKey,
+  params?: Record<string, string | number>,
+): string {
+  return traduire(useLangStore.getState().lang, key, params);
+}
+
+function traduire(
+  lang: 'fr' | 'en',
+  key: MessageKey,
+  params?: Record<string, string | number>,
+): string {
+  let msg = messages[lang][key] as string;
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      msg = msg.replace('{' + k + '}', String(v));
     }
-    return msg;
-  };
+  }
+  return msg;
 }

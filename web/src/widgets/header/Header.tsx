@@ -8,6 +8,7 @@ import { LangToggle } from '@/shared/ui/LangToggle';
 import { ResetAllButton } from '@/shared/ui/ResetAllButton';
 import { ThemeToggle } from '@/shared/ui/ThemeToggle';
 import { useT } from '@/shared/i18n/useT';
+import { ClockControl } from '@/widgets/header/ClockControl';
 import { FreshnessIndicator } from '@/widgets/header/FreshnessIndicator';
 import { useNavCounts } from '@/widgets/header/model/useNavCounts';
 
@@ -46,6 +47,7 @@ export function Header({ connected = true, lastEventAt }: HeaderProps) {
         <div className="flex items-center gap-3">
           <ConnectionIndicator connected={connected} />
           <FreshnessIndicator lastEventAt={lastEventAt} connected={connected} />
+          <ClockControl />
           <ThemeToggle />
           <LangToggle />
           {/* Séparé des sélecteurs par un filet : action destructive
