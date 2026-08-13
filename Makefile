@@ -97,10 +97,25 @@ web-lint:
 # `docker buildx create --use --name paysim-builder` une fois pour
 # toutes). L'image est construite pour amd64 et arm64 en un seul appel.
 #
-# `make image`      → build local, tag ghcr.io/sprimault/paysim:latest
+# `make image`      → construit sans publier, pour vérifier que le
+#                     Dockerfile passe. Ne charge rien localement : une
+#                     image multi-plateforme n'est pas chargeable, et le
+#                     pilote distant laisse le résultat dans son cache.
 # `make image-push` → build + push vers ghcr.io (nécessite `docker login ghcr.io`)
-IMAGE_TAG ?= ghcr.io/sprimault/paysim:latest
-PLATFORMS ?= linux/amd64,linux/arm64
+#
+# Publier une version : une seule construction, deux étiquettes.
+#
+#	make image-push IMAGE_TAGS="ghcr.io/sprimault/paysim:v0.6.8 \
+#	                            ghcr.io/sprimault/paysim:latest"
+#
+# En deux appels, la même source produit deux index différents — les
+# horodatages de couches ne sont pas reproductibles. Repointer ensuite
+# l'un sur l'autre laisse un index sans étiquette au registre, qu'il
+# faut aller supprimer à la main. Arrivé à la v0.6.7.
+IMAGE_TAG  ?= ghcr.io/sprimault/paysim:latest
+IMAGE_TAGS ?= $(IMAGE_TAG)
+TAG_FLAGS   = $(foreach t,$(IMAGE_TAGS),-t $(t))
+PLATFORMS  ?= linux/amd64,linux/arm64
 # Le contexte de build n'embarque pas .git/ : la révision se lit ici et
 # se passe au Dockerfile. Le repli couvre le build depuis une archive.
 REVISION ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
@@ -108,9 +123,9 @@ REVISION ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 image:
 	docker buildx build --platform $(PLATFORMS) \
 		--build-arg REVISION=$(REVISION) \
-		-t $(IMAGE_TAG) -f deploy/Dockerfile .
+		$(TAG_FLAGS) -f deploy/Dockerfile .
 
 image-push:
 	docker buildx build --platform $(PLATFORMS) --push \
 		--build-arg REVISION=$(REVISION) \
-		-t $(IMAGE_TAG) -f deploy/Dockerfile .
+		$(TAG_FLAGS) -f deploy/Dockerfile .
