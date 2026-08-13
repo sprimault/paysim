@@ -1204,3 +1204,54 @@ func TestRunner_assertPaymentMethodSansToken(t *testing.T) {
 		t.Errorf("erreur = %v, veut un message explicite sur l'absence de token", err)
 	}
 }
+
+// TestRunner_advanceTime vérifie que l'action appelle bien l'endpoint
+// d'avance, et qu'elle ne dort pas : c'est toute sa raison d'être face
+// à wait.
+func TestRunner_advanceTime(t *testing.T) {
+	t.Parallel()
+	var recu string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/paysim/api/v1/clock/advance" {
+			t.Errorf("chemin = %q", r.URL.Path)
+		}
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		recu = body["duration"]
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"now":"2026-01-01T00:00:00Z","offset":"96h0m0s","offsetSeconds":345600}`))
+	}))
+	defer srv.Close()
+
+	sc := &Scenario{Name: "avance", Steps: []Step{{
+		Action:      ActionAdvanceTime,
+		AdvanceTime: &AdvanceTime{Duration: Duration(96 * time.Hour)},
+	}}}
+
+	debut := time.Now()
+	rep := NewRunner(NewClient(srv.URL, "")).Run(context.Background(), sc)
+	if err := rep.Err(); err != nil {
+		t.Fatalf("Run : %v", err)
+	}
+	if recu != "96h0m0s" {
+		t.Errorf("duration transmise = %q, veut 96h0m0s", recu)
+	}
+	// L'action ne dort pas — c'est ce qui la distingue de wait. Une
+	// marge large : on veut attraper un time.Sleep de 96 h, pas
+	// chronométrer une requête HTTP locale.
+	if ecoule := time.Since(debut); ecoule > 5*time.Second {
+		t.Errorf("l'action a pris %v : elle a dormi au lieu d'avancer", ecoule)
+	}
+}
+
+// TestAdvanceTime_dureeInvalide : un scénario qui recule doit échouer au
+// chargement, pas à mi-parcours.
+func TestAdvanceTime_dureeInvalide(t *testing.T) {
+	t.Parallel()
+	for _, d := range []time.Duration{0, -time.Hour} {
+		a := &AdvanceTime{Duration: Duration(d)}
+		if err := a.Validate(); err == nil {
+			t.Errorf("duration %v acceptee, veut une erreur", d)
+		}
+	}
+}

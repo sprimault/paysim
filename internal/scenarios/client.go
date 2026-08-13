@@ -477,3 +477,11 @@ var ErrHTTP = errors.New("erreur http paysim")
 // Unwrap fait pointer errors.Is(err, ErrHTTP) vers ErrHTTP pour tout
 // *HTTPError — les appelants n'ont pas à connaître le type concret.
 func (e *HTTPError) Unwrap() error { return ErrHTTP }
+
+// AdvanceClock appelle POST /clock/advance. La durée est transmise au
+// format Go, comme dans le YAML — le serveur la reparse, ce qui évite
+// de choisir une unité ici et de la perdre en route.
+func (c *Client) AdvanceClock(ctx context.Context, d time.Duration) error {
+	return c.do(ctx, http.MethodPost, "/paysim/api/v1/clock/advance",
+		map[string]string{"duration": d.String()}, nil)
+}
