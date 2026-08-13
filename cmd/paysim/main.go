@@ -40,6 +40,16 @@ import (
 // serveur pendu.
 const httpClientTimeout = 10 * time.Second
 
+// deliveryQueueCapacity dimensionne le canal des webhooks en attente de
+// livraison. Sans rapport avec PAYSIM_MAX_PAYMENTS, qui borne la
+// rétention des paiements — les deux ont partagé cette valeur, et cette
+// confusion a fait croire pendant plusieurs versions que la rétention
+// était plafonnée alors qu'elle ne l'était pas.
+//
+// Valeur inchangée : la découpler suffit, la modifier changerait la
+// contre-pression de la file par la même occasion.
+const deliveryQueueCapacity = 10000
+
 // shutdownGrace est le délai laissé aux load-balancers pour router
 // ailleurs après que /readyz bascule à 503, avant qu'on ferme le
 // serveur. Aligné sur les habitudes Kubernetes (preStop hook).
@@ -125,7 +135,7 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		subscriptionRepo  store.SubscriptionRepository
 		paymentMethodRepo store.PaymentMethodRepository
 	)
-	queue := delivery.New(&http.Client{Timeout: httpClientTimeout}, logger, cfg.MaxPayments)
+	queue := delivery.New(&http.Client{Timeout: httpClientTimeout}, logger, deliveryQueueCapacity)
 	switch cfg.StoreBackend {
 	case config.StoreBackendSQLite:
 		db, err := sqlitepkg.Open(cfg.SQLitePath)
@@ -164,7 +174,7 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		defer func() { _ = eventBus.Close() }()
 		logger.Info("store_backend", "backend", "sqlite", "path", cfg.SQLitePath)
 	default:
-		paymentRepo = inmem.NewPaymentsRepository()
+		paymentRepo = inmem.NewPaymentsRepository(cfg.MaxPayments, logger)
 		subscriptionRepo = inmem.NewSubscriptionsRepository()
 		paymentMethodRepo = inmem.NewPaymentMethodsRepository()
 		payzenStore = payzen.NewRepoStore(paymentRepo, subscriptionRepo, paymentMethodRepo)

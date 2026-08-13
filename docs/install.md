@@ -34,7 +34,7 @@ mounts.
 | `PAYSIM_API_TOKEN` (+ `_FILE`) | Bearer token that protects the control API for **server-to-server calls** (CI, scripts, tests). **Disables the web UI** if set — the SPA has no login flow and does not inject a Bearer token in its fetch calls. To protect the UI in a shared environment, use ingress-level basic auth (see [Option 3 — Ingress](#option-3--kubernetes-behind-an-ingress-domain--tls--auth)). Empty = open. |
 | `PAYSIM_PAYZEN_HMAC_KEY` (+ `_FILE`) | HMAC-SHA-256 key signing the **browser return** (`kr-hash-key: sha256_hmac`). |
 | `PAYSIM_PAYZEN_REST_PASSWORD` (+ `_FILE`) | REST API password signing **server-to-server notifications** (`kr-hash-key: password`). **Required** as soon as the HMAC key is set — see below. |
-| `PAYSIM_MAX_PAYMENTS` | Retention cap for in-memory storage. Default 10000. |
+| `PAYSIM_MAX_PAYMENTS` | Retention cap for `PAYSIM_STORE=memory`. Default 10000. Beyond it, the oldest payments by creation date stop being retained — creation never fails, they simply become unreadable. No effect in SQLite mode, where retention is bounded by the disk. |
 | `PAYSIM_LOG_LEVEL` | Log level (`debug`, `info`, `warn`, `error`). Default `info`. |
 | `PAYSIM_STORE` | Storage backend: `memory` (default, stateless) or `sqlite`. |
 | `PAYSIM_SQLITE_PATH` | Path to the SQLite file when `PAYSIM_STORE=sqlite`. Default `/data/paysim.db`. Requires a writable volume. |

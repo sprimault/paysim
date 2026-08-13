@@ -25,7 +25,7 @@ import (
 // distincte du contrat.
 func newMemStore() payzen.Store {
 	return payzen.NewRepoStore(
-		inmem.NewPaymentsRepository(),
+		inmem.NewPaymentsRepository(0, nil),
 		inmem.NewSubscriptionsRepository(),
 		inmem.NewPaymentMethodsRepository(),
 	)

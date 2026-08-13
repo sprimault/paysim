@@ -84,7 +84,7 @@ func newParityEnv(t *testing.T, backend string) *parityEnv {
 		// et le même wrapper. Reproduire le câblage réel est le point du
 		// test — le monter autrement reviendrait à vérifier une
 		// configuration que personne n'exécute.
-		paymentRepo = inmem.NewPaymentsRepository()
+		paymentRepo = inmem.NewPaymentsRepository(0, nil)
 		subsRepo = inmem.NewSubscriptionsRepository()
 		methodsRepo = inmem.NewPaymentMethodsRepository()
 		payzenStore = payzen.NewRepoStore(paymentRepo, subsRepo, methodsRepo)
