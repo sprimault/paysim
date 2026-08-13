@@ -110,7 +110,7 @@ would plug into has not been carved out: `internal/api`, `cmd/paysim` and
 `internal/scenarios` still depend on the `payzen` package directly. There
 is no `Provider` interface to implement today.
 
-Extracting that seam is the work of the Stripe phase, driven by the
+Extracting that seam is the work of the second-provider phase, driven by the
 maintainer precisely because it is the moment the abstraction gets
 designed rather than guessed. This page will describe the recipe once the
 recipe exists. Until then, open an issue rather than starting an adapter

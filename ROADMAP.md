@@ -288,14 +288,44 @@ avoir à deviner quoi que ce soit.
 
 ---
 
-## Phase 5 — Deuxième fournisseur : Stripe
+## Fonctionnalité — la famille Lyra
 
-Sert autant à élargir l'audience qu'à valider que l'abstraction tient. Si l'ajout de Stripe
-oblige à modifier `internal/domain`, c'est que la phase 1 a mal découpé — on corrige là, pas
-ici.
+Hors phase, livrable seul, sans rien attendre.
 
-**Fini quand** : `stripe-php` fonctionne sans modification contre Paysim, et que
-`internal/domain` n'a pas bougé.
+Systempay (Banque Populaire, Caisse d'Épargne), Sogecommerce (Société Générale), Scellius
+(La Banque Postale) et Lyra Collect partagent le moteur REST V4 de PayZen : même signature,
+mêmes formes de webhook. Ce sont des marques, des endpoints et des dérivations de clés
+différents.
+
+N'élargit pas l'abstraction — un frère Lyra passe par l'adaptateur existant et ne dira rien
+sur la capacité du domaine à vivre sans vocabulaire PayZen. Met en revanche sous pression la
+**surface de configuration** : un fournisseur doit porter plusieurs jeux d'identifiants
+nommés, pas un seul. Monetico, avec ses deux TPE, tombera sur la même contrainte — la
+concevoir ici évite de la refaire là-bas.
+
+**Fini quand** : ajouter Systempay n'a coûté qu'une entrée de configuration. S'il a fallu
+autre chose, c'est l'adaptateur PayZen qui a un problème.
+
+---
+
+## Phase 5 — Horloge contrôlable
+
+Le temps réel est appelé en direct 26 fois, dans huit paquets — dont `internal/domain`, qui
+en devient non déterministe, et `internal/delivery`, où vit la temporisation exponentielle
+des réessais. Une interface `Clock` existe déjà, mais dans `internal/providers/payzen` : le
+domaine, qui n'importe jamais un fournisseur, ne peut pas s'en servir. La couture est
+construite du côté qui n'en a pas besoin.
+
+Sans horloge contrôlable, aucun scénario ne peut rien affirmer sur un réessai sans dormir.
+
+Aucune dépendance extérieure — c'est ce qui la place devant les fournisseurs.
+
+- Sortir `Clock` des adaptateurs vers un paquet neutre.
+- Supprimer les appels directs à `time.Now()` hors du point d'injection.
+- Exposer l'avance du temps dans l'API de contrôle et dans les scénarios.
+
+**Fini quand** : un scénario vérifie la deuxième tentative d'un webhook sans attendre son
+délai, et la suite de tests ne dort nulle part.
 
 ---
 
@@ -308,9 +338,61 @@ la mise à disposition, mais le fait qu'on la trouve, qu'on l'intègre et qu'on 
 - [ ] Documentation par fournisseur, avec la version d'API visée.
 - [x] `CONTRIBUTING.md` publiant les invariants, la mise en route et ce qu'on attend d'une
   pull request — sans eux, un correctif propre se fait refuser sur une règle invisible.
-- [ ] La recette d'ajout d'un fournisseur, à écrire quand la phase 5 aura extrait la
+- [ ] La recette d'ajout d'un fournisseur, à écrire quand la phase 7 aura extrait la
   couture : aujourd'hui `internal/api` dépend directement du paquet `payzen`.
 - [ ] Annonce ciblée : communautés PHP/Symfony francophones d'abord, puis plus large.
+
+---
+
+## Phase 7 — Deuxième fournisseur : Stripe
+
+Valide que l'abstraction tient. Si l'ajout oblige à modifier `internal/domain`, c'est que la
+phase 1 a mal découpé — on corrige là, pas ici.
+
+Placée avant Monetico pour une raison pratique : sa documentation est publique et complète,
+donc l'adaptateur peut être écrit aux standards du projet sans attendre l'accès de
+quiconque.
+
+**La lacune est entière malgré l'outillage de l'éditeur.** `stripe-mock` est sans état : il
+valide la forme des requêtes, ignore totalement leur contenu, et renvoie un succès là où on
+attendait l'erreur voulue — Stripe le documente et recommande de tester contre le testmode.
+La CLI rejoue des événements préfabriqués, mais rien ne fait courir le webhook contre la
+réponse HTTP, ne le duplique ni ne le désordonne.
+
+**Axe de protocole complémentaire** de PayZen : corps JSON au lieu de `form-urlencoded`,
+signature dans un en-tête horodaté au lieu d'un champ du corps, clé d'idempotence. C'est
+`internal/delivery` qui est mis à l'épreuve, lui qui ne sait construire qu'une seule forme
+de corps.
+
+La fenêtre de tolérance de la signature devient un cas de chaos testable grâce à la phase 5.
+
+**Fini quand** : `stripe-php` fonctionne sans modification contre Paysim, et que
+`internal/domain` n'a pas bougé.
+
+---
+
+## Phase 8 — Troisième fournisseur : Monetico
+
+Le meilleur ratio douleur/effort du marché français. L'environnement de test est adossé à un
+TPE configuré sur le compte : rien hors ligne, rien en CI. Et la documentation prévoit qu'on
+signale par courriel les erreurs rencontrées sur l'URL de confirmation, avec un lien pour
+rejouer la requête — le débogage de l'asynchrone y est artisanal. C'est le trou que Paysim
+comble.
+
+Deuxième axe de protocole : formulaire à sceau et redirection, comme Sips.
+
+**Condition d'entrée, bloquante.** L'accès à une spécification faisant autorité passe par le
+canal client — jeux de test, codes retour, cas limites du sceau. Or l'invariant du projet
+interdit de fabriquer un vecteur de signature : sans captures réelles, l'adaptateur ne peut
+pas être écrit aux standards du projet — pas « moins bien », pas du tout. La phase commence
+par lever cet accès, et ne commence pas s'il ne l'est pas.
+
+**Deux contrats.** Monetico distingue le TPE des commandes de celui des abonnements. La
+surface de configuration doit donc porter plusieurs jeux d'identifiants par fournisseur —
+contrainte déjà rencontrée par la famille Lyra, et c'est là qu'elle doit avoir été conçue.
+
+**Fini quand** : une intégration Monetico réelle passe sans modification, et que
+`internal/domain` n'a pas bougé.
 
 ---
 
@@ -318,7 +400,10 @@ la mise à disposition, mais le fait qu'on la trouve, qu'on l'intègre et qu'on 
 
 Idées valides mais hors périmètre. On les note ici plutôt que de les commencer.
 
-- Fournisseurs supplémentaires : Ogone/Worldline, Mollie, Adyen.
+- Fournisseurs supplémentaires : Sips/Worldline (Mercanet, Sogenactif), Mollie, Adyen.
+- SEPA et R-transactions — la plus grosse lacune du marché : cycle de vie du mandat, rejets
+  et retours qui tombent à J+3/J+5. Hors périmètre pour le moment. À reprendre en sachant
+  que ça élargit délibérément le domaine, et que ça suppose l'horloge de la phase 5.
 - Fusion avec Mailsio dans un conteneur unique de services de développement.
 - Faux S3, capteur de webhooks génériques.
 - Chart Helm, si les manifestes bruts deviennent pénibles à maintenir.

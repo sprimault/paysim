@@ -118,7 +118,7 @@ laquelle un deuxième s'insérerait n'est pas taillée : `internal/api`,
 paquet `payzen`. Il n'existe aujourd'hui aucune interface `Provider` à
 implémenter.
 
-Extraire cette couture est le travail de la phase Stripe, mené par le
+Extraire cette couture est le travail de la phase du deuxième fournisseur, mené par le
 mainteneur précisément parce que c'est le moment où l'abstraction se
 conçoit au lieu de se deviner. Cette page décrira la recette quand la
 recette existera. D'ici là, ouvrir une issue plutôt que de commencer un

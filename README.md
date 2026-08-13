@@ -273,7 +273,12 @@ stability between two merges.
 
 ## Status
 
-Preview release, tag `v0.6.6`. Stripe support is planned.
+Preview release, tag `v0.6.6`. A controllable clock comes next, then
+Stripe and Monetico — see [`ROADMAP.md`](ROADMAP.md). Stripe is on the
+list on its own merits: `stripe-mock` is stateless, validates request
+shape and ignores its content, and their CLI replays canned events —
+none of it races a webhook against the HTTP response, duplicates it, or
+delivers it out of order.
 
 **How it is validated.** Every pull request runs the linter, the unit tests
 with the race detector, a dependency audit, a drift check on the TypeScript
