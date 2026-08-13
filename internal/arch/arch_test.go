@@ -29,6 +29,18 @@ func TestDomainDoesNotImportProviders(t *testing.T) {
 	assertNoImportMatch(t, "../domain", "internal/providers")
 }
 
+// TestClockEstUneFeuille garde internal/clock à l'écart du reste de
+// internal/, comme internal/format.
+//
+// Le domaine en dépend, et le domaine ne dépend de presque rien : si
+// l'horloge se met à importer le stockage ou un fournisseur, elle
+// devient un chemin détourné pour faire entrer ce vocabulaire dans le
+// domaine, ce que le test précédent interdit par la porte d'entrée.
+func TestClockEstUneFeuille(t *testing.T) {
+	t.Parallel()
+	assertNoImportMatch(t, "../clock", "paysim/internal/")
+}
+
 // assertNoImportMatch parcourt tous les fichiers Go du dossier donné et
 // vérifie qu'aucun import ne contient la sous-chaîne interdite. On travaille
 // par sous-chaîne plutôt que par comparaison exacte pour attraper les

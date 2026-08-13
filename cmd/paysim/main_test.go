@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/providers/payzen"
 	"github.com/sprimault/paysim/internal/store/inmem"
@@ -25,6 +26,7 @@ import (
 // distincte du contrat.
 func newMemStore() payzen.Store {
 	return payzen.NewRepoStore(
+		clock.System{},
 		inmem.NewPaymentsRepository(0, nil),
 		inmem.NewSubscriptionsRepository(),
 		inmem.NewPaymentMethodsRepository(),
@@ -49,7 +51,7 @@ func buildTestServer(t *testing.T, basePath string) (*httptest.Server, *atomic.B
 		_ = queue.Run(ctx)
 	}()
 
-	handler := payzen.NewHandler(store, queue, logger, payzen.HandlerConfig{})
+	handler := payzen.NewHandler(store, queue, logger, clock.System{}, payzen.HandlerConfig{})
 	var ready atomic.Bool
 	ready.Store(true)
 

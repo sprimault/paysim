@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sprimault/paysim/internal/chaos"
+	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/domain"
 	"github.com/sprimault/paysim/internal/format"
 )
@@ -19,7 +20,7 @@ import (
 // makeTx construit une transaction en etat initiated pour les tests.
 func makeTx(t *testing.T, amount format.Amount) *Transaction {
 	t.Helper()
-	p, err := domain.New("uuid-test", amount, "EUR")
+	p, err := domain.New(clock.System{}, "uuid-test", amount, "EUR")
 	if err != nil {
 		t.Fatalf("domain.New : %v", err)
 	}

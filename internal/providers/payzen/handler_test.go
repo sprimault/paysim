@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/sprimault/paysim/internal/chaos"
+	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/domain"
 	"github.com/sprimault/paysim/internal/format"
@@ -49,7 +50,7 @@ func newTestServerFull(t *testing.T, cfg HandlerConfig) (*httptest.Server, Store
 		_ = queue.Run(ctx)
 	}()
 
-	server := httptest.NewServer(NewHandler(store, queue, logger, cfg).Routes())
+	server := httptest.NewServer(NewHandler(store, queue, logger, clock.System{}, cfg).Routes())
 	t.Cleanup(func() {
 		server.Close()
 		cancel()
@@ -1340,7 +1341,7 @@ func TestReplayFallbackDefaultCallbackURL(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), clock.System{}, cfg)
 	// Aucune NotificationURL : tout repose sur le repli.
 	if _, err := h.Create(CreateInput{
 		Amount: 4990, Currency: "EUR", OrderID: "CHARGE-1",
@@ -1373,7 +1374,7 @@ func TestTriggerBillingNotifie(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), clock.System{}, cfg)
 	sub, err := h.CreateSubscription(CreateSubscriptionInput{
 		PaymentMethodToken: "tok-sub", Amount: 1990, Currency: "EUR", OrderID: "SUB-1",
 	})
@@ -1399,7 +1400,7 @@ func TestAutoplayJoueLePaiementEtNotifie(t *testing.T) {
 	merchant, hits := newMerchantServer(t)
 	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", DefaultCallbackURL: merchant.URL, Autoplay: true}
 	_, store, queue := newTestServerFull(t, cfg)
-	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), clock.System{}, cfg)
 
 	tx, err := h.Create(CreateInput{Amount: 4990, Currency: "EUR", OrderID: "AUTO-1"})
 	if err != nil {
@@ -1422,7 +1423,7 @@ func TestAutoplayDesactiveParDefaut(t *testing.T) {
 	merchant, _ := newMerchantServer(t)
 	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", DefaultCallbackURL: merchant.URL}
 	_, store, queue := newTestServerFull(t, cfg)
-	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), clock.System{}, cfg)
 
 	tx, err := h.Create(CreateInput{Amount: 4990, Currency: "EUR", OrderID: "MANUEL-1"})
 	if err != nil {
@@ -1463,7 +1464,7 @@ func TestAutoplayRespecteLesValeursMagiques(t *testing.T) {
 			merchant, _ := newMerchantServer(t)
 			cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", DefaultCallbackURL: merchant.URL, Autoplay: true}
 			_, store, queue := newTestServerFull(t, cfg)
-			h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+			h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), clock.System{}, cfg)
 
 			tx, err := h.Create(CreateInput{
 				Amount: c.amount, Currency: "EUR", OrderID: "MAGIC", Card: c.card,
@@ -1530,7 +1531,7 @@ func TestEnrolementCaptureLeClient(t *testing.T) {
 	t.Parallel()
 	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"}
 	_, store, queue := newTestServerFull(t, cfg)
-	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), clock.System{}, cfg)
 
 	tx, err := h.Create(CreateInput{
 		Amount: 0, Currency: "EUR", OrderID: "ENROL", FormAction: "REGISTER",
@@ -1565,7 +1566,7 @@ func TestRejeuIgnoreLeClientDeLaRequete(t *testing.T) {
 	t.Parallel()
 	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"}
 	_, store, queue := newTestServerFull(t, cfg)
-	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), clock.System{}, cfg)
 
 	enrol, err := h.Create(CreateInput{
 		Amount: 0, Currency: "EUR", OrderID: "ENROL", FormAction: "REGISTER",
@@ -1630,7 +1631,7 @@ func TestRejeuSurAliasSansClientGardeLaRequete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), clock.System{}, cfg)
 	tx, err := h.Create(CreateInput{
 		Amount: 1000, Currency: "EUR", OrderID: "REPLAY-OLD",
 		PaymentMethodToken: "tok-ancien",
@@ -1712,7 +1713,7 @@ func TestMotifDeRefusDansLeKrAnswer(t *testing.T) {
 	t.Parallel()
 	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"}
 	_, store, queue := newTestServerFull(t, cfg)
-	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), clock.System{}, cfg)
 
 	// Seule la provision insuffisante s'enrôle : une carte à découvert
 	// passe la vérification, qui n'engage aucun montant, et ne refuse
@@ -1770,7 +1771,7 @@ func TestVerificationRefuseeSelonLeMotif(t *testing.T) {
 	t.Parallel()
 	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"}
 	_, store, queue := newTestServerFull(t, cfg)
-	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), clock.System{}, cfg)
 
 	cases := []struct {
 		nom       string
@@ -1857,7 +1858,7 @@ func TestSuccesSansMotifDeRefus(t *testing.T) {
 
 func newDeclinedPayment(t *testing.T, amount format.Amount) *domain.Payment {
 	t.Helper()
-	p, err := domain.New("u", amount, "EUR")
+	p, err := domain.New(clock.System{}, "u", amount, "EUR")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1869,7 +1870,7 @@ func newDeclinedPayment(t *testing.T, amount format.Amount) *domain.Payment {
 
 func newCapturedPayment(t *testing.T) *domain.Payment {
 	t.Helper()
-	p, err := domain.New("u", 1000, "EUR")
+	p, err := domain.New(clock.System{}, "u", 1000, "EUR")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2116,7 +2117,7 @@ func TestVerificationCarteExpireeRefuseToujours(t *testing.T) {
 	t.Parallel()
 	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"}
 	_, store, queue := newTestServerFull(t, cfg)
-	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), clock.System{}, cfg)
 
 	tx, err := h.Create(CreateInput{
 		Amount: 0, Currency: "EUR", OrderID: "EXPIREE", FormAction: "REGISTER",
@@ -2148,7 +2149,7 @@ func TestAutoplayNeCapturePasUneVerification(t *testing.T) {
 		DefaultCallbackURL: merchant.URL, Autoplay: true,
 	}
 	_, store, queue := newTestServerFull(t, cfg)
-	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), clock.System{}, cfg)
 
 	tx, err := h.Create(CreateInput{
 		Amount: 0, Currency: "EUR", OrderID: "VERIF-AUTO", FormAction: "REGISTER",
@@ -2192,7 +2193,7 @@ func TestVerificationRefuseeDecritLaCartePresentee(t *testing.T) {
 		DefaultCallbackURL: merchant.URL, Autoplay: true,
 	}
 	_, store, queue := newTestServerFull(t, cfg)
-	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), clock.System{}, cfg)
 
 	// Carte en opposition : la vérification refuse, aucun alias.
 	tx, err := h.Create(CreateInput{

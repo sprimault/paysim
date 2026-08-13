@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/domain"
 	"github.com/sprimault/paysim/internal/store/inmem"
 )
@@ -20,6 +21,7 @@ import (
 // plus est precisement ce qui a laisse passer le defaut de la v0.6.1.
 func newMemStore() Store {
 	return NewRepoStore(
+		clock.System{},
 		inmem.NewPaymentsRepository(0, nil),
 		inmem.NewSubscriptionsRepository(),
 		inmem.NewPaymentMethodsRepository(),
@@ -35,9 +37,9 @@ func newMemStore() Store {
 // divergeaient donc sur ce point sans que rien ne le signale.
 func tx(t *testing.T, formToken, uuid, orderID string) *Transaction {
 	t.Helper()
-	p, err := domain.New(uuid, 1500, "EUR")
+	p, err := domain.New(clock.System{}, uuid, 1500, "EUR")
 	if err != nil {
-		t.Fatalf("domain.New(%q) : %v", uuid, err)
+		t.Fatalf("domain.New(clock.System{}, %q) : %v", uuid, err)
 	}
 	return &Transaction{
 		FormToken: formToken,
@@ -153,7 +155,7 @@ func TestStoreConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < per; i++ {
 				token := "tok-" + string(rune('a'+w)) + "-" + string(rune('0'+i%10))
-				p, err := domain.New(token+"-u", 1500, "EUR")
+				p, err := domain.New(clock.System{}, token+"-u", 1500, "EUR")
 				if err != nil {
 					continue
 				}
