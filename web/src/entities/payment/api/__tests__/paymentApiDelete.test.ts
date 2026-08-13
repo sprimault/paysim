@@ -28,7 +28,7 @@ describe('paymentApi delete', () => {
 
   it('purgePayments sans provider DELETE /paysim/api/v1/payments', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify({ deleted: 3 }), { status: 200 }),
+      new Response(JSON.stringify({ deleted: 3 }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     const out = await purgePayments();
     expect(out.deleted).toBe(3);
@@ -38,7 +38,7 @@ describe('paymentApi delete', () => {
 
   it('purgePayments avec provider passe ?provider=X', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify({ deleted: 2 }), { status: 200 }),
+      new Response(JSON.stringify({ deleted: 2 }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     await purgePayments('payzen');
     const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];

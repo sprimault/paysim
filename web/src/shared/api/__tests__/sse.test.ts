@@ -46,7 +46,7 @@ describe('subscribeSSE', () => {
 
   it('ouvre EventSource sur l\'URL préfixée par le base path', () => {
     window.__PAYSIM_BASE_PATH__ = '/paysim';
-    subscribeSSE('/paysim/api/v1/events/stream', { onEvent: () => undefined });
+    subscribeSSE('/events/stream', { onEvent: () => undefined });
     expect(instances).toHaveLength(1);
     expect(instances[0].url).toBe('/paysim/paysim/api/v1/events/stream');
   });

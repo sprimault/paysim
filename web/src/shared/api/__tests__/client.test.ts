@@ -19,9 +19,9 @@ describe('client', () => {
 
   it('apiGetJson parse et retourne le JSON', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify({ a: 1 }), { status: 200 }),
+      new Response(JSON.stringify({ a: 1 }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
-    const out = await apiGetJson<{ a: number }>('/paysim/api/v1/x');
+    const out = await apiGetJson<{ a: number }>('/x');
     expect(out).toEqual({ a: 1 });
     expect(globalThis.fetch).toHaveBeenCalledWith('/paysim/api/v1/x', { signal: undefined });
   });
@@ -29,9 +29,9 @@ describe('client', () => {
   it('apiGetJson préfixe par le base path quand fourni', async () => {
     window.__PAYSIM_BASE_PATH__ = '/paysim-ext';
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response('null', { status: 200 }),
+      new Response('null', { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
-    await apiGetJson('/paysim/api/v1/x');
+    await apiGetJson('/x');
     expect(globalThis.fetch).toHaveBeenCalledWith('/paysim-ext/paysim/api/v1/x', {
       signal: undefined,
     });
@@ -55,12 +55,12 @@ describe('client', () => {
 
   it('apiPostJson envoie le body JSON avec Content-Type', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify({ ok: true }), { status: 202 }),
+      new Response(JSON.stringify({ ok: true }), { status: 202, headers: { 'Content-Type': 'application/json' } }),
     );
     const out = await apiPostJson<{ x: number }, { ok: boolean }>('/x', { x: 1 });
     expect(out).toEqual({ ok: true });
     const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(call[0]).toBe('/x');
+    expect(call[0]).toBe('/paysim/api/v1/x');
     expect(call[1].method).toBe('POST');
     expect(call[1].headers).toEqual({ 'Content-Type': 'application/json' });
     expect(call[1].body).toBe('{"x":1}');

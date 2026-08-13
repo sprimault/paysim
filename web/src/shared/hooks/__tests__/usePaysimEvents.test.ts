@@ -74,7 +74,7 @@ describe('usePaysimEvents', () => {
           updatedAt: 't',
           events: [{ at: 't', kind: 'created' }],
         }),
-        { status: 200 },
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
     );
     renderHook(() => usePaysimEvents());
@@ -108,7 +108,7 @@ describe('usePaysimEvents', () => {
             completedAt: 't',
           },
         ]),
-        { status: 200 },
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
       ),
     );
     renderHook(() => usePaysimEvents());
@@ -152,7 +152,7 @@ describe('usePaysimEvents', () => {
     expect(usePaymentStore.getState().listLoaded).toBe(true);
 
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-      new Response('[]', { status: 200 }),
+      new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     renderHook(() => usePaysimEvents());
 
@@ -179,7 +179,7 @@ describe('usePaysimEvents', () => {
   it('relit les collections sur un event reset', async () => {
     usePaymentStore.getState().setList([]);
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-      new Response('[]', { status: 200 }),
+      new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     renderHook(() => usePaysimEvents());
 
@@ -206,7 +206,7 @@ describe('usePaysimEvents', () => {
   // un écran que personne ne regarde.
   it('ne relit pas les collections jamais chargées', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
-      new Response('[]', { status: 200 }),
+      new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     renderHook(() => usePaysimEvents());
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { apiUrl } from './basePath';
+import { translate } from '@/shared/i18n/useT';
 
 /**
  * Client HTTP minimaliste pour l'API Paysim. Toutes les URL passent
@@ -45,13 +46,38 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
 }
 
 /**
+ * exigerJson refuse une réponse qui n'est pas du JSON.
+ *
+ * Un chemin mal formé n'échoue pas côté serveur : la SPA répond 200
+ * avec son index.html sur tout ce qu'elle ne connaît pas. Sans ce
+ * contrôle, l'appel « réussit » et ne casse qu'au décodage, avec un
+ * message qui ne dit rien de la cause — ou pire, il ne casse pas du
+ * tout. Vu en vrai : trois routes d'horloge appelées sans leur préfixe
+ * d'API, un bouton sans effet et aucune erreur.
+ */
+function exigerJson(resp: Response, path: string): void {
+  const type = resp.headers.get('Content-Type') ?? '';
+  if (type.includes('json')) return;
+  throw new ApiError(
+    resp.status,
+    type,
+    translate('api.notJson', { path, type: type || translate('api.noContentType') }),
+  );
+}
+
+async function lireJson<T>(resp: Response, path: string): Promise<T> {
+  exigerJson(resp, path);
+  return (await resp.json()) as T;
+}
+
+/**
  * apiGetJson exécute un GET et parse la réponse en JSON typé. La
  * cancellation via `signal` est propagée jusqu'à fetch — utile depuis
  * useEffect pour annuler quand le composant démonte.
  */
 export async function apiGetJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const resp = await apiFetch(path, { signal });
-  return (await resp.json()) as T;
+  return lireJson<T>(resp, path);
 }
 
 /**
@@ -78,6 +104,7 @@ export async function apiPostJson<TReq, TRes>(
   if (text.length === 0) {
     return undefined as TRes;
   }
+  exigerJson(resp, path);
   return JSON.parse(text) as TRes;
 }
 
@@ -95,5 +122,6 @@ export async function apiDelete<TRes>(path: string, signal?: AbortSignal): Promi
   if (text.length === 0) {
     return undefined as TRes;
   }
+  exigerJson(resp, path);
   return JSON.parse(text) as TRes;
 }

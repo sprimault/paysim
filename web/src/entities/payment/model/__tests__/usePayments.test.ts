@@ -37,7 +37,7 @@ describe('usePayments', () => {
 
   it('usePaymentsList déclenche fetch au mount si store vide', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify([summary]), { status: 200 }),
+      new Response(JSON.stringify([summary]), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     const { result } = renderHook(() => usePaymentsList());
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -51,7 +51,7 @@ describe('usePayments', () => {
     // a déjà des données (pas de skeleton pendant la mise à jour).
     usePaymentStore.getState().setList([summary]);
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify([summary]), { status: 200 }),
+      new Response(JSON.stringify([summary]), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     const { result } = renderHook(() => usePaymentsList());
     expect(result.current.loading).toBe(false);
@@ -61,7 +61,7 @@ describe('usePayments', () => {
   it('usePayment fetch le détail si events absent', async () => {
     usePaymentStore.getState().upsert(summary);
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify(detail), { status: 200 }),
+      new Response(JSON.stringify(detail), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     const { result } = renderHook(() => usePayment('p1'));
     await waitFor(() => expect(result.current.payment?.events).toHaveLength(1));
@@ -71,7 +71,7 @@ describe('usePayments', () => {
   it('usePayment ne fetch pas si events déjà chargé', () => {
     usePaymentStore.getState().setDetail(detail);
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response('null', { status: 200 }),
+      new Response('null', { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     renderHook(() => usePayment('p1'));
     expect(globalThis.fetch).not.toHaveBeenCalled();

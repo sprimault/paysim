@@ -4,7 +4,7 @@
 import { apiGetJson, apiPostJson } from '@/shared/api/client';
 import type { ReplayWebhookResponse, WebhookDetail, WebhookEntry } from '@/shared/model';
 
-const BASE = '/paysim/api/v1/webhooks';
+const BASE = '/webhooks';
 
 export function fetchWebhooks(signal?: AbortSignal): Promise<WebhookEntry[]> {
   return apiGetJson<WebhookEntry[]>(BASE, signal);

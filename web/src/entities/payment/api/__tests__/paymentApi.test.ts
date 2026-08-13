@@ -18,7 +18,7 @@ describe('paymentApi', () => {
 
   it('fetchPayments GET /paysim/api/v1/payments', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify([{ uuid: 'a', orderId: 'o', amount: 1, currency: 'EUR', state: 'captured', createdAt: 't', updatedAt: 't' }]), { status: 200 }),
+      new Response(JSON.stringify([{ uuid: 'a', orderId: 'o', amount: 1, currency: 'EUR', state: 'captured', createdAt: 't', updatedAt: 't' }]), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     const out = await fetchPayments();
     expect(out).toHaveLength(1);
@@ -28,7 +28,7 @@ describe('paymentApi', () => {
 
   it('fetchPayment encode l\'uuid dans le chemin', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify({ uuid: 'a/b', orderId: 'o', amount: 1, currency: 'EUR', state: 'captured', createdAt: 't', updatedAt: 't', events: [] }), { status: 200 }),
+      new Response(JSON.stringify({ uuid: 'a/b', orderId: 'o', amount: 1, currency: 'EUR', state: 'captured', createdAt: 't', updatedAt: 't', events: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
     await fetchPayment('a/b');
     const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -37,7 +37,7 @@ describe('paymentApi', () => {
 
   it('simulatePayment POST avec body JSON', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      new Response(JSON.stringify({ deliveryId: 'd', krHash: 'k', channel: 'browserReturn' }), { status: 202 }),
+      new Response(JSON.stringify({ deliveryId: 'd', krHash: 'k', channel: 'browserReturn' }), { status: 202, headers: { 'Content-Type': 'application/json' } }),
     );
     const out = await simulatePayment('u1', { outcome: 'PAID' });
     expect(out.deliveryId).toBe('d');
