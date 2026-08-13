@@ -159,8 +159,21 @@ docker run --rm -p 30880:8080 -e PAYSIM_PUBLIC_URL=http://localhost:30880 -e PAY
 Puis ouvrir http://localhost:30880/.
 
 Pour la démo complète avec UI peuplée (abonnements, moyens de
-paiement), utiliser le démarrage rapide Docker Compose ci-dessus —
-il active SQLite et lance le script de seed.
+paiement), utiliser le démarrage rapide Docker Compose ci-dessus : il
+active SQLite. Le seed est une commande à part — le compose ne le lance
+pas — et suppose le clone, le script vivant dans le dépôt :
+
+**Linux / macOS / Git Bash :**
+
+```bash
+bash examples/seed-paysim.sh
+```
+
+**Windows PowerShell :**
+
+```powershell
+.\examples\seed-paysim.ps1
+```
 
 ## Installation complète
 
