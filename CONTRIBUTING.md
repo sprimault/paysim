@@ -123,3 +123,8 @@ false without signalling it — a webhook describing a card that was never
 presented, a state the documentation promises and the binary does not
 produce. Say what you did, what you expected from the real PSP, and what
 Paysim answered.
+
+Security flaws are the exception: they go through the private channel
+described in [`SECURITY.md`](SECURITY.md), never through a public issue.
+That page also states what counts as one — Paysim is permissive by
+design, and most of that permissiveness is deliberate.

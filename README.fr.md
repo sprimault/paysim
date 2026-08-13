@@ -309,6 +309,9 @@ Pour envoyer un correctif, [`CONTRIBUTING.fr.md`](CONTRIBUTING.fr.md)
 devinent pas à la lecture du code, et aucune ne se négocie dans une pull
 request.
 
+Les failles de sécurité passent par le canal privé décrit dans
+[`SECURITY.fr.md`](SECURITY.fr.md), jamais par une issue publique.
+
 ## Licence
 
 Apache 2.0 — voir [`LICENSE`](LICENSE).

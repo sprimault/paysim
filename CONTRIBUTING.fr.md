@@ -131,3 +131,8 @@ quelque chose de faux sans le signaler — un webhook décrivant une carte
 qui n'a jamais été présentée, un état que la documentation promet et que
 le binaire ne produit pas. Dire ce que vous avez fait, ce que vous
 attendiez du vrai PSP, et ce que Paysim a répondu.
+
+Les failles de sécurité font exception : elles passent par le canal privé
+décrit dans [`SECURITY.fr.md`](SECURITY.fr.md), jamais par une issue
+publique. Cette page dit aussi ce qui en est une — Paysim est permissif
+par conception, et l'essentiel de cette permissivité est délibéré.
