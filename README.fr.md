@@ -293,12 +293,13 @@ d'une interface entre deux fusions.
 
 ## Statut
 
-Préversion, tag `v0.6.6`. Une horloge contrôlable vient ensuite, puis
-Stripe et Monetico — voir [`ROADMAP.md`](ROADMAP.md). Stripe y figure
-pour ce qu'il manque : `stripe-mock` est sans état, valide la forme des
-requêtes et en ignore le contenu, et leur CLI rejoue des événements
-préfabriqués — rien de tout cela ne fait courir un webhook contre la
-réponse HTTP, ne le duplique, ni ne le livre dans le désordre.
+Préversion — le badge en tête porte l'étiquette courante. Une horloge
+contrôlable vient ensuite, puis Stripe et Monetico — voir
+[`ROADMAP.md`](ROADMAP.md). Stripe y figure pour ce qu'il manque :
+`stripe-mock` est sans état, valide la forme des requêtes et en ignore
+le contenu, et leur CLI rejoue des événements préfabriqués — rien de
+tout cela ne fait courir un webhook contre la réponse HTTP, ne le
+duplique, ni ne le livre dans le désordre.
 
 **Comment c'est validé.** Chaque pull request exécute le linter, les tests
 unitaires avec le détecteur de concurrence, un audit des dépendances, un
