@@ -215,7 +215,7 @@ A minimal scenario file looks like:
   state: captured
 ```
 
-11 actions supported. See [`docs/scenarios.md`](docs/scenarios.md).
+12 actions supported. See [`docs/scenarios.md`](docs/scenarios.md).
 
 ## PHP integration example
 
