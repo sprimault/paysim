@@ -340,3 +340,72 @@ func TestIsTerminal(t *testing.T) {
 		}
 	}
 }
+
+// TestJournal_suitLHorlogeInjectee prouve que l'injection produit un
+// effet, pas seulement qu'elle compile. Une avance de l'horloge doit se
+// retrouver dans l'horodatage du prochain événement et dans UpdatedAt.
+//
+// C'est ce que la phase 5 vend : faire vieillir une instance sans
+// attendre. Sans ce test, un repli silencieux sur l'heure réelle
+// passerait inaperçu — le journal resterait plausible, simplement faux.
+func TestJournal_suitLHorlogeInjectee(t *testing.T) {
+	t.Parallel()
+	clk := clock.NewControllable()
+	p, err := New(clk, "pay-horloge", 10000, "EUR")
+	if err != nil {
+		t.Fatalf("création : %v", err)
+	}
+	creation := p.CreatedAt()
+
+	clk.Advance(96 * time.Hour)
+	if err := p.Authorize(); err != nil {
+		t.Fatalf("Authorize : %v", err)
+	}
+
+	saut := p.UpdatedAt().Sub(creation)
+	if saut < 96*time.Hour || saut > 96*time.Hour+time.Minute {
+		t.Errorf("UpdatedAt a saute de %v, veut ~96h", saut)
+	}
+	events := p.Events()
+	dernier := events[len(events)-1]
+	if !dernier.At.Equal(p.UpdatedAt()) {
+		t.Errorf("dernier evenement a %v, UpdatedAt a %v : les deux doivent partager l'horodatage",
+			dernier.At, p.UpdatedAt())
+	}
+}
+
+// TestJournal_chronologie fixe ce que le journal garantit réellement.
+//
+// Pas la stricte croissance : trois transitions enchaînées peuvent
+// partager un horodatage, la résolution de l'horloge système étant plus
+// grossière que l'intervalle entre deux appels. Le dépôt mémoire le sait
+// déjà et départage par UUID. Ce qui est garanti, c'est que le temps ne
+// recule jamais, et qu'une avance explicite se voit.
+func TestJournal_chronologie(t *testing.T) {
+	t.Parallel()
+	clk := clock.NewControllable()
+	p, err := New(clk, "pay-chrono", 10000, "EUR")
+	if err != nil {
+		t.Fatalf("création : %v", err)
+	}
+	if err := p.Authorize(); err != nil {
+		t.Fatalf("Authorize : %v", err)
+	}
+	avant := p.UpdatedAt()
+
+	clk.Advance(time.Hour)
+	if err := p.Capture(); err != nil {
+		t.Fatalf("Capture : %v", err)
+	}
+
+	events := p.Events()
+	for i := 1; i < len(events); i++ {
+		if events[i].At.Before(events[i-1].At) {
+			t.Errorf("evenement %d (%v) precede le precedent (%v) : le temps a recule",
+				i, events[i].At, events[i-1].At)
+		}
+	}
+	if saut := p.UpdatedAt().Sub(avant); saut < time.Hour {
+		t.Errorf("apres une avance d'une heure, l'ecart est de %v", saut)
+	}
+}
