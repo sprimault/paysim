@@ -40,7 +40,7 @@ func newTestServerFull(t *testing.T, cfg HandlerConfig) (*httptest.Server, Store
 	t.Helper()
 	store := newMemStore()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
@@ -1744,7 +1744,7 @@ func TestMotifDeRefusDansLeKrAnswer(t *testing.T) {
 	}
 
 	pm, _ := store.MethodByToken(enrol.PaymentMethodToken)
-	answer := buildKrAnswer(tx, pm, nil, BrowserReturnOpts{
+	answer := buildKrAnswer(clock.System{}, tx, pm, nil, BrowserReturnOpts{
 		Outcome:       OutcomeUnpaid,
 		DeclineReason: chaos.DeclineReasonForPAN(panProvision),
 	}, "", "TEST")
@@ -1826,6 +1826,7 @@ func TestMotifDeRefusParMontantMagique(t *testing.T) {
 	}
 	for amount, want := range cases {
 		answer := buildKrAnswer(
+			clock.System{},
 			&Transaction{
 				UUID: "u", OrderID: "O", Amount: amount, Currency: "EUR",
 				Payment: newDeclinedPayment(t, amount),
@@ -1850,7 +1851,7 @@ func TestSuccesSansMotifDeRefus(t *testing.T) {
 		UUID: "u", OrderID: "O", Amount: 1000, Currency: "EUR",
 		Payment: newCapturedPayment(t),
 	}
-	answer := buildKrAnswer(tx, nil, nil, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
+	answer := buildKrAnswer(clock.System{}, tx, nil, nil, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
 	if got := answer.Transactions[0].DetailedErrorCode; got != "" {
 		t.Errorf("detailedErrorCode = %q sur un succes, veut vide", got)
 	}
@@ -1889,7 +1890,7 @@ func TestRefusPorteLeCodePSP(t *testing.T) {
 		UUID: "u", OrderID: "O", Amount: 1001, Currency: "EUR",
 		Payment: newDeclinedPayment(t, 1001),
 	}
-	answer := buildKrAnswer(tx, nil, nil, BrowserReturnOpts{
+	answer := buildKrAnswer(clock.System{}, tx, nil, nil, BrowserReturnOpts{
 		Outcome:       OutcomeUnpaid,
 		DeclineReason: chaos.ReasonInsufficientFunds,
 	}, "", "TEST")

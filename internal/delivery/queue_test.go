@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/sprimault/paysim/internal/bus"
+	"github.com/sprimault/paysim/internal/clock"
 )
 
 // discardLogger renvoie un logger qui n'écrit rien — évite de polluer
@@ -28,7 +29,7 @@ func discardLogger() *slog.Logger {
 // HTTP à timeout court et un logger silencieux.
 func newQueue(t *testing.T, capacity int) *Queue {
 	t.Helper()
-	return New(&http.Client{Timeout: 2 * time.Second}, discardLogger(), capacity)
+	return New(&http.Client{Timeout: 2 * time.Second}, discardLogger(), clock.System{}, capacity)
 }
 
 // runInBackground lance q.Run dans une goroutine et retourne un cancel
@@ -212,7 +213,7 @@ func TestDeliverTimeout(t *testing.T) {
 	defer server.Close()
 
 	client := &http.Client{Timeout: 100 * time.Millisecond}
-	q := New(client, discardLogger(), 10)
+	q := New(client, discardLogger(), clock.System{}, 10)
 	cancel, wait := runInBackground(t, q)
 
 	if err := q.Enqueue(Webhook{ID: "wh", URL: server.URL, Body: []byte("{}")}); err != nil {
@@ -268,7 +269,7 @@ func TestNewCapacityMinimum(t *testing.T) {
 	t.Parallel()
 	// Capacité 0 doit être ramenée à 1 — sinon Enqueue serait toujours
 	// bloquant sans jamais démarrer, un état de blocage silencieux à éviter.
-	q := New(&http.Client{}, discardLogger(), 0)
+	q := New(&http.Client{}, discardLogger(), clock.System{}, 0)
 
 	if err := q.Enqueue(Webhook{ID: "1", URL: "http://x"}); err != nil {
 		t.Errorf("premier Enqueue devrait passer, erreur : %v", err)

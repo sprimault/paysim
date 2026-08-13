@@ -89,7 +89,7 @@ func TestBuildKrAnswerPAID(t *testing.T) {
 	_ = applyOutcome(tx, OutcomePaid, "", chaos.DeclineReason{})
 
 	opts := BrowserReturnOpts{Outcome: OutcomePaid}
-	answer := buildKrAnswer(tx, nil, nil, opts, "http://paysim", "TEST")
+	answer := buildKrAnswer(clock.System{}, tx, nil, nil, opts, "http://paysim", "TEST")
 
 	if answer.OrderStatus != "PAID" {
 		t.Errorf("OrderStatus = %q", answer.OrderStatus)
@@ -134,7 +134,7 @@ func TestBuildKrAnswerAuthorised(t *testing.T) {
 	_ = applyOutcome(tx, OutcomeAuthorised, "", chaos.DeclineReason{})
 
 	opts := BrowserReturnOpts{Outcome: OutcomeAuthorised}
-	answer := buildKrAnswer(tx, nil, nil, opts, "", "TEST")
+	answer := buildKrAnswer(clock.System{}, tx, nil, nil, opts, "", "TEST")
 
 	if answer.OrderCycle != "OPEN" {
 		t.Errorf("OrderCycle AUTHORISED = %q, veut OPEN", answer.OrderCycle)
@@ -157,7 +157,7 @@ func TestBuildKrAnswerUnpaidCarriesError(t *testing.T) {
 		ErrorCode:    "PSP_010",
 		ErrorMessage: "carte refusée",
 	}
-	answer := buildKrAnswer(tx, nil, nil, opts, "", "TEST")
+	answer := buildKrAnswer(clock.System{}, tx, nil, nil, opts, "", "TEST")
 
 	tr := answer.Transactions[0]
 	if tr.Status != "UNPAID" || tr.DetailedStatus != "REFUSED" {
@@ -177,7 +177,7 @@ func TestBuildKrAnswerWithWallet(t *testing.T) {
 		Outcome: OutcomePaid,
 		Wallet:  "APPLE_PAY",
 	}
-	answer := buildKrAnswer(tx, nil, nil, opts, "", "TEST")
+	answer := buildKrAnswer(clock.System{}, tx, nil, nil, opts, "", "TEST")
 	if answer.Transactions[0].TransactionDetails.Wallet != "APPLE_PAY" {
 		t.Errorf("Wallet = %q", answer.Transactions[0].TransactionDetails.Wallet)
 	}
@@ -189,7 +189,7 @@ func TestBuildKrAnswerNonCardsMethodOmitsCardDetails(t *testing.T) {
 	_ = applyOutcome(tx, OutcomePaid, "", chaos.DeclineReason{})
 
 	opts := BrowserReturnOpts{Outcome: OutcomePaid, PaymentMethodType: "IP_WIRE"}
-	answer := buildKrAnswer(tx, nil, nil, opts, "", "TEST")
+	answer := buildKrAnswer(clock.System{}, tx, nil, nil, opts, "", "TEST")
 
 	if answer.Transactions[0].TransactionDetails.CardDetails != nil {
 		t.Error("CardDetails devrait etre nil pour IP_WIRE")
@@ -207,7 +207,7 @@ func TestBuildDeliveryWebhookRattacheLePaiement(t *testing.T) {
 	_ = applyOutcome(tx, OutcomePaid, "", chaos.DeclineReason{})
 
 	opts := BrowserReturnOpts{Outcome: OutcomePaid}
-	answer := buildKrAnswer(tx, nil, nil, opts, "", "TEST")
+	answer := buildKrAnswer(clock.System{}, tx, nil, nil, opts, "", "TEST")
 
 	wh, _, err := buildDeliveryWebhook("delivery-1", "http://marchand", answer, "k", "sha256_hmac", "V4/Payment", false, 0)
 	if err != nil {
@@ -247,7 +247,7 @@ func TestBuildDeliveryWebhookSignsCorrectly(t *testing.T) {
 	_ = applyOutcome(tx, OutcomePaid, "", chaos.DeclineReason{})
 
 	opts := BrowserReturnOpts{Outcome: OutcomePaid}
-	answer := buildKrAnswer(tx, nil, nil, opts, "", "TEST")
+	answer := buildKrAnswer(clock.System{}, tx, nil, nil, opts, "", "TEST")
 
 	const key = "clef-de-test-hmac"
 	wh, hash, err := buildDeliveryWebhook("delivery-1", "http://marchand", answer, key, "sha256_hmac", "V4/Payment", false, 0)
@@ -321,7 +321,7 @@ func TestBuildKrAnswerCardDetailsFromPaymentMethod(t *testing.T) {
 		HolderName:  "DUPONT JEAN",
 	}, Customer{}, time.Now().UTC())
 
-	answer := buildKrAnswer(tx, pm, nil, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
+	answer := buildKrAnswer(clock.System{}, tx, pm, nil, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
 
 	cd := answer.Transactions[0].TransactionDetails.CardDetails
 	if cd == nil {
@@ -349,7 +349,7 @@ func TestBuildKrAnswerCardDetailsFallbackWithoutMethod(t *testing.T) {
 
 	// Sans moyen enregistre, la carte de demonstration reste legitime :
 	// aucune carte n'a ete saisie, il n'y a rien de reel a decrire.
-	answer := buildKrAnswer(tx, nil, nil, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
+	answer := buildKrAnswer(clock.System{}, tx, nil, nil, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
 
 	cd := answer.Transactions[0].TransactionDetails.CardDetails
 	if cd == nil {
@@ -377,7 +377,7 @@ func TestBuildKrAnswerBrandFromPaymentMethodOverridesDefault(t *testing.T) {
 		Brand:       "MASTERCARD",
 	}, Customer{}, time.Now().UTC())
 
-	answer := buildKrAnswer(tx, pm, nil, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
+	answer := buildKrAnswer(clock.System{}, tx, pm, nil, BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
 
 	if got := answer.Transactions[0].TransactionDetails.CardDetails.Brand; got != "MASTERCARD" {
 		t.Errorf("Brand = %q, veut MASTERCARD", got)
@@ -401,7 +401,7 @@ func TestCardDetailsDeriveDeLaCartePresentee(t *testing.T) {
 		HolderName: "PROBE KR", Country: "US",
 		ProductCategory: "DEBIT", IssuerName: "BANQUE DE TEST",
 	}
-	answer := buildKrAnswer(tx, nil, presentee,
+	answer := buildKrAnswer(clock.System{}, tx, nil, presentee,
 		BrowserReturnOpts{Outcome: OutcomeUnpaid}, "", "TEST")
 
 	cd := answer.Transactions[0].TransactionDetails.CardDetails
@@ -438,7 +438,7 @@ func TestCardDetailsPrefereLAliasALaCartePresentee(t *testing.T) {
 	}
 	presentee := &Card{PAN: "5105105105105100", ExpiryMonth: 6, ExpiryYear: 2030, HolderName: "PRESENTEE"}
 
-	answer := buildKrAnswer(tx, pm, presentee,
+	answer := buildKrAnswer(clock.System{}, tx, pm, presentee,
 		BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
 
 	cd := answer.Transactions[0].TransactionDetails.CardDetails
@@ -455,7 +455,7 @@ func TestCardDetailsRepliDemonstrationQuandRienNEstPresente(t *testing.T) {
 		UUID: "u", OrderID: "O", Amount: 2500, Currency: "EUR",
 		Payment: newCapturedPayment(t),
 	}
-	answer := buildKrAnswer(tx, nil, nil,
+	answer := buildKrAnswer(clock.System{}, tx, nil, nil,
 		BrowserReturnOpts{Outcome: OutcomePaid}, "", "TEST")
 
 	cd := answer.Transactions[0].TransactionDetails.CardDetails

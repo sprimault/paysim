@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sprimault/paysim/internal/bus"
+	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/store"
 )
 
@@ -67,6 +68,12 @@ type Queue struct {
 	logger *slog.Logger
 	jobs   chan Webhook
 
+	// clk horodate les livraisons. Ce sont des dates que le marchand lit
+	// dans le journal, elles suivent donc l'horloge du simulateur comme
+	// le reste — à la différence des délais et des timeouts, qui mesurent
+	// une durée et restent au temps réel.
+	clk clock.Clock
+
 	delivered atomic.Int64
 	failed    atomic.Int64
 	running   atomic.Bool
@@ -99,13 +106,14 @@ type Stats struct {
 //
 // Une capacity < 1 est ramenée à 1 — une file de zéro n'a pas de sens
 // et provoquerait un Enqueue toujours bloquant sans jamais démarrer.
-func New(client *http.Client, logger *slog.Logger, capacity int) *Queue {
+func New(client *http.Client, logger *slog.Logger, clk clock.Clock, capacity int) *Queue {
 	if capacity < 1 {
 		capacity = 1
 	}
 	return &Queue{
 		client:  client,
 		logger:  logger,
+		clk:     clk,
 		jobs:    make(chan Webhook, capacity),
 		history: NewMemoryHistory(),
 	}
@@ -129,7 +137,7 @@ func (q *Queue) SetHistory(h HistoryStore) {
 // et le laisser décider (log, retry, échec).
 func (q *Queue) Enqueue(w Webhook) error {
 	if w.CreatedAt.IsZero() {
-		w.CreatedAt = time.Now().UTC()
+		w.CreatedAt = q.clk.Now()
 	}
 	select {
 	case q.jobs <- w:
@@ -305,7 +313,7 @@ func (q *Queue) deliver(ctx context.Context, w Webhook) {
 	}
 
 	w.Attempts++
-	w.LastTryAt = time.Now().UTC()
+	w.LastTryAt = q.clk.Now()
 
 	req, err := http.NewRequest(http.MethodPost, w.URL, bytes.NewReader(w.Body))
 	if err != nil {
@@ -350,7 +358,7 @@ func (q *Queue) finish(w Webhook, status string, statusCode int, errMsg string) 
 		Status:      status,
 		StatusCode:  statusCode,
 		ErrorMsg:    errMsg,
-		CompletedAt: time.Now().UTC(),
+		CompletedAt: q.clk.Now(),
 	}
 	q.recordHistory(rec)
 

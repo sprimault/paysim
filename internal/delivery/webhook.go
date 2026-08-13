@@ -74,7 +74,7 @@ type Webhook struct {
 	Attempts int
 
 	// CreatedAt est l'instant d'entrée dans la file, UTC. Si laissé à
-	// zéro par l'appelant, Enqueue le fixe à time.Now().UTC().
+	// zéro par l'appelant, Enqueue le fixe depuis l'horloge du simulateur.
 	CreatedAt time.Time
 
 	// LastTryAt est l'instant de la dernière tentative, UTC. Vaut la

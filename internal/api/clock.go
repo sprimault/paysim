@@ -45,6 +45,20 @@ func (h *Handler) horlogeIndisponible(w http.ResponseWriter) bool {
 	return true
 }
 
+// now est l'heure du simulateur, pour tout ce que l'API horodate.
+//
+// Repli sur l'heure réelle quand l'horloge est absente : seuls les
+// tests construisent un Handler sans, et une instance de production qui
+// en manquerait le dirait déjà bruyamment — les trois routes /clock
+// répondent 500. L'absence est donc détectée ailleurs, ce repli ne la
+// masque pas.
+func (h *Handler) now() time.Time {
+	if h.clock == nil {
+		return time.Now().UTC()
+	}
+	return h.clock.Now()
+}
+
 func (h *Handler) etatHorloge() ClockState {
 	offset := h.clock.Offset()
 	return ClockState{

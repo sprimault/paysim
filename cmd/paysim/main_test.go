@@ -41,7 +41,7 @@ func buildTestServer(t *testing.T, basePath string) (*httptest.Server, *atomic.B
 	t.Helper()
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	store := newMemStore()
-	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup

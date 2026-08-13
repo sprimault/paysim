@@ -1043,7 +1043,7 @@ func (h *Handler) listPaymentMethods(w http.ResponseWriter, _ *http.Request) {
 	}
 	out := make([]PaymentMethodOutput, 0, len(recs))
 	for _, rec := range recs {
-		out = append(out, toPaymentMethodOutput(rec))
+		out = append(out, toPaymentMethodOutput(rec, h.now()))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -1054,9 +1054,9 @@ func (h *Handler) listPaymentMethods(w http.ResponseWriter, _ *http.Request) {
 // manquaient à la liste, si bien qu'un même moyen de paiement portait
 // un porteur ou pas selon la route interrogée. Un seul convertisseur
 // rend cette divergence impossible.
-func toPaymentMethodOutput(rec *store.PaymentMethodRecord) PaymentMethodOutput {
+func toPaymentMethodOutput(rec *store.PaymentMethodRecord, now time.Time) PaymentMethodOutput {
 	usable, reason := payzen.MethodUsability(
-		rec.PANFull, rec.ExpiryMonth, rec.ExpiryYear, rec.Revoked, time.Now().UTC())
+		rec.PANFull, rec.ExpiryMonth, rec.ExpiryYear, rec.Revoked, now)
 	return PaymentMethodOutput{
 		Usable:          usable,
 		UnusableReason:  reason,
@@ -1096,7 +1096,7 @@ func (h *Handler) getPaymentMethod(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "moyen de paiement inconnu", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, toPaymentMethodOutput(rec))
+	writeJSON(w, http.StatusOK, toPaymentMethodOutput(rec, h.now()))
 }
 
 // revokePaymentMethod traite POST /paysim/api/v1/payment-methods/{token}/revoke.
@@ -1248,7 +1248,7 @@ func (h *Handler) deletePayment(w http.ResponseWriter, r *http.Request) {
 	}
 	h.publisher.Publish(bus.Event{
 		Type: "payment_deleted",
-		At:   time.Now().UTC(),
+		At:   h.now(),
 		Data: map[string]any{"uuid": uuid},
 	})
 	w.WriteHeader(http.StatusNoContent)
@@ -1336,7 +1336,7 @@ func (h *Handler) reset(w http.ResponseWriter, _ *http.Request) {
 	// recharger l'ensemble, pas réagir quatre fois.
 	h.publisher.Publish(bus.Event{
 		Type: "reset",
-		At:   time.Now().UTC(),
+		At:   h.now(),
 		Data: map[string]any{
 			"payments":       out.Payments,
 			"subscriptions":  out.Subscriptions,
@@ -1374,7 +1374,7 @@ func (h *Handler) deletePayments(w http.ResponseWriter, r *http.Request) {
 	}
 	h.publisher.Publish(bus.Event{
 		Type: "payments_purged",
-		At:   time.Now().UTC(),
+		At:   h.now(),
 		Data: map[string]any{
 			"provider": provider,
 			"deleted":  deleted,
@@ -1427,11 +1427,11 @@ func (h *Handler) replayWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wh := rec.Webhook
-	wh.ID = "replay-" + racineLivraison(id) + "-" + time.Now().UTC().Format("150405.000000")
+	wh.ID = "replay-" + racineLivraison(id) + "-" + h.now().Format("150405.000000")
 	wh.Replay = true
 	wh.Attempts = 0
 	wh.Delay = 0
-	wh.CreatedAt = time.Now().UTC()
+	wh.CreatedAt = h.now()
 	wh.LastTryAt = time.Time{}
 	if err := h.queue.Enqueue(wh); err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
