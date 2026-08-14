@@ -49,8 +49,17 @@ provoke these on demand, in dev and in CI.
 
 | Provider | API | Coverage |
 |---|---|---|
-| PayZen / Lyra Collect | REST V4 | Full — see [`docs/providers/payzen.md`](docs/providers/payzen.md) |
+| PayZen | REST V4 | Full — see [`docs/providers/payzen.md`](docs/providers/payzen.md) |
+| Systempay (Banque Populaire, Caisse d'Épargne) | REST V4 | Full — same protocol |
+| Sogecommerce (Société Générale) | REST V4 | Full — same protocol |
+| Scellius (La Banque Postale) | REST V4 | Full — same protocol |
+| Lyra Collect | REST V4 | Full — same protocol |
 | Stripe | — | Later |
+
+Those five are the same gateway under five brands. Only the host differs,
+and the host is what you point at Paysim — so one adapter covers them
+all. [`docs/providers/lyra-family.md`](docs/providers/lyra-family.md)
+gives the real hosts and the caveats.
 
 ## Quick start (Docker Compose)
 

@@ -52,8 +52,18 @@ pour provoquer ces cas à la demande, en dev et en CI.
 
 | Fournisseur | API | Couverture |
 |---|---|---|
-| PayZen / Lyra Collect | REST V4 | Complète — voir [`docs/providers/payzen.fr.md`](docs/providers/payzen.fr.md) |
+| PayZen | REST V4 | Complète — voir [`docs/providers/payzen.fr.md`](docs/providers/payzen.fr.md) |
+| Systempay (Banque Populaire, Caisse d'Épargne) | REST V4 | Complète — même protocole |
+| Sogecommerce (Société Générale) | REST V4 | Complète — même protocole |
+| Scellius (La Banque Postale) | REST V4 | Complète — même protocole |
+| Lyra Collect | REST V4 | Complète — même protocole |
 | Stripe | — | Plus tard |
+
+Ces cinq-là sont la même passerelle sous cinq marques. Seul l'hôte
+diffère, et l'hôte est ce que vous faites pointer sur Paysim — un seul
+adaptateur les couvre donc toutes.
+[`docs/providers/lyra-family.fr.md`](docs/providers/lyra-family.fr.md)
+donne les hôtes réels et les pièges.
 
 ## Démarrage rapide (Docker Compose)
 
