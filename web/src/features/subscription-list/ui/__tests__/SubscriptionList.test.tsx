@@ -61,9 +61,11 @@ describe('<SubscriptionList />', () => {
     // « Actif » figure aussi sur le bouton de filtre : on vise la ligne.
     expect(within(screen.getAllByRole('row')[1]).getByText('Actif')).toBeInTheDocument();
     expect(screen.getByText('SUB-42')).toBeInTheDocument();
-    // « payzen » apparaît dans le tab et dans la colonne provider —
-    // on ne teste que la présence dans la cellule via getAllByText.
-    expect(screen.getAllByText('payzen').length).toBeGreaterThanOrEqual(2);
+    // La colonne porte la valeur technique du champ provider, l'onglet
+    // le nom commercial de la marque. Les deux doivent coexister : un
+    // intégrateur filtre sur la première et se reconnaît dans le second.
+    expect(within(screen.getAllByRole('row')[1]).getByText('payzen')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'PayZen' })).toBeInTheDocument();
   });
 
   it('affiche un abonnement annulé', () => {

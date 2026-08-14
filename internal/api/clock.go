@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/sprimault/paysim/internal/providers/payzen"
 )
 
 // ClockState décrit où en est l'horloge de l'instance.
@@ -114,4 +116,23 @@ func (h *Handler) resetClock(w http.ResponseWriter, _ *http.Request) {
 	h.clock.Reset()
 	h.logger.Info("horloge reinitialisee")
 	writeJSON(w, http.StatusOK, h.etatHorloge())
+}
+
+// parMarquesLyra concatène le résultat d'une lecture par provider sur
+// les cinq marques de l'adaptateur Lyra.
+//
+// Les dépôts filtrent par un provider unique ; l'adaptateur en possède
+// cinq. Sans cette boucle, une liste ne montrerait que les paiements
+// PayZen et tairait les autres — silencieusement, « aucun résultat »
+// étant une réponse plausible.
+func parMarquesLyra[T any](lire func(string) ([]T, error)) ([]T, error) {
+	var out []T
+	for _, marque := range payzen.MarquesLyra {
+		recs, err := lire(marque)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, recs...)
+	}
+	return out, nil
 }

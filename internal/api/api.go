@@ -539,13 +539,18 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 		provider = "payzen"
 		h.logger.Debug("api_provider_default", "path", r.URL.Path, "provider", provider)
 	}
-	switch provider {
-	case "payzen":
+	switch {
+	// Les cinq marques Lyra passent par le même adaptateur : c'est la
+	// même passerelle, seul l'hôte les distingue chez le vrai
+	// fournisseur. La marque est conservée dans l'enregistrement, ce qui
+	// permet à une instance d'héberger plusieurs intégrations.
+	case payzen.EstMarqueLyra(provider):
 		if h.payzenHandler == nil {
 			http.Error(w, "payzen handler non configure", http.StatusServiceUnavailable)
 			return
 		}
 		tx, err := h.payzenHandler.Create(payzen.CreateInput{
+			Brand:              req.Provider,
 			Amount:             req.Amount,
 			Currency:           req.Currency,
 			OrderID:            req.OrderID,
@@ -577,7 +582,7 @@ func (h *Handler) createPayment(w http.ResponseWriter, r *http.Request) {
 		// avec son verdict d'exploitabilité.
 		out := CreatePaymentOutput{
 			UUID:               tx.UUID,
-			Provider:           "payzen",
+			Provider:           tx.Brand,
 			State:              string(tx.Payment.State()),
 			PaymentMethodToken: tx.PaymentMethodToken,
 			DeclineCode:        tx.DeclineCode,
@@ -737,13 +742,14 @@ func (h *Handler) createSubscription(w http.ResponseWriter, r *http.Request) {
 		provider = "payzen"
 		h.logger.Debug("api_provider_default", "path", r.URL.Path, "provider", provider)
 	}
-	switch provider {
-	case "payzen":
+	switch {
+	case payzen.EstMarqueLyra(provider):
 		if h.payzenHandler == nil {
 			http.Error(w, "payzen handler non configure", http.StatusServiceUnavailable)
 			return
 		}
 		sub, err := h.payzenHandler.CreateSubscription(payzen.CreateSubscriptionInput{
+			Brand:              req.Provider,
 			PaymentMethodToken: req.PaymentMethodToken,
 			Amount:             req.Amount,
 			Currency:           req.Currency,
@@ -833,7 +839,7 @@ func (h *Handler) listSubscriptions(w http.ResponseWriter, r *http.Request) {
 	// câblé aujourd'hui, d'où le filtre par nom ; le jour où Stripe
 	// arrive, c'est cette ligne qui s'élargit — rien d'autre, puisque
 	// plus rien ici ne connaît de type d'adaptateur.
-	subs, err := h.subscriptionRepo.ByProvider("payzen")
+	subs, err := parMarquesLyra(h.subscriptionRepo.ByProvider)
 	if err != nil {
 		h.logger.Error("api_list_subscriptions_failed", "err", err)
 		http.Error(w, "erreur de lecture", http.StatusInternalServerError)
@@ -1035,7 +1041,7 @@ func (h *Handler) listPaymentMethods(w http.ResponseWriter, _ *http.Request) {
 	// Aujourd'hui un seul provider (payzen) — quand Stripe arrive en
 	// phase 7, on itère sur la liste des providers ou on expose un
 	// filtre ?provider= comme sur payments.
-	recs, err := h.paymentMethodRepo.ByProvider("payzen")
+	recs, err := parMarquesLyra(h.paymentMethodRepo.ByProvider)
 	if err != nil {
 		h.logger.Error("api_list_payment_methods_failed", "err", err)
 		http.Error(w, "erreur de lecture", http.StatusInternalServerError)
@@ -1359,9 +1365,9 @@ func (h *Handler) deletePayments(w http.ResponseWriter, r *http.Request) {
 		deleted, err = h.paymentRepo.DeleteByProvider(provider)
 	case h.paymentRepo != nil:
 		deleted, err = h.paymentRepo.DeleteAll()
-	case provider == "payzen" || provider == "":
-		// Mode mémoire — seul le store payzen existe, DeleteAll s'y
-		// applique. Un provider différent est traité comme un no-op
+	case provider == "" || payzen.EstMarqueLyra(provider):
+		// Mode mémoire — seul l'adaptateur Lyra existe, DeleteAll s'y
+		// applique. Un provider étranger est traité comme un no-op
 		// (aucune entrée à supprimer chez nous).
 		deleted, err = h.store.DeleteAllTransactions()
 	default:
@@ -1682,7 +1688,7 @@ func writeEvent(w http.ResponseWriter, flusher http.Flusher, evt bus.Event, logg
 func toPaymentSummary(tx *payzen.Transaction, counts store.DeliveryCounts) PaymentSummary {
 	return PaymentSummary{
 		UUID:               tx.UUID,
-		Provider:           "payzen",
+		Provider:           tx.Brand,
 		OrderID:            tx.OrderID,
 		Amount:             int64(tx.Amount),
 		Currency:           tx.Currency,

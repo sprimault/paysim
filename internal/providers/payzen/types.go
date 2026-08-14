@@ -780,6 +780,18 @@ type KrAnswer struct {
 	// Paysim, une constante qui l'identifie comme simulateur.
 	ApplicationVersion string `json:"applicationVersion,omitempty"`
 
+	// ApplicationProvider nomme la marque émettrice, avec les valeurs
+	// réelles de la plateforme : PAYZEN, NPS pour Systempay, SOGECOM,
+	// LBP pour Scellius, LYRA. Le champ manquait, et un marchand qui s'y
+	// fie ne trouvait rien.
+	//
+	// La valeur ne se déduit pas de l'hôte — quatre hôtes distincts
+	// annoncent PAYZEN — elle vient donc de la marque du paiement. Aucun
+	// risque de se faire passer pour la vraie plateforme :
+	// ApplicationVersion annonce juste à côté qu'il s'agit d'un
+	// simulateur.
+	ApplicationProvider string `json:"applicationProvider,omitempty"`
+
 
 	// Mode vaut toujours TEST : un simulateur n'a pas de production.
 	Mode string `json:"mode"`

@@ -15,7 +15,29 @@ import { useT } from '@/shared/i18n/useT';
 // Volontairement non exportée : ce fichier n'exporte qu'un composant,
 // condition du Fast Refresh de Vite. Aucun autre module ne la consomme
 // aujourd'hui ; si le besoin apparaît, elle ira dans shared/model.
-const KNOWN_PROVIDERS: readonly string[] = ['payzen'];
+const KNOWN_PROVIDERS: readonly string[] = [
+  'payzen',
+  'systempay',
+  'sogecommerce',
+  'scellius',
+  'lyra',
+];
+
+/**
+ * Nom commercial de chaque marque. La valeur technique reste celle du
+ * champ `provider` — c'est elle qui filtre — mais un intégrateur
+ * Sogecommerce ne se reconnaît pas dans « sogecommerce » en minuscules.
+ *
+ * Pas d'i18n : ce sont des noms propres, identiques dans les deux
+ * langues.
+ */
+const LIBELLES: Record<string, string> = {
+  payzen: 'PayZen',
+  systempay: 'Systempay',
+  sogecommerce: 'Sogecommerce',
+  scellius: 'Scellius',
+  lyra: 'Lyra Collect',
+};
 
 interface ProviderTabsProps {
   value: string;
@@ -33,7 +55,7 @@ export function ProviderTabs({ value, onChange }: ProviderTabsProps) {
       {KNOWN_PROVIDERS.map((prov) => (
         <Tab
           key={prov}
-          label={prov}
+          label={LIBELLES[prov] ?? prov}
           active={value === prov}
           onClick={() => onChange(prov)}
         />

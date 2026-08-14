@@ -21,6 +21,25 @@ import (
 // arbitraire, cohérente avec ce qu'un vrai back-office annoncerait.
 const applicationVersion = "6.0.0-paysim"
 
+// codesMarque associe chaque marque Lyra au code qu'elle annonce dans
+// applicationProvider. Valeurs relevées sur les API de production en
+// août 2026 : elles ne se déduisent d'aucun nom de domaine, et quatre
+// hôtes distincts partagent PAYZEN — d'où une table explicite plutôt
+// qu'une règle.
+var codesMarque = map[string]string{
+	"payzen":       "PAYZEN",
+	"systempay":    "NPS",
+	"sogecommerce": "SOGECOM",
+	"scellius":     "LBP",
+	"lyra":         "LYRA",
+}
+
+// codeMarque rend le code d'enveloppe d'une marque. Une marque inconnue
+// rend une chaîne vide, donc un champ omis : mieux vaut ne rien annoncer
+// qu'annoncer la mauvaise marque.
+func codeMarque(brand string) string {
+	return codesMarque[marqueOuDefaut(brand)]
+}
 
 // mapping outcome → contexte de transition et status/detailedStatus
 // PayZen. Regroupé ici pour rester une seule source de vérité et
@@ -316,12 +335,13 @@ func buildKrAnswer(clk clock.Clock, tx *Transaction, pm *PaymentMethod, presente
 	}
 
 	return &KrAnswer{
-		OrderCycle:         spec.OrderCycle,
-		OrderStatus:        spec.OrderStatus,
-		ServerDate:         now,
-		ServerURL:          serverURL,
-		ApplicationVersion: applicationVersion,
-		Mode:               mode,
+		OrderCycle:          spec.OrderCycle,
+		OrderStatus:         spec.OrderStatus,
+		ServerDate:          now,
+		ServerURL:           serverURL,
+		ApplicationVersion:  applicationVersion,
+		ApplicationProvider: codeMarque(tx.Brand),
+		Mode:                mode,
 		OrderDetails: KrOrderDetails{
 			OrderTotalAmount:     tx.Amount,
 			OrderCurrency:        tx.Currency,

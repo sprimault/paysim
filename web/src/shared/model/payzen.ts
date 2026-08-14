@@ -1003,6 +1003,18 @@ export interface KrAnswer {
    */
   applicationVersion?: string;
   /**
+   * ApplicationProvider nomme la marque émettrice, avec les valeurs
+   * réelles de la plateforme : PAYZEN, NPS pour Systempay, SOGECOM,
+   * LBP pour Scellius, LYRA. Le champ manquait, et un marchand qui s'y
+   * fie ne trouvait rien.
+   * La valeur ne se déduit pas de l'hôte — quatre hôtes distincts
+   * annoncent PAYZEN — elle vient donc de la marque du paiement. Aucun
+   * risque de se faire passer pour la vraie plateforme :
+   * ApplicationVersion annonce juste à côté qu'il s'agit d'un
+   * simulateur.
+   */
+  applicationProvider?: string;
+  /**
    * Mode vaut toujours TEST : un simulateur n'a pas de production.
    */
   mode: string;
