@@ -449,9 +449,9 @@ type Simulate struct {
 
 // Inject active un mode de panne du moteur de chaos pour les webhooks émis à
 // partir de l'étape suivante. Le vocabulaire de Mode suit celui du paquet
-// internal/chaos (`duplicate`, `delay`, `bad-signature`, `race`).
+// internal/chaos (`duplicate`, `delay`, `bad-signature`, `bad-algorithm`, `race`).
 type Inject struct {
-	// Mode nomme la panne à armer : duplicate, bad-signature, race, ou
+	// Mode nomme la panne à armer : duplicate, bad-signature, bad-algorithm, race, ou
 	// delay=NNN en millisecondes. Un mode inconnu échoue franchement
 	// plutôt que d'être ignoré — un chaos qui ne se déclenche pas sans
 	// le dire vaut moins que pas de chaos du tout.

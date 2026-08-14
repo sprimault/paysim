@@ -264,6 +264,10 @@ type ChaosOpts struct {
 	// contente d'en constater la présence ne verra rien.
 	BadSignature bool `json:"badSignature,omitempty"`
 
+	// BadAlgorithm annonce un kr-hash-algorithm inconnu, signature
+	// valide.
+	BadAlgorithm bool `json:"badAlgorithm,omitempty"`
+
 	// RaceBeforeResponse fait partir le webhook avant la réponse HTTP.
 	// C'est l'échec qu'aucune sandbox ne sait produire à la demande, et
 	// la raison d'être du projet.

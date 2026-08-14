@@ -21,6 +21,16 @@ import (
 // arbitraire, cohérente avec ce qu'un vrai back-office annoncerait.
 const applicationVersion = "6.0.0-paysim"
 
+// algorithmeSignature est la seule valeur que la plateforme émet, et la
+// seule que les SDK marchands acceptent.
+const algorithmeSignature = "sha256_hmac"
+
+// algorithmeInattendu est annoncé par le mode de chaos bad-algorithm.
+// Choisi plausible plutôt qu'absurde : un SDK doit le rejeter parce
+// qu'il ne le supporte pas, pas parce que la valeur est manifestement
+// fabriquée.
+const algorithmeInattendu = "sha512_hmac"
+
 // codesMarque associe chaque marque Lyra au code qu'elle annonce dans
 // applicationProvider. Valeurs relevées sur les API de production en
 // août 2026 : elles ne se déduisent d'aucun nom de domaine, et quatre
@@ -412,7 +422,7 @@ type BrowserReturnOpts struct {
 // L'outcome porté par le Webhook vient de answer.OrderStatus : c'est
 // l'adaptateur qui traduit son protocole en résultat métier, delivery
 // ne lit jamais le corps.
-func buildDeliveryWebhook(id, targetURL string, answer *KrAnswer, cle, nomCle, answerType string, badSignature bool, delay time.Duration) (delivery.Webhook, string, error) {
+func buildDeliveryWebhook(id, targetURL string, answer *KrAnswer, cle, nomCle, answerType string, alterations WebhookChaos, delay time.Duration) (delivery.Webhook, string, error) {
 	raw, err := json.Marshal(answer)
 	if err != nil {
 		return delivery.Webhook{}, "", fmt.Errorf("serialisation kr-answer: %w", err)
@@ -420,14 +430,23 @@ func buildDeliveryWebhook(id, targetURL string, answer *KrAnswer, cle, nomCle, a
 	hash := Sign(raw, cle)
 
 	sentHash := hash
-	if badSignature {
+	if alterations.BadSignature {
 		sentHash = flipFirstHexChar(hash)
+	}
+
+	// Le hash reste valide quand seul l'algorithme est faussé : c'est
+	// une panne différente d'une signature altérée. Le SDK marchand
+	// n'arrive jamais à la comparaison — il lève sur l'algorithme
+	// inconnu, et c'est cette branche-là qu'on veut faire tomber.
+	algorithme := algorithmeSignature
+	if alterations.BadAlgorithm {
+		algorithme = algorithmeInattendu
 	}
 
 	form := url.Values{}
 	form.Set("kr-answer", string(raw))
 	form.Set("kr-hash", sentHash)
-	form.Set("kr-hash-algorithm", "sha256_hmac")
+	form.Set("kr-hash-algorithm", algorithme)
 	// kr-hash-key nomme la clé qui a servi, il ne décrit pas
 	// l'algorithme : « sha256_hmac » pour le retour navigateur,
 	// « password » pour la notification serveur. Le SDK marchand s'en

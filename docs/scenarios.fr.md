@@ -140,6 +140,7 @@ puis remis à zéro) :
 | ----------------- | --------------------------------------------------------------------- |
 | `duplicate`       | Webhook enqueue deux fois (test idempotence côté marchand).           |
 | `bad-signature`   | `kr-hash` altéré — le marchand qui vérifie la signature doit refuser. |
+| `bad-algorithm`   | `kr-hash-algorithm` annonce un algorithme inconnu, la signature restant valide. Le SDK marchand lève au lieu de comparer — la branche que personne ne teste. |
 | `race`            | Réponse HTTP simulate retardée 500 ms ; le webhook part en premier.   |
 | `delay=NNN`       | Retarde la livraison du webhook de NNN millisecondes (compose avec un second `simulate` pour tester le out-of-order). |
 
