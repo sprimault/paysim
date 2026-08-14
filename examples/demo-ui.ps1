@@ -338,6 +338,23 @@ foreach ($i in 1..30) {
 }
 Write-Host '  volume : 30 paiements repartis sur les etats'
 
+# Deux paiements Systempay a cote des PayZen. Les cinq marques Lyra sont
+# la meme passerelle : memes chemins, meme signature, seul l'hote les
+# distingue chez le vrai fournisseur. Une instance peut donc en heberger
+# plusieurs, chaque paiement gardant la sienne — sans ces lignes,
+# l'onglet Systempay reste vide et le filtre par marque ne se voit pas.
+foreach ($cas in @(
+        @{ amount = 3990; order = 'CMD-SP-01' },
+        @{ amount = 1001; order = 'CMD-SP-02' })) {
+    $r = Invoke-JsonPost '/payments' @{
+        provider = 'systempay'; amount = $cas.amount; currency = 'EUR'
+        orderId  = $cas.order
+        customer = @{ email = 'sp@example.com'; reference = "client-$($cas.order)" }
+    }
+    $null = Invoke-JsonPost "/payments/$($r.uuid)/simulate" @{ outcome = 'PAID'; channel = 'ipn' }
+}
+Write-Host '  marques : CMD-SP-01 et CMD-SP-02 en systempay'
+
 # Des rejeux sur trois paiements, en nombres differents : c'est la
 # pastille du bouton de renvoi qui les compte, et sans eux elle ne
 # s'affiche nulle part — l'ecran ne montrerait pas ce qu'il sait faire.

@@ -222,3 +222,62 @@ func TestCreatePayment_marquesLyra(t *testing.T) {
 		t.Errorf("provider inconnu : status = %d, veut 400", got)
 	}
 }
+
+// TestListPayments_filtreParMarque : le paramètre était accepté et
+// ignoré, donc la liste rendait tout. Un appelant qui filtre sur une
+// marque recevait les autres sans rien pour le lui dire.
+func TestListPayments_filtreParMarque(t *testing.T) {
+	t.Parallel()
+	logger := discardLogger()
+	store := newMemStore()
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
+	b := bus.New()
+	ph := payzen.NewHandler(store, queue, logger, clock.System{}, payzen.HandlerConfig{
+		HMACKey: "k", RESTPassword: "p", Publisher: b,
+	})
+	server := httptest.NewServer(NewHandler(Deps{
+		Store: store, Queue: queue, Publisher: b, Logger: logger, PayzenHandler: ph,
+	}))
+	t.Cleanup(server.Close)
+
+	for _, cas := range []struct{ marque, order string }{
+		{"payzen", "CMD-PZ"}, {"systempay", "CMD-SP"}, {"scellius", "CMD-SC"},
+	} {
+		corps := `{"provider":"` + cas.marque + `","amount":1000,"currency":"EUR","orderId":"` + cas.order + `"}`
+		resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
+			"application/json", bytes.NewBufferString(corps))
+		if err != nil {
+			t.Fatalf("POST %s : %v", cas.marque, err)
+		}
+		_ = resp.Body.Close()
+	}
+
+	lire := func(query string) []PaymentSummary {
+		t.Helper()
+		resp, err := http.Get(server.URL + "/paysim/api/v1/payments" + query)
+		if err != nil {
+			t.Fatalf("GET %s : %v", query, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		var out []PaymentSummary
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return out
+	}
+
+	if got := lire(""); len(got) != 3 {
+		t.Fatalf("sans filtre = %d paiements, veut 3", len(got))
+	}
+	for _, marque := range []string{"payzen", "systempay", "scellius"} {
+		got := lire("?provider=" + marque)
+		if len(got) != 1 {
+			t.Errorf("filtre %s = %d paiements, veut 1", marque, len(got))
+			continue
+		}
+		if got[0].Provider != marque {
+			t.Errorf("filtre %s rend un paiement %s", marque, got[0].Provider)
+		}
+	}
+	if got := lire("?provider=monetico"); len(got) != 0 {
+		t.Errorf("filtre sur une marque absente = %d paiements, veut 0", len(got))
+	}
+}
