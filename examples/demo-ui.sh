@@ -99,10 +99,11 @@ post() { curl -s -X POST "$API$1" -H 'Content-Type: application/json' -d "${2:-}
 # script ne dépend plus que de bash, curl et grep.
 field() { grep -o "\"$1\":\"[^\"]*\"" | head -1 | sed "s/.*\":\"//; s/\"$//"; }
 
-# Enrôle une carte sans rien débiter et rend l'alias créé.
+# Enrôle une carte sans rien débiter et rend l'alias créé. Troisieme
+# argument : la marque, payzen par defaut.
 enrole() {
-  post /payments "{\"amount\":0,\"currency\":\"EUR\",\"orderId\":\"$1\",
-    \"formAction\":\"REGISTER\",\"card\":$2}" | field paymentMethodToken
+  post /payments "{\"provider\":\"${3:-payzen}\",\"amount\":0,\"currency\":\"EUR\",
+    \"orderId\":\"$1\",\"formAction\":\"REGISTER\",\"card\":$2}" | field paymentMethodToken
 }
 
 # Compte les éléments d'une collection en s'appuyant sur une clé présente
@@ -276,11 +277,15 @@ for i in $(seq 1 30); do
 done
 echo "  volume : 30 paiements repartis sur les etats"
 
-# Deux paiements Systempay a cote des PayZen. Les cinq marques Lyra sont
-# la meme passerelle : memes chemins, meme signature, seul l'hote les
-# distingue chez le vrai fournisseur. Une instance peut donc en heberger
-# plusieurs, chaque paiement gardant la sienne — sans ces lignes,
+# Du Systempay a cote du PayZen. Les cinq marques Lyra sont la meme
+# passerelle : memes chemins, meme signature, seul l'hote les distingue
+# chez le vrai fournisseur. Une instance peut donc en heberger
+# plusieurs, chaque enregistrement gardant la sienne — sans ces lignes,
 # l'onglet Systempay reste vide et le filtre par marque ne se voit pas.
+#
+# Les trois collections y passent, parce que l'onglet est present sur
+# les trois ecrans : n'en peupler qu'un laisse croire que les deux
+# autres ne savent pas filtrer.
 for pair in "3990:CMD-SP-01" "1001:CMD-SP-02"; do
   amount=${pair%%:*}; order=${pair##*:}
   U=$(post /payments "{\"provider\": \"systempay\", \"amount\": $amount,
@@ -288,7 +293,13 @@ for pair in "3990:CMD-SP-01" "1001:CMD-SP-02"; do
     \"customer\": {\"email\": \"sp@example.com\", \"reference\": \"client-$order\"}}" | field uuid)
   post "/payments/$U/simulate" '{"outcome":"PAID","channel":"ipn"}' >/dev/null
 done
-echo "  marques : CMD-SP-01 et CMD-SP-02 en systempay"
+TSP=$(enrole REGISTER-SP-01 \
+  '{"pan":"4111111111111111","expiryMonth":4,"expiryYear":2031}' systempay)
+SSP=$(post /subscriptions "{\"provider\":\"systempay\",\"paymentMethodToken\":\"$TSP\",
+  \"amount\":1290,\"currency\":\"EUR\",\"orderId\":\"SUB-SP-01\",
+  \"rrule\":\"RRULE:FREQ=MONTHLY;INTERVAL=1\"}" | field id)
+post "/subscriptions/$SSP/trigger-billing" >/dev/null
+echo "  marques : paiements, alias et abonnement en systempay"
 
 # Des rejeux sur trois paiements, en nombres differents : c'est la
 # pastille du bouton de renvoi qui les compte, et sans eux elle ne
@@ -314,5 +325,6 @@ echo "Etats des moyens     : REGISTER-2043 expire, REGISTER-2044 revoque"
 echo "Abonnements          : SUB-77 (2 echeances), SUB-78 (refus sans code), SUB-79 (annule), SUB-80 (aucune), SUB-81 (refus 51)"
 echo "Recherche            : taper « client-2 » pour filtrer le volume"
 echo "Pastille de rejeux   : CMD-1042 (1), CMD-1047 (2), CMD-2012 (3)"
+echo "Onglets de marque    : systempay a ses paiements, son alias et son abonnement"
 echo
 echo "Pour arreter : docker rm -f $NAME $SINK && docker network rm $NET"

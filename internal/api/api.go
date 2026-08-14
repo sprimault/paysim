@@ -849,10 +849,14 @@ func (h *Handler) listSubscriptions(w http.ResponseWriter, r *http.Request) {
 	// ce moyen ». Un alias révoqué dont il reste un abonnement actif est
 	// précisément ce qu'on veut voir d'un coup d'œil.
 	token := r.URL.Query().Get("paymentMethodToken")
+	marque := r.URL.Query().Get("provider")
 	counts := h.billingCounts()
 	out := make([]SubscriptionOutput, 0, len(subs))
 	for _, s := range subs {
 		if token != "" && s.PaymentMethodToken != token {
+			continue
+		}
+		if marque != "" && s.Provider != marque {
 			continue
 		}
 		out = append(out, subscriptionToOutput(s, counts[s.ID]))
@@ -1030,25 +1034,24 @@ type PaymentMethodOutput struct {
 }
 
 // listPaymentMethods traite GET /paysim/api/v1/payment-methods.
-// Retourne la liste cross-provider, consommée par l'interface pour
-// la vue « Moyens de paiement enregistrés ». En mode mémoire, aucun
-// listing global n'est possible côté payzen.Store — on renvoie vide.
-func (h *Handler) listPaymentMethods(w http.ResponseWriter, _ *http.Request) {
+// Cross-provider par défaut ; ?provider=systempay filtre.
+func (h *Handler) listPaymentMethods(w http.ResponseWriter, r *http.Request) {
 	if h.paymentMethodRepo == nil {
 		h.repoManquant(w, "payment methods")
 		return
 	}
-	// Aujourd'hui un seul provider (payzen) — quand Stripe arrive en
-	// phase 7, on itère sur la liste des providers ou on expose un
-	// filtre ?provider= comme sur payments.
 	recs, err := parMarquesLyra(h.paymentMethodRepo.ByProvider)
 	if err != nil {
 		h.logger.Error("api_list_payment_methods_failed", "err", err)
 		http.Error(w, "erreur de lecture", http.StatusInternalServerError)
 		return
 	}
+	marque := r.URL.Query().Get("provider")
 	out := make([]PaymentMethodOutput, 0, len(recs))
 	for _, rec := range recs {
+		if marque != "" && rec.Provider != marque {
+			continue
+		}
 		out = append(out, toPaymentMethodOutput(rec, h.now()))
 	}
 	writeJSON(w, http.StatusOK, out)

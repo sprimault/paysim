@@ -313,7 +313,7 @@ func TestBuildKrAnswerCardDetailsFromPaymentMethod(t *testing.T) {
 	tx := makeTx(t, 1500)
 	_ = applyOutcome(tx, OutcomePaid, "", chaos.DeclineReason{})
 
-	pm := NewPaymentMethod("tok-pm", Card{
+	pm := NewPaymentMethod("tok-pm", "payzen", Card{
 		PAN:         "4000001234562646",
 		ExpiryMonth: 8,
 		ExpiryYear:  2029,
@@ -370,7 +370,7 @@ func TestBuildKrAnswerBrandFromPaymentMethodOverridesDefault(t *testing.T) {
 
 	// Brand absent des opts : c'est celui du moyen qui doit primer,
 	// pas le defaut VISA.
-	pm := NewPaymentMethod("tok-pm", Card{
+	pm := NewPaymentMethod("tok-pm", "payzen", Card{
 		PAN:         "5105105105105100",
 		ExpiryMonth: 1,
 		ExpiryYear:  2030,
