@@ -253,7 +253,25 @@ foreach ($i in 1..30) {
 }
 Write-Host '  CMD-2001 à CMD-2030'
 
-Write-Host '==> 14. Rejeux, pour que la pastille du bouton de renvoi compte'
+Write-Host '==> 14. Paiements Systempay, à côté des PayZen'
+# Les cinq marques Lyra sont la meme passerelle : memes chemins, meme
+# signature, seul l'hote les distingue chez le vrai fournisseur. Une
+# instance peut donc en heberger plusieurs, chaque paiement gardant la
+# sienne. Sans ces lignes, l'onglet Systempay reste vide et personne ne
+# voit que le filtre par marque fonctionne.
+foreach ($cas in @(
+        @{ amount = 3990; order = 'CMD-SP-01' },
+        @{ amount = 1001; order = 'CMD-SP-02' })) {
+    $p = Invoke-JsonPost '/payments' @{
+        provider = 'systempay'; amount = $cas.amount; currency = 'EUR'
+        orderId  = $cas.order
+        customer = @{ email = 'sp@example.com'; reference = "client-$($cas.order)" }
+    }
+    Invoke-Simulate $p.uuid
+    Write-Host "  $($cas.order) — systempay"
+}
+
+Write-Host '==> 15. Rejeux, pour que la pastille du bouton de renvoi compte'
 # Des nombres differents sur trois paiements : sans rejeu, la pastille
 # ne s'affiche nulle part et l'ecran ne montre pas ce qu'il sait faire.
 Invoke-Rejeu $U42 1
@@ -273,4 +291,5 @@ Write-Host ''
 Write-Host 'Recherche : taper « client-2 » pour filtrer le volume'
 Write-Host 'Pastille de rejeux : CMD-1042 (1), CMD-1047 (2), CMD-2012 (3)'
 Write-Host "Deux refus d'échéance à comparer : SUB-78 sans code, SUB-81 en 51"
+Write-Host "Onglets de marque : CMD-SP-01 et CMD-SP-02 sont en systempay"
 Write-Host "UI : $Base/"

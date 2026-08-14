@@ -276,6 +276,20 @@ for i in $(seq 1 30); do
 done
 echo "  volume : 30 paiements repartis sur les etats"
 
+# Deux paiements Systempay a cote des PayZen. Les cinq marques Lyra sont
+# la meme passerelle : memes chemins, meme signature, seul l'hote les
+# distingue chez le vrai fournisseur. Une instance peut donc en heberger
+# plusieurs, chaque paiement gardant la sienne — sans ces lignes,
+# l'onglet Systempay reste vide et le filtre par marque ne se voit pas.
+for pair in "3990:CMD-SP-01" "1001:CMD-SP-02"; do
+  amount=${pair%%:*}; order=${pair##*:}
+  U=$(post /payments "{\"provider\": \"systempay\", \"amount\": $amount,
+    \"currency\": \"EUR\", \"orderId\": \"$order\",
+    \"customer\": {\"email\": \"sp@example.com\", \"reference\": \"client-$order\"}}" | field uuid)
+  post "/payments/$U/simulate" '{"outcome":"PAID","channel":"ipn"}' >/dev/null
+done
+echo "  marques : CMD-SP-01 et CMD-SP-02 en systempay"
+
 # Des rejeux sur trois paiements, en nombres differents : c'est la
 # pastille du bouton de renvoi qui les compte, et sans eux elle ne
 # s'affiche nulle part — l'ecran ne montrerait pas ce qu'il sait faire.

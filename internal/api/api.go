@@ -1197,6 +1197,11 @@ func (h *Handler) listPayments(w http.ResponseWriter, r *http.Request) {
 	}
 	token := r.URL.Query().Get("paymentMethodToken")
 	subID := r.URL.Query().Get("subscriptionId")
+	// ?provider= était accepté sans être appliqué : la suppression
+	// l'honorait, la lecture le passait sous silence et rendait tout.
+	// Un appelant qui filtre sur une marque recevait les autres sans
+	// rien pour le lui dire.
+	marque := r.URL.Query().Get("provider")
 	// Une lecture pour toute la page : compter ligne par ligne ferait
 	// autant d'allers-retours que de paiements affichés.
 	counts := h.queue.WebhookCounts()
@@ -1206,6 +1211,9 @@ func (h *Handler) listPayments(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if subID != "" && tx.Metadata["subscriptionId"] != subID {
+			continue
+		}
+		if marque != "" && tx.Brand != marque {
 			continue
 		}
 		out = append(out, toPaymentSummary(tx, counts[tx.UUID]))

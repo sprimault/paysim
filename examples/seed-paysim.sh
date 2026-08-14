@@ -218,7 +218,22 @@ for i in $(seq 1 30); do
 done
 echo "  CMD-2001 à CMD-2030"
 
-echo "==> 14. Rejeux, pour que la pastille du bouton de renvoi compte"
+echo "==> 14. Paiements Systempay, à côté des PayZen"
+# Les cinq marques Lyra sont la meme passerelle : memes chemins, meme
+# signature, seul l'hote les distingue chez le vrai fournisseur. Une
+# instance peut donc en heberger plusieurs, chaque paiement gardant la
+# sienne. Sans ces lignes, l'onglet Systempay reste vide et personne ne
+# voit que le filtre par marque fonctionne.
+for pair in "3990:CMD-SP-01" "1001:CMD-SP-02"; do
+    amount=${pair%%:*}; order=${pair##*:}
+    U=$(post /payments "{\"provider\":\"systempay\",\"amount\":$amount,
+      \"currency\":\"EUR\",\"orderId\":\"$order\",
+      \"customer\":{\"email\":\"sp@example.com\",\"reference\":\"client-$order\"}}" | field uuid)
+    simulate "$U"
+    echo "  $order — systempay"
+done
+
+echo "==> 15. Rejeux, pour que la pastille du bouton de renvoi compte"
 # Des nombres differents sur trois paiements : sans rejeu, la pastille
 # ne s'affiche nulle part et l'ecran ne montre pas ce qu'il sait faire.
 rejouer "$U42" 1
@@ -239,4 +254,5 @@ echo ""
 echo "Recherche : taper « client-2 » pour filtrer le volume"
 echo "Pastille de rejeux : CMD-1042 (1), CMD-1047 (2), CMD-2012 (3)"
 echo "Deux refus d'échéance à comparer : SUB-78 sans code, SUB-81 en 51"
+echo "Onglets de marque : CMD-SP-01 et CMD-SP-02 sont en systempay"
 echo "UI : ${PAYSIM_URL:-http://localhost:30880}/"
