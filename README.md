@@ -16,9 +16,9 @@
 > demonstration values: any instance reachable from the Internet is to be
 > considered open to everyone.
 
-![Replaying a webhook delivery, inspecting a declined payment, and watching the UI detect the server going down](docs/assets/demo.webp)
+![Advancing the clock until a card expires, replaying a webhook delivery, inspecting a declined payment and its brand, then watching the UI detect the server going down](docs/assets/demo.webp)
 
-<sub>Twenty seconds against a live instance — [full walkthrough (42 s)](docs/assets/demo-complete.webp).</sub>
+<sub>Fifty seconds against a live instance — [full walkthrough (76 s)](docs/assets/demo-complete.webp).</sub>
 
 ## What Paysim is
 

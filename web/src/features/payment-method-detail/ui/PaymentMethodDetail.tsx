@@ -17,6 +17,7 @@ import { formatShort } from '@/shared/lib/dates';
 import { usePaymentMethod } from '@/entities/payment-method/model/usePaymentMethods';
 import { revokePaymentMethod } from '@/entities/payment-method/api/paymentMethodApi';
 import { paymentMethodStatus } from '@/entities/payment-method/lib/status';
+import { useSimulatedNow } from '@/shared/hooks/useSimulatedNow';
 
 /**
  * Vue détail d'un moyen de paiement enregistré. Une seule action :
@@ -27,6 +28,9 @@ import { paymentMethodStatus } from '@/entities/payment-method/lib/status';
 export function PaymentMethodDetail() {
   const t = useT();
   const { token } = useParams();
+  // Même horloge que la liste : les deux écrans doivent rendre le même
+  // verdict sur la même carte.
+  const maintenant = useSimulatedNow();
   const { method, loading, error, refresh } = usePaymentMethod(token);
   const [revokeOpen, setRevokeOpen] = useState(false);
   // Element cliqué : la boîte s'ancre dessous plutôt qu'au centre.
@@ -78,7 +82,7 @@ export function PaymentMethodDetail() {
             </code>
             <CopyButton value={method.token} className="p-0.5" />
             {(() => {
-              const s = paymentMethodStatus(method);
+              const s = paymentMethodStatus(method, maintenant);
               if (s === 'revoked') return <Badge tone="unpaid">{t('paymentMethod.state.revoked')}</Badge>;
               if (s === 'expired') return <Badge tone="expired">{t('paymentMethod.state.expired')}</Badge>;
               return <Badge tone="paid">{t('paymentMethod.state.active')}</Badge>;

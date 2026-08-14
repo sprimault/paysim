@@ -15,6 +15,7 @@ import { RefreshButton } from '@/shared/ui/RefreshButton';
 import { Tooltip } from '@/shared/ui/Tooltip';
 import { formatShort } from '@/shared/lib/dates';
 import { useFormatRelative } from '@/shared/hooks/useFormatRelative';
+import { useSimulatedNow } from '@/shared/hooks/useSimulatedNow';
 import { useListFilters } from '@/shared/hooks/useListFilters';
 import { truncate } from '@/shared/lib/strings';
 import { useT } from '@/shared/i18n/useT';
@@ -40,6 +41,10 @@ const ETATS_MOYEN: FilterState[] = [
 export function PaymentMethodList() {
   const t = useT();
   const rel = useFormatRelative();
+  // L'heure du simulateur, pas celle du poste : sur une instance
+  // avancée, la seconde afficherait « Actif » sur une carte que le
+  // serveur refuse déjà.
+  const maintenant = useSimulatedNow();
   const { methods, loading, error, refresh } = usePaymentMethodsList();
   const [providerFilter, setProviderFilter] = useState<string>('');
 
@@ -51,7 +56,7 @@ export function PaymentMethodList() {
     searchFields: (m) => [m.token, m.panMasked, m.brand],
     // Même verdict que celui affiché en badge — révoqué prime sur
     // expiré, et le filtre ne doit pas dire autre chose que la colonne.
-    stateOf: paymentMethodStatus,
+    stateOf: (m) => paymentMethodStatus(m, maintenant),
   });
 
   const columns: Column<PaymentMethodOutput>[] = [
@@ -59,12 +64,12 @@ export function PaymentMethodList() {
       header: t('paymentMethod.list.column.state'),
       // Actifs d'abord : les moyens inexploitables sont ce qu'on écarte,
       // pas ce qu'on cherche.
-      sortValue: (m) => paymentMethodStatus(m),
+      sortValue: (m) => paymentMethodStatus(m, maintenant),
       cell: (m) => {
         // Trois états visuels — cf. entities/payment-method/lib/status.
         // Révoqué prime sur expiré ; les deux empêchent un charge_token
         // ou trigger_billing d'aboutir.
-        const s = paymentMethodStatus(m);
+        const s = paymentMethodStatus(m, maintenant);
         if (s === 'revoked') return <Badge tone="unpaid">{t('paymentMethod.state.revoked')}</Badge>;
         if (s === 'expired') return <Badge tone="expired">{t('paymentMethod.state.expired')}</Badge>;
         return <Badge tone="paid">{t('paymentMethod.state.active')}</Badge>;
