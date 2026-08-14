@@ -209,7 +209,7 @@ func TestBuildDeliveryWebhookRattacheLePaiement(t *testing.T) {
 	opts := BrowserReturnOpts{Outcome: OutcomePaid}
 	answer := buildKrAnswer(clock.System{}, tx, nil, nil, opts, "", "TEST")
 
-	wh, _, err := buildDeliveryWebhook("delivery-1", "http://marchand", answer, "k", "sha256_hmac", "V4/Payment", false, 0)
+	wh, _, err := buildDeliveryWebhook("delivery-1", "http://marchand", answer, "k", "sha256_hmac", "V4/Payment", WebhookChaos{}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestBuildDeliveryWebhookSansTransaction(t *testing.T) {
 	t.Parallel()
 	answer := &KrAnswer{OrderStatus: "UNPAID"}
 
-	wh, _, err := buildDeliveryWebhook("delivery-2", "http://marchand", answer, "k", "sha256_hmac", "V4/Payment", false, 0)
+	wh, _, err := buildDeliveryWebhook("delivery-2", "http://marchand", answer, "k", "sha256_hmac", "V4/Payment", WebhookChaos{}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func TestBuildDeliveryWebhookSignsCorrectly(t *testing.T) {
 	answer := buildKrAnswer(clock.System{}, tx, nil, nil, opts, "", "TEST")
 
 	const key = "clef-de-test-hmac"
-	wh, hash, err := buildDeliveryWebhook("delivery-1", "http://marchand", answer, key, "sha256_hmac", "V4/Payment", false, 0)
+	wh, hash, err := buildDeliveryWebhook("delivery-1", "http://marchand", answer, key, "sha256_hmac", "V4/Payment", WebhookChaos{}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,5 +461,50 @@ func TestCardDetailsRepliDemonstrationQuandRienNEstPresente(t *testing.T) {
 	cd := answer.Transactions[0].TransactionDetails.CardDetails
 	if cd == nil || cd.PAN == "" {
 		t.Fatal("aucune carte de demonstration alors que rien n a ete presente")
+	}
+}
+
+// TestBuildDeliveryWebhook_badAlgorithm : la signature reste valide,
+// seul l'algorithme annoncé change.
+//
+// C'est ce qui distingue cette panne de bad-signature — le SDK marchand
+// n'atteint jamais la comparaison, il lève sur l'algorithme inconnu.
+// Altérer aussi le hash confondrait les deux et testerait la mauvaise
+// branche.
+func TestBuildDeliveryWebhook_badAlgorithm(t *testing.T) {
+	t.Parallel()
+	answer := &KrAnswer{OrderStatus: "PAID", Type: "V4/Payment"}
+	cle := "cle-de-test"
+
+	wh, vrai, err := buildDeliveryWebhook("wh-1", "http://x", answer, cle, "password",
+		"V4/Payment", WebhookChaos{BadAlgorithm: true}, 0)
+	if err != nil {
+		t.Fatalf("buildDeliveryWebhook : %v", err)
+	}
+	form, err := url.ParseQuery(string(wh.Body))
+	if err != nil {
+		t.Fatalf("corps illisible : %v", err)
+	}
+	if got := form.Get("kr-hash-algorithm"); got != algorithmeInattendu {
+		t.Errorf("kr-hash-algorithm = %q, veut %q", got, algorithmeInattendu)
+	}
+	if got := form.Get("kr-hash"); got != vrai {
+		t.Errorf("kr-hash altere alors que seul l'algorithme devait l'etre")
+	}
+}
+
+// TestBuildDeliveryWebhook_algorithmeParDefaut fige la valeur nominale :
+// c'est la seule que la plateforme émet et que les SDK acceptent.
+func TestBuildDeliveryWebhook_algorithmeParDefaut(t *testing.T) {
+	t.Parallel()
+	wh, _, err := buildDeliveryWebhook("wh-2", "http://x",
+		&KrAnswer{OrderStatus: "PAID", Type: "V4/Payment"}, "cle", "password",
+		"V4/Payment", WebhookChaos{}, 0)
+	if err != nil {
+		t.Fatalf("buildDeliveryWebhook : %v", err)
+	}
+	form, _ := url.ParseQuery(string(wh.Body))
+	if got := form.Get("kr-hash-algorithm"); got != "sha256_hmac" {
+		t.Errorf("kr-hash-algorithm = %q, veut sha256_hmac", got)
 	}
 }

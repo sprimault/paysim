@@ -503,7 +503,7 @@ func (h *Handler) emitAutoplayWebhook(
 	// qui signe, pas la clé du navigateur.
 	cle, nomCle := h.signature(CanalServeur)
 	wh, _, err := buildDeliveryWebhook(deliveryID, targetURL,
-		answer, cle, nomCle, "V4/Payment", false, 0)
+		answer, cle, nomCle, "V4/Payment", WebhookChaos{}, 0)
 	if err != nil {
 		return err
 	}
@@ -799,7 +799,7 @@ func (h *Handler) emitReplayWebhook(
 	// qui signe, pas la clé du navigateur.
 	cle, nomCle := h.signature(CanalServeur)
 	wh, _, err := buildDeliveryWebhook(deliveryID, targetURL,
-		answer, cle, nomCle, "V4/Payment", false, 0)
+		answer, cle, nomCle, "V4/Payment", WebhookChaos{}, 0)
 	if err != nil {
 		return err
 	}
@@ -1663,7 +1663,7 @@ func (h *Handler) simulate(
 	}
 	delay := time.Duration(opts.DeliveryDelayMs) * time.Millisecond
 	wh, hash, err := buildDeliveryWebhook(deliveryID, targetURL, answer, cle, nomCle, answerType,
-		opts.Chaos.BadSignature, delay)
+		opts.Chaos, delay)
 	if err != nil {
 		return "", "", err
 	}
@@ -1682,7 +1682,7 @@ func (h *Handler) simulate(
 			h.logger.Warn("chaos_duplicate_uuid_failed", "err", uerr)
 		} else {
 			dup, _, berr := buildDeliveryWebhook(dupID, targetURL, answer, cle, nomCle, answerType,
-				opts.Chaos.BadSignature, delay)
+				opts.Chaos, delay)
 			if berr != nil {
 				h.logger.Warn("chaos_duplicate_build_failed", "err", berr)
 			} else if err := h.queue.Enqueue(dup); err != nil {

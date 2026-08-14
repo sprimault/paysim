@@ -296,6 +296,8 @@ func (r *Runner) doSimulate(ctx context.Context, st *state, in *Simulate) error 
 // Mode reconnu :
 //   - "duplicate"     : webhook enqueue deux fois côté serveur
 //   - "bad-signature" : kr-hash altéré, le marchand doit refuser
+//   - "bad-algorithm" : kr-hash-algorithm inconnu, signature valide —
+//                       le SDK marchand lève au lieu de comparer
 //   - "race"          : réponse HTTP retardée 500ms, webhook part avant
 //   - "delay=NNN"     : retarde l'envoi du webhook de NNN millisecondes
 //
@@ -310,6 +312,8 @@ func (r *Runner) doInject(_ context.Context, st *state, in *Inject) error {
 		st.pendingChaos.Duplicate = true
 	case in.Mode == "bad-signature":
 		st.pendingChaos.BadSignature = true
+	case in.Mode == "bad-algorithm":
+		st.pendingChaos.BadAlgorithm = true
 	case in.Mode == "race":
 		st.pendingChaos.RaceBeforeResponse = true
 	case strings.HasPrefix(in.Mode, "delay="):
@@ -319,7 +323,9 @@ func (r *Runner) doInject(_ context.Context, st *state, in *Inject) error {
 		}
 		st.pendingDelayMs = ms
 	default:
-		return fmt.Errorf("inject mode %q inconnu (attendu duplicate|bad-signature|race|delay=NNN)", in.Mode)
+		return fmt.Errorf(
+			"inject mode %q inconnu (attendu duplicate|bad-signature|bad-algorithm|race|delay=NNN)",
+			in.Mode)
 	}
 	return nil
 }

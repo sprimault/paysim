@@ -138,6 +138,7 @@ then reset):
 | ----------------- | ------------------------------------------------------------------ |
 | `duplicate`       | Webhook enqueued twice (test merchant idempotency).                |
 | `bad-signature`   | `kr-hash` altered — merchant checking the signature must reject it.|
+| `bad-algorithm`   | `kr-hash-algorithm` announces an unknown algorithm, the signature staying valid. The merchant SDK throws instead of comparing — the branch nobody tests. |
 | `race`            | HTTP simulate response delayed 500 ms; the webhook fires first.    |
 | `delay=NNN`       | Delay the webhook delivery by NNN milliseconds (compose with a second `simulate` to test out-of-order). |
 
