@@ -806,9 +806,10 @@ export interface WebhookChaos {
    * reçu du serveur sans le valider — la chaîne « sha256_hmac » n'y
    * figure nulle part. La restriction vit uniquement côté SDK
    * marchand, qui lève une exception au lieu de comparer.
-   * C'est la branche d'erreur que personne ne couvre : un marchand
-   * teste qu'une signature fausse est refusée, jamais qu'un
-   * algorithme inconnu ne fait pas tomber son webhook en 500.
+   * Une branche d'erreur que les intégrations couvrent rarement : on
+   * teste volontiers qu'une signature fausse est refusée, plus
+   * rarement qu'un algorithme inconnu ne fait pas tomber son webhook
+   * en 500.
    */
   badAlgorithm?: boolean;
   /**
