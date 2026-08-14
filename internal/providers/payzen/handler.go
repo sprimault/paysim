@@ -648,7 +648,7 @@ func (h *Handler) enrollCard(tx *Transaction, card *Card) (*PaymentMethod, error
 	if err != nil {
 		return nil, fmt.Errorf("generation payment method token: %w", err)
 	}
-	pm := NewPaymentMethod(token, *card, tx.Customer, h.clk.Now())
+	pm := NewPaymentMethod(token, tx.Brand, *card, tx.Customer, h.clk.Now())
 	if err := h.store.SaveMethod(pm); err != nil {
 		return nil, fmt.Errorf("store SaveMethod: %w", err)
 	}

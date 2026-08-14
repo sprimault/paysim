@@ -437,7 +437,7 @@ func payzenMethodToRecord(m *PaymentMethod) *store.PaymentMethodRecord {
 	custJSON, _ := json.Marshal(m.Customer)
 	return &store.PaymentMethodRecord{
 		Token:            m.Token,
-		Provider:         providerName,
+		Provider:         marqueOuDefaut(m.Provider),
 		PANFull:          m.PANFull,
 		PANMasked:        m.PANMasked,
 		Brand:            m.Brand,
@@ -467,6 +467,7 @@ func recordToPayzenMethod(rec *store.PaymentMethodRecord) *PaymentMethod {
 	}
 	return &PaymentMethod{
 		Token:           rec.Token,
+		Provider:        marqueOuDefaut(rec.Provider),
 		PANFull:         rec.PANFull,
 		PANMasked:       rec.PANMasked,
 		Brand:           rec.Brand,

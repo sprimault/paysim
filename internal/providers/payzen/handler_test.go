@@ -1334,7 +1334,7 @@ func TestReplayFallbackDefaultCallbackURL(t *testing.T) {
 	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", DefaultCallbackURL: merchant.URL}
 	_, store, queue := newTestServerFull(t, cfg)
 
-	pm := NewPaymentMethod("tok-replay", Card{
+	pm := NewPaymentMethod("tok-replay", "payzen", Card{
 		PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030, Brand: "VISA",
 	}, Customer{}, time.Now().UTC())
 	if err := store.SaveMethod(pm); err != nil {
@@ -1367,7 +1367,7 @@ func TestTriggerBillingNotifie(t *testing.T) {
 	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", DefaultCallbackURL: merchant.URL}
 	_, store, queue := newTestServerFull(t, cfg)
 
-	pm := NewPaymentMethod("tok-sub", Card{
+	pm := NewPaymentMethod("tok-sub", "payzen", Card{
 		PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030, Brand: "VISA",
 	}, Customer{}, time.Now().UTC())
 	if err := store.SaveMethod(pm); err != nil {
@@ -1557,6 +1557,65 @@ func TestEnrolementCaptureLeClient(t *testing.T) {
 	}
 }
 
+// L'alias doit aussi porter la marque sous laquelle il a été enrôlé.
+// Elle était écrite en dur à « payzen » au moment de la persistance :
+// un enrôlement Systempay produisait bien un alias, mais rangé chez
+// PayZen — l'onglet Systempay restait vide sans qu'aucun appel échoue.
+func TestEnrolementCaptureLaMarque(t *testing.T) {
+	t.Parallel()
+	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"}
+	_, store, queue := newTestServerFull(t, cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), clock.System{}, cfg)
+
+	for _, marque := range MarquesLyra {
+		tx, err := h.Create(CreateInput{
+			Brand:  marque,
+			Amount: 0, Currency: "EUR", OrderID: "ENROL-" + marque,
+			FormAction: "REGISTER",
+			Card:       &Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030},
+		})
+		if err != nil {
+			t.Fatalf("%s : %v", marque, err)
+		}
+		pm, err := store.MethodByToken(tx.PaymentMethodToken)
+		if err != nil || pm == nil {
+			t.Fatalf("%s : moyen introuvable : %v", marque, err)
+		}
+		if pm.Provider != marque {
+			t.Errorf("%s : alias range en %q", marque, pm.Provider)
+		}
+		// La marque de la carte reste celle du BIN : les deux champs
+		// portent le mot « marque » et ne désignent pas la même chose.
+		if pm.Brand != "VISA" {
+			t.Errorf("%s : marque de carte = %q, veut VISA", marque, pm.Brand)
+		}
+	}
+}
+
+// Une marque vide retombe sur celle par défaut plutôt que de produire
+// un alias sans provider, invisible de toutes les listes.
+func TestEnrolementSansMarqueRetombeSurLeDefaut(t *testing.T) {
+	t.Parallel()
+	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"}
+	_, store, queue := newTestServerFull(t, cfg)
+	h := NewHandler(store, queue, slog.New(slog.NewTextHandler(io.Discard, nil)), clock.System{}, cfg)
+
+	tx, err := h.Create(CreateInput{
+		Amount: 0, Currency: "EUR", OrderID: "ENROL", FormAction: "REGISTER",
+		Card: &Card{PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pm, err := store.MethodByToken(tx.PaymentMethodToken)
+	if err != nil || pm == nil {
+		t.Fatalf("moyen introuvable : %v", err)
+	}
+	if pm.Provider != MarqueParDefaut {
+		t.Errorf("provider = %q, veut %q", pm.Provider, MarqueParDefaut)
+	}
+}
+
 // Le comportement que corrige ce changement : au rejeu, un customer
 // divergent est ignoré au profit de celui de l'alias. Un marchand qui se
 // trompe de référence ne le verrait pas chez PayZen ; Paysim ne doit pas
@@ -1624,7 +1683,7 @@ func TestRejeuSurAliasSansClientGardeLaRequete(t *testing.T) {
 	cfg := HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest"}
 	_, store, queue := newTestServerFull(t, cfg)
 
-	pm := NewPaymentMethod("tok-ancien", Card{
+	pm := NewPaymentMethod("tok-ancien", "payzen", Card{
 		PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2030,
 	}, Customer{}, time.Now().UTC())
 	if err := store.SaveMethod(pm); err != nil {

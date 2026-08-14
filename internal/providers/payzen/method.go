@@ -26,6 +26,12 @@ type PaymentMethod struct {
 	// paymentMethodToken à repasser pour débiter sans formulaire.
 	Token string
 
+	// Provider est la marque Lyra sous laquelle la carte a été
+	// enrôlée. Nommé ainsi et non Brand, déjà pris ici par la marque
+	// de la carte : dans cette struct, Brand veut dire VISA, pas
+	// Systempay.
+	Provider string
+
 	// PANFull est le numéro complet, stocké en clair : aucune
 	// protection PCI-DSS, jamais de vraie carte ici. PANMasked en est
 	// la forme tronquée, la seule que l'API expose.
@@ -136,13 +142,20 @@ func (c Card) Validate() error {
 	return nil
 }
 
-func NewPaymentMethod(token string, card Card, customer Customer, now time.Time) *PaymentMethod {
+// NewPaymentMethod construit l'alias enrôlé à partir de la carte
+// présentée. La marque de la carte se déduit du BIN quand l'enrôlement
+// ne la donne pas ; celle de l'intégration, elle, ne se devine pas — un
+// alias enrôlé en Systempay ne se distingue en rien d'un alias PayZen,
+// et le seul endroit qui la connaît est la transaction. D'où le
+// paramètre : l'oublier ne compile pas.
+func NewPaymentMethod(token, provider string, card Card, customer Customer, now time.Time) *PaymentMethod {
 	brand := card.Brand
 	if brand == "" {
 		brand = BrandFromBIN(card.PAN)
 	}
 	return &PaymentMethod{
 		Token:       token,
+		Provider:    marqueOuDefaut(provider),
 		PANFull:     card.PAN,
 		PANMasked:   maskPAN(card.PAN),
 		Brand:       brand,

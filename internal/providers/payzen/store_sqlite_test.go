@@ -340,7 +340,7 @@ func TestSQLiteMethodPersisteLeClient(t *testing.T) {
 	chemin := filepath.Join(t.TempDir(), "pm.db")
 	s := openTestStore(t, chemin)
 
-	pm := NewPaymentMethod("tok-cli", Card{
+	pm := NewPaymentMethod("tok-cli", "payzen", Card{
 		PAN: "5555555555554444", ExpiryMonth: 12, ExpiryYear: 2030,
 	}, Customer{
 		Reference: "client-A", Email: "a@example.com",

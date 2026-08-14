@@ -117,7 +117,7 @@ func TestPaymentMethod_IsExpired(t *testing.T) {
 func TestNewPaymentMethod_brandDeduitDuBIN(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	m := NewPaymentMethod("tok-1", Card{
+	m := NewPaymentMethod("tok-1", "payzen", Card{
 		PAN: "4111111111111111", ExpiryMonth: 12, ExpiryYear: 2027,
 	}, Customer{}, now)
 	if m.Brand != "VISA" {
@@ -142,7 +142,7 @@ func TestNewPaymentMethod_brandExpliciteGardeLaMain(t *testing.T) {
 	// Un brand explicitement fourni ne se fait pas écraser par la
 	// déduction — utile pour un scénario qui veut simuler une CB
 	// co-marquée (Visa/CB en France) et privilégier CB.
-	m := NewPaymentMethod("tok-2", Card{
+	m := NewPaymentMethod("tok-2", "payzen", Card{
 		PAN: "4111111111111111", Brand: "CB",
 		ExpiryMonth: 6, ExpiryYear: 2027,
 	}, Customer{}, time.Now())
@@ -156,7 +156,7 @@ func TestNewPaymentMethod_brandExpliciteGardeLaMain(t *testing.T) {
 // kr-answer ne pouvait qu'annoncer ses valeurs par defaut.
 func TestNewPaymentMethod_attributsCarte(t *testing.T) {
 	t.Parallel()
-	pm := NewPaymentMethod("tok", Card{
+	pm := NewPaymentMethod("tok", "payzen", Card{
 		PAN:             "4000001234562646",
 		ExpiryMonth:     8,
 		ExpiryYear:      2029,
@@ -185,7 +185,7 @@ func TestNewPaymentMethod_attributsCarte(t *testing.T) {
 // payzen <-> record ne perdent aucun attribut de carte.
 func TestPaymentMethodRecordRoundTrip(t *testing.T) {
 	t.Parallel()
-	orig := NewPaymentMethod("tok", Card{
+	orig := NewPaymentMethod("tok", "payzen", Card{
 		PAN:             "4000001234562646",
 		ExpiryMonth:     8,
 		ExpiryYear:      2029,
