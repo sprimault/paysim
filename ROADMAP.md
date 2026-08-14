@@ -288,23 +288,21 @@ avoir à deviner quoi que ce soit.
 
 ---
 
-## Fonctionnalité — la famille Lyra
+## Fait — la famille Lyra
 
-Hors phase, livrable seul, sans rien attendre.
+Systempay, Sogecommerce, Scellius et Lyra Collect sont couverts. Il n'y a rien eu à écrire :
+la plateforme est unique et seul l'hôte distingue les marques, or l'hôte est ce que le
+marchand fait pointer sur Paysim.
 
-Systempay (Banque Populaire, Caisse d'Épargne), Sogecommerce (Société Générale), Scellius
-(La Banque Postale) et Lyra Collect partagent le moteur REST V4 de PayZen : même signature,
-mêmes formes de webhook. Ce sont des marques, des endpoints et des dérivations de clés
-différents.
+Établi par sondage des API de production plutôt que par lecture de documentation : 24
+services existants et 12 inexistants répondent le même code d'erreur, chemin pour chemin,
+sur les quatorze hôtes, avec un chemin inventé comme témoin. Détail et hôtes réels dans
+`docs/providers/lyra-family.md`.
 
-N'élargit pas l'abstraction — un frère Lyra passe par l'adaptateur existant et ne dira rien
-sur la capacité du domaine à vivre sans vocabulaire PayZen. Met en revanche sous pression la
-**surface de configuration** : un fournisseur doit porter plusieurs jeux d'identifiants
-nommés, pas un seul. Monetico, avec ses deux TPE, tombera sur la même contrainte — la
-concevoir ici évite de la refaire là-bas.
-
-**Fini quand** : ajouter Systempay n'a coûté qu'une entrée de configuration. S'il a fallu
-autre chose, c'est l'adaptateur PayZen qui a un problème.
+Cette entrée annonçait une surface de configuration à concevoir — plusieurs jeux
+d'identifiants nommés. **Elle n'a pas lieu d'être** : Paysim ne valide aucun identifiant.
+La contrainte reviendra avec Monetico, mais pour une autre raison — le numéro de TPE entre
+dans le calcul du sceau, donc il compte réellement.
 
 ---
 
@@ -406,6 +404,16 @@ contrainte déjà rencontrée par la famille Lyra, et c'est là qu'elle doit avo
 Idées valides mais hors périmètre. On les note ici plutôt que de les commencer.
 
 - Fournisseurs supplémentaires : Sips/Worldline (Mercanet, Sogenactif), Mollie, Adyen.
+- Lyra Inde — `api.in.lyra.com` n'expose pas REST V4 mais une API distincte : chemins
+  `/pg/rest/v1/charge`, vocabulaire d'états `DUE`/`PAID`/`DROPPED`, enveloppe différente,
+  webhook déclaré à la création de la charge. Exclusion vérifiée dans les deux sens. À
+  traiter comme un fournisseur à part entière le jour où quelqu'un le demande, jamais
+  comme une variante de marque.
+- Signature à algorithme inattendu — le client JavaScript de la plateforme reposte tel quel
+  le `kr-hash-algorithm` que le serveur lui donne, sans le valider ; la restriction à
+  `sha256_hmac` vit uniquement dans le SDK marchand. Émettre autre chose est donc
+  structurellement possible en vrai, et fait tomber une branche d'erreur que personne ne
+  teste. Relève de `internal/chaos`.
 - Réessais de livraison avec temporisation exponentielle. `internal/delivery` ne tente
   qu'une fois ; les réessais sont annoncés en commentaire depuis la phase 2 sans avoir
   jamais été écrits. Ils changent le comportement de livraison, donc leur propre validation
