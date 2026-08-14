@@ -17,9 +17,9 @@
 > publiques : toute instance accessible depuis Internet est réputée
 > ouverte à tous.
 
-![Renvoi d'une livraison de webhook, examen d'un paiement refusé, et détection par l'interface de la coupure du serveur](docs/assets/demo.webp)
+![Avance de l'horloge qui périme une carte, renvoi d'une livraison de webhook, examen d'un paiement refusé et de sa marque, puis détection par l'interface de la coupure du serveur](docs/assets/demo.webp)
 
-<sub>Vingt secondes contre une instance réelle — [film complet (42 s)](docs/assets/demo-complete.webp).</sub>
+<sub>Cinquante secondes contre une instance réelle — [film complet (76 s)](docs/assets/demo-complete.webp).</sub>
 
 ## Ce qu'est Paysim
 
