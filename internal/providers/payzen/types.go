@@ -622,9 +622,10 @@ type WebhookChaos struct {
 	// figure nulle part. La restriction vit uniquement côté SDK
 	// marchand, qui lève une exception au lieu de comparer.
 	//
-	// C'est la branche d'erreur que personne ne couvre : un marchand
-	// teste qu'une signature fausse est refusée, jamais qu'un
-	// algorithme inconnu ne fait pas tomber son webhook en 500.
+	// Une branche d'erreur que les intégrations couvrent rarement : on
+	// teste volontiers qu'une signature fausse est refusée, plus
+	// rarement qu'un algorithme inconnu ne fait pas tomber son webhook
+	// en 500.
 	BadAlgorithm bool `json:"badAlgorithm,omitempty"`
 
 	// RaceBeforeResponse : la reponse HTTP au simulate est retardee
