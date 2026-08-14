@@ -113,7 +113,19 @@ func (r *Runner) Run(ctx context.Context, s *Scenario) *Report {
 		Scenario:  s.Name,
 		StartedAt: time.Now().UTC(),
 	}
-	st := &state{startedAt: report.StartedAt}
+	// Le curseur se compare à des horodatages produits par le serveur,
+	// il doit donc venir du serveur. Pris en local, il devient faux dès
+	// que l'instance a été avancée dans le temps : le filtre « depuis le
+	// début du scénario » attrape alors les livraisons de tous les
+	// scénarios précédents.
+	//
+	// StartedAt du rapport reste local : il mesure une durée d'exécution,
+	// pas une position dans la chronologie du simulateur.
+	curseur := report.StartedAt
+	if serveur, err := r.client.ClockNow(ctx); err == nil {
+		curseur = serveur
+	}
+	st := &state{startedAt: curseur}
 	for i, step := range s.Steps {
 		if ctx.Err() != nil {
 			report.Steps = append(report.Steps, StepResult{
@@ -173,6 +185,8 @@ func (r *Runner) exec(ctx context.Context, st *state, step Step) error {
 		return r.doWait(ctx, step.Wait)
 	case ActionAdvanceTime:
 		return r.doAdvanceTime(ctx, step.AdvanceTime)
+	case ActionResetTime:
+		return r.client.ResetClock(ctx)
 	case ActionAssertWebhook:
 		return r.doAssertWebhook(ctx, st, step.AssertWebhook)
 	case ActionAssertState:

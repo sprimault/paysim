@@ -485,3 +485,22 @@ func (c *Client) AdvanceClock(ctx context.Context, d time.Duration) error {
 	return c.do(ctx, http.MethodPost, "/paysim/api/v1/clock/advance",
 		map[string]string{"duration": d.String()}, nil)
 }
+
+// ClockNow lit l'heure vue par le simulateur. Sert de curseur aux
+// assertions qui comptent « depuis le début du scénario » : elles
+// comparent des horodatages produits par le serveur, elles ne peuvent
+// donc pas partir de l'heure locale.
+func (c *Client) ClockNow(ctx context.Context) (time.Time, error) {
+	var out struct {
+		Now time.Time `json:"now"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/paysim/api/v1/clock", nil, &out); err != nil {
+		return time.Time{}, err
+	}
+	return out.Now, nil
+}
+
+// ResetClock ramène l'instance à l'heure réelle.
+func (c *Client) ResetClock(ctx context.Context) error {
+	return c.do(ctx, http.MethodPost, "/paysim/api/v1/clock/reset", nil, nil)
+}

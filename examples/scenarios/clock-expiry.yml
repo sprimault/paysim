@@ -1,0 +1,50 @@
+name: clock-expiry
+description: |
+  Un alias que le temps rattrape, sans attendre ni toucher au depot.
+
+  C'est le cas d'impaye le plus banal et le plus penible a tester : le
+  porteur n'a rien fait, sa carte est simplement arrivee a echeance, et
+  la prochaine ponction tombe en impaye. En vrai il faut attendre des
+  mois ; avec l'endpoint /expire on force l'etat, ce qui prouve que le
+  refus fonctionne mais pas que l'expiration se declenche toute seule.
+
+  Ici l'instance vieillit. La carte expire fin du mois suivant, on
+  avance de soixante jours, et le meme alias devient inexploitable
+  parce que la date l'a depasse — rien d'autre n'a bouge.
+
+  Le scenario remet l'horloge a l'heure reelle a la fin : le decalage
+  vit en memoire et n'est pas persiste, mais une instance partagee ne
+  doit pas rester en avance parce qu'un scenario est passe.
+steps:
+  # Carte saine, expirant le mois prochain. La date est volontairement
+  # proche : le scenario doit franchir une echeance, pas en inventer
+  # une lointaine que n'importe quelle avance depasserait.
+  - action: create_payment
+    provider: payzen
+    amount: 0
+    currency: EUR
+    order_id: CLOCK-EXPIRY-1
+    form_action: REGISTER
+    card:
+      pan: "4111111111111111"
+      expiry_month: 9
+      expiry_year: 2026
+  # Avant l'avance, l'alias est exploitable. Sans cette assertion, un
+  # scenario ou l'enrolement echouerait passerait quand meme la suite :
+  # un alias absent n'est pas un alias expire.
+  - action: assert_payment_method
+    usable: true
+  # Soixante jours. Franchit la fin du mois d'expiration quel que soit
+  # le jour de depart — la convention bancaire francaise garde la carte
+  # valide jusqu'au dernier jour du mois inclus.
+  - action: advance_time
+    duration: 1440h
+  # Le meme alias, la meme instance : seule la date a change.
+  - action: assert_payment_method
+    usable: false
+    unusable_reason: moyen de paiement expire
+  # Remet l'instance a l'heure reelle. Sans cette etape, les scenarios
+  # suivants s'executeraient soixante jours en avant : leurs assertions
+  # « depuis le debut du scenario » compteraient les livraisons de
+  # celui-ci. Un scenario laisse l'instance comme il l'a trouvee.
+  - action: reset_time

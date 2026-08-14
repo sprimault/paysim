@@ -91,7 +91,7 @@ func newParityEnv(t *testing.T, backend string) *parityEnv {
 		payzenStore = payzen.NewRepoStore(clock.System{}, paymentRepo, subsRepo, methodsRepo)
 	}
 
-	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
 	b := bus.New()
 	queue.SetPublisher(b)
 

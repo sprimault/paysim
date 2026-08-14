@@ -24,7 +24,7 @@ import (
 func setupHorloge(t *testing.T) (*httptest.Server, *clock.Controllable) {
 	t.Helper()
 	logger := discardLogger()
-	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
 	b := bus.New()
 	queue.SetPublisher(b)
 	clk := clock.NewControllable()

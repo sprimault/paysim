@@ -61,6 +61,8 @@ func (s Step) Validate() error {
 			return errors.New("payload advance_time manquant")
 		}
 		return s.AdvanceTime.Validate()
+	case ActionResetTime:
+		return nil
 	case ActionAssertWebhook:
 		if s.AssertWebhook == nil {
 			return errors.New("payload assert_webhook manquant")

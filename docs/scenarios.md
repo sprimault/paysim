@@ -102,6 +102,7 @@ Thirteen actions covering the three payment patterns.
 | ------- | ------------------------------------------------------------- |
 | `wait`  | Sleep for `duration` (`"500ms"`, `"2s"`).                     |
 | `advance_time` | Move the simulator clock forward by `duration`, without sleeping. |
+| `reset_time` | Return the instance to real time. No payload. |
 | `inject`| Enqueue a chaos mode consumed by the **next** `simulate`.     |
 
 `wait` and `advance_time` are exact inverses: the first sleeps without
@@ -115,8 +116,20 @@ in CI: an alias expiring, an instalment falling due.
 ```
 
 Going backwards is refused at load time: a scenario running time
-backwards fails before it starts. To return to real time, call
-`POST /paysim/api/v1/clock/reset`.
+backwards fails before it starts. To go back, use `reset_time`.
+
+**A scenario that advances time puts it back.** The instance is shared
+across the scenarios of a single run: leaving it ahead would skew the
+following ones, whose "since the scenario started" assertions would
+count this one's deliveries.
+
+```yaml
+- action: advance_time
+  duration: 1440h
+- action: assert_payment_method
+  usable: false
+- action: reset_time
+```
 
 `inject` recognized modes (one-shot — consumed by the next `simulate`,
 then reset):

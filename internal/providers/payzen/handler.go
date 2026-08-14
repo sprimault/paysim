@@ -482,7 +482,7 @@ func (h *Handler) emitAutoplayWebhook(
 	if pm != nil {
 		opts.CardBrand = pm.Brand
 	}
-	answer := buildKrAnswer(tx, pm, presentee, opts, "", "TEST")
+	answer := buildKrAnswer(h.clk, tx, pm, presentee, opts, "", "TEST")
 
 	deliveryID, err := newUUID()
 	if err != nil {
@@ -776,7 +776,7 @@ func (h *Handler) emitReplayWebhook(
 	}
 	// Rejeu sur un alias : aucune carte n'a été présentée, c'est le
 	// token qui a servi. Le moyen enrôlé décrit donc tout.
-	answer := buildKrAnswer(tx, pm, nil, opts, "", "TEST")
+	answer := buildKrAnswer(h.clk, tx, pm, nil, opts, "", "TEST")
 
 	deliveryID, err := newUUID()
 	if err != nil {
@@ -1262,7 +1262,7 @@ func (h *Handler) updatePayment(w http.ResponseWriter, r *http.Request) {
 	if req.Metadata != nil {
 		tx.Metadata = req.Metadata
 	}
-	tx.UpdatedAt = time.Now().UTC()
+	tx.UpdatedAt = h.clk.Now()
 	if err := h.store.Save(tx); err != nil {
 		h.storeErr(w, "updatePayment.Save", err)
 		return
@@ -1308,7 +1308,7 @@ func (h *Handler) createSubscription(w http.ResponseWriter, r *http.Request) {
 		EffectDate:         req.EffectDate,
 		Rrule:              req.Rrule,
 		Metadata:           req.Metadata,
-		CreatedAt:          time.Now().UTC(),
+		CreatedAt:          h.clk.Now(),
 	}
 	if err := h.store.SaveSubscription(sub); err != nil {
 		h.storeErr(w, "createSubscription.SaveSubscription", err)
@@ -1604,7 +1604,7 @@ func (h *Handler) simulate(
 	if _, err := h.enrollIfAccepted(tx); err != nil {
 		return "", "", fmt.Errorf("enrolement: %w", err)
 	}
-	tx.UpdatedAt = time.Now().UTC()
+	tx.UpdatedAt = h.clk.Now()
 	if err := h.store.Save(tx); err != nil {
 		return "", "", fmt.Errorf("store Save: %w", err)
 	}
@@ -1636,7 +1636,7 @@ func (h *Handler) simulate(
 	// serverURL vide en phase 1 (arrivera avec cmd/paysim qui saura
 	// son propre PublicURL). Mode "TEST" en dur — un simulateur n'a
 	// pas de "PRODUCTION".
-	answer := buildKrAnswer(tx, pm, presentee, opts, "", "TEST")
+	answer := buildKrAnswer(h.clk, tx, pm, presentee, opts, "", "TEST")
 
 	deliveryID, err = newUUID()
 	if err != nil {

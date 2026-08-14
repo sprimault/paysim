@@ -148,7 +148,7 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		subscriptionRepo  store.SubscriptionRepository
 		paymentMethodRepo store.PaymentMethodRepository
 	)
-	queue := delivery.New(&http.Client{Timeout: httpClientTimeout}, logger, deliveryQueueCapacity)
+	queue := delivery.New(&http.Client{Timeout: httpClientTimeout}, logger, clk, deliveryQueueCapacity)
 	switch cfg.StoreBackend {
 	case config.StoreBackendSQLite:
 		db, err := sqlitepkg.Open(cfg.SQLitePath)

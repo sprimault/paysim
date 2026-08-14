@@ -52,7 +52,7 @@ func setup(t *testing.T, token string) (*httptest.Server, payzen.Store, *deliver
 	t.Helper()
 	logger := discardLogger()
 	store := newMemStore()
-	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
 	b := bus.New()
 	queue.SetPublisher(b)
 
@@ -675,7 +675,7 @@ func TestSimulatePaymentBrowserReturn(t *testing.T) {
 	// Setup avec un vrai payzenHandler (nécessaire pour Simulate).
 	logger := discardLogger()
 	store := newMemStore()
-	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
 	b := bus.New()
 	queue.SetPublisher(b)
 
@@ -732,7 +732,7 @@ func TestSimulatePaymentUnknownUUID(t *testing.T) {
 	t.Parallel()
 	logger := discardLogger()
 	store := newMemStore()
-	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
 	b := bus.New()
 	ph := payzen.NewHandler(store, queue, logger, clock.System{}, payzen.HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", Publisher: b})
 	handler := NewHandler(Deps{
@@ -755,7 +755,7 @@ func TestSimulatePaymentInvalidChannel(t *testing.T) {
 	t.Parallel()
 	logger := discardLogger()
 	store := newMemStore()
-	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
 	b := bus.New()
 	ph := payzen.NewHandler(store, queue, logger, clock.System{}, payzen.HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", Publisher: b})
 	handler := NewHandler(Deps{
@@ -784,7 +784,7 @@ func TestSimulatePaymentUnknownOutcomeListsAccepted(t *testing.T) {
 	t.Parallel()
 	logger := discardLogger()
 	store := newMemStore()
-	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
 	b := bus.New()
 	ph := payzen.NewHandler(store, queue, logger, clock.System{}, payzen.HandlerConfig{HMACKey: "k", RESTPassword: "pwd-rest", Publisher: b})
 	handler := NewHandler(Deps{
@@ -875,7 +875,7 @@ func TestSSELastEventIDReplay(t *testing.T) {
 	t.Parallel()
 	logger := discardLogger()
 	store := newMemStore()
-	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
 	b := bus.New()
 	handler := NewHandler(Deps{Store: store, Queue: queue, Publisher: b, Logger: logger})
 	server := httptest.NewServer(handler)
@@ -953,7 +953,7 @@ func setupWithSQLite(t *testing.T) *httptest.Server {
 		t.Fatalf("methods repo: %v", err)
 	}
 	pzStore := payzen.NewRepoStore(clock.System{}, payRepo, subsRepo, methodsRepo)
-	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
 	b := bus.New()
 	queue.SetPublisher(b)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -998,7 +998,7 @@ func setupWithRepos(t *testing.T, token string) (*httptest.Server, payzen.Store)
 	methodsRepo := inmem.NewPaymentMethodsRepository()
 	store := payzen.NewRepoStore(clock.System{}, paymentRepo, subsRepo, methodsRepo)
 
-	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
 	b := bus.New()
 	queue.SetPublisher(b)
 
@@ -1036,7 +1036,7 @@ func setupWithPayzen(t *testing.T, token string) (*httptest.Server, payzen.Store
 	t.Helper()
 	logger := discardLogger()
 	store := newMemStore()
-	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, 100)
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
 	b := bus.New()
 	queue.SetPublisher(b)
 

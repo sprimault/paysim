@@ -44,6 +44,7 @@ const (
 	ActionAssertPaymentMethod = "assert_payment_method"
 	ActionAssertCustomer      = "assert_customer"
 	ActionAdvanceTime         = "advance_time"
+	ActionResetTime           = "reset_time"
 )
 
 // Scenario est un scénario complet chargé depuis un fichier YAML. Une fois
@@ -578,6 +579,9 @@ func (s *Step) UnmarshalYAML(node *yaml.Node) error {
 	case ActionAdvanceTime:
 		s.AdvanceTime = &AdvanceTime{}
 		return node.Decode(s.AdvanceTime)
+	case ActionResetTime:
+		// Aucun payload : l'action se suffit à elle-même.
+		return nil
 	case ActionAssertWebhook:
 		s.AssertWebhook = &AssertWebhook{}
 		return node.Decode(s.AssertWebhook)

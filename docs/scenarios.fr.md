@@ -104,6 +104,7 @@ Treize actions qui couvrent les trois patterns de paiement.
 | ------- | ------------------------------------------------------------- |
 | `wait`  | Suspend l'exécution pendant `duration` (`"500ms"`, `"2s"`).   |
 | `advance_time` | Avance l'horloge du simulateur de `duration`, sans dormir. |
+| `reset_time` | Ramène l'instance à l'heure réelle. Sans payload. |
 | `inject`| Empile un mode chaos consommé par le **prochain** `simulate`. |
 
 `wait` et `advance_time` sont exactement inverses : le premier dort sans
@@ -117,8 +118,20 @@ mesure en jours : un alias qui expire, une échéance qui tombe.
 ```
 
 Le recul est refusé au chargement : un scénario qui remonte le temps
-échoue avant de commencer. Pour revenir à l'heure réelle, appeler
-`POST /paysim/api/v1/clock/reset`.
+échoue avant de commencer. Pour revenir en arrière, il y a `reset_time`.
+
+**Un scénario qui avance le temps le remet en place.** L'instance est
+partagée entre les scénarios d'une même exécution : la laisser en avant
+fausserait les suivants, dont les assertions « depuis le début du
+scénario » compteraient alors les livraisons de celui-ci.
+
+```yaml
+- action: advance_time
+  duration: 1440h
+- action: assert_payment_method
+  usable: false
+- action: reset_time
+```
 
 Modes `inject` reconnus (one-shot — consommé par le prochain `simulate`,
 puis remis à zéro) :

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sprimault/paysim/internal/chaos"
+	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/delivery"
 	"github.com/sprimault/paysim/internal/format"
 )
@@ -170,9 +171,9 @@ func applyOutcome(tx *Transaction, outcome, reason string, decline chaos.Decline
 //
 // Défauts appliqués : paymentMethodType=CARDS, cardBrand=VISA,
 // threeDSStatus=SUCCESS, authenticationType déduit du status.
-func buildKrAnswer(tx *Transaction, pm *PaymentMethod, presentee *Card, opts BrowserReturnOpts, serverURL string, mode string) *KrAnswer {
+func buildKrAnswer(clk clock.Clock, tx *Transaction, pm *PaymentMethod, presentee *Card, opts BrowserReturnOpts, serverURL string, mode string) *KrAnswer {
 	spec := outcomeSpecs[opts.Outcome]
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := clk.Now().Format(time.RFC3339)
 
 	paymentMethodType := opts.PaymentMethodType
 	if paymentMethodType == "" {
@@ -200,7 +201,7 @@ func buildKrAnswer(tx *Transaction, pm *PaymentMethod, presentee *Card, opts Bro
 		// les quatre derniers chiffres ou sur la date de péremption.
 		pan := newMaskedPAN(cardBrand)
 		expiryMonth := 12
-		expiryYear := time.Now().UTC().Year() + 2
+		expiryYear := clk.Now().Year() + 2
 		holderName := ""
 
 		// Ces trois-là restent des défauts, mais des défauts qu'une
