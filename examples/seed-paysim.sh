@@ -56,10 +56,11 @@ simulate() {
         "{\"outcome\":\"${2:-PAID}\",\"channel\":\"ipn\",\"notificationUrl\":\"$NOTIF_URL\"}" >/dev/null
 }
 
-# Enrôle une carte sans rien débiter et rend l'alias créé.
+# Enrôle une carte sans rien débiter et rend l'alias créé. Troisieme
+# argument : la marque, payzen par defaut.
 enrole() {
-    post /payments "{\"amount\":0,\"currency\":\"EUR\",\"orderId\":\"$1\",
-      \"formAction\":\"REGISTER\",\"card\":$2}" | field paymentMethodToken
+    post /payments "{\"provider\":\"${3:-payzen}\",\"amount\":0,\"currency\":\"EUR\",
+      \"orderId\":\"$1\",\"formAction\":\"REGISTER\",\"card\":$2}" | field paymentMethodToken
 }
 
 # Renvoie N fois la dernière livraison d'un paiement.
@@ -218,12 +219,16 @@ for i in $(seq 1 30); do
 done
 echo "  CMD-2001 à CMD-2030"
 
-echo "==> 14. Paiements Systempay, à côté des PayZen"
+echo "==> 14. Systempay, à côté de PayZen"
 # Les cinq marques Lyra sont la meme passerelle : memes chemins, meme
 # signature, seul l'hote les distingue chez le vrai fournisseur. Une
 # instance peut donc en heberger plusieurs, chaque paiement gardant la
 # sienne. Sans ces lignes, l'onglet Systempay reste vide et personne ne
 # voit que le filtre par marque fonctionne.
+#
+# Les trois collections y passent — paiements, alias, abonnement — parce
+# que l'onglet est present sur les trois ecrans : n'en peupler qu'un
+# laisse croire que les deux autres ne savent pas filtrer.
 for pair in "3990:CMD-SP-01" "1001:CMD-SP-02"; do
     amount=${pair%%:*}; order=${pair##*:}
     U=$(post /payments "{\"provider\":\"systempay\",\"amount\":$amount,
@@ -232,6 +237,13 @@ for pair in "3990:CMD-SP-01" "1001:CMD-SP-02"; do
     simulate "$U"
     echo "  $order — systempay"
 done
+TSP=$(enrole REGISTER-SP-01 \
+  '{"pan":"4111111111111111","expiryMonth":4,"expiryYear":2031}' systempay)
+SSP=$(post /subscriptions "{\"provider\":\"systempay\",\"paymentMethodToken\":\"$TSP\",
+  \"amount\":1290,\"currency\":\"EUR\",\"orderId\":\"SUB-SP-01\",
+  \"rrule\":\"RRULE:FREQ=MONTHLY;INTERVAL=1\"}" | field id)
+post "/subscriptions/$SSP/trigger-billing" >/dev/null
+echo "  alias $TSP et $SSP — SUB-SP-01, 1 échéance, en systempay"
 
 echo "==> 15. Rejeux, pour que la pastille du bouton de renvoi compte"
 # Des nombres differents sur trois paiements : sans rejeu, la pastille
@@ -254,5 +266,5 @@ echo ""
 echo "Recherche : taper « client-2 » pour filtrer le volume"
 echo "Pastille de rejeux : CMD-1042 (1), CMD-1047 (2), CMD-2012 (3)"
 echo "Deux refus d'échéance à comparer : SUB-78 sans code, SUB-81 en 51"
-echo "Onglets de marque : CMD-SP-01 et CMD-SP-02 sont en systempay"
+echo "Onglets de marque : systempay a ses paiements, son alias et son abonnement"
 echo "UI : ${PAYSIM_URL:-http://localhost:30880}/"

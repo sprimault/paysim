@@ -123,10 +123,12 @@ function Invoke-JsonPost {
     Invoke-RestMethod -Method Post -Uri "$Api$Path" -ContentType 'application/json' -Body $json
 }
 
-# Enrôle une carte sans rien débiter et rend l'alias créé.
+# Enrôle une carte sans rien débiter et rend l'alias créé. Provider
+# porte la marque Lyra sous laquelle enrôler, payzen par défaut.
 function Register-Card {
-    param([string]$OrderId, [hashtable]$Card)
+    param([string]$OrderId, [hashtable]$Card, [string]$Provider = 'payzen')
     $r = Invoke-JsonPost '/payments' @{
+        provider   = $Provider
         amount     = 0; currency = 'EUR'; orderId = $OrderId
         formAction = 'REGISTER'; card = $Card
     }
@@ -338,11 +340,15 @@ foreach ($i in 1..30) {
 }
 Write-Host '  volume : 30 paiements repartis sur les etats'
 
-# Deux paiements Systempay a cote des PayZen. Les cinq marques Lyra sont
-# la meme passerelle : memes chemins, meme signature, seul l'hote les
-# distingue chez le vrai fournisseur. Une instance peut donc en heberger
-# plusieurs, chaque paiement gardant la sienne — sans ces lignes,
+# Du Systempay a cote du PayZen. Les cinq marques Lyra sont la meme
+# passerelle : memes chemins, meme signature, seul l'hote les distingue
+# chez le vrai fournisseur. Une instance peut donc en heberger
+# plusieurs, chaque enregistrement gardant la sienne — sans ces lignes,
 # l'onglet Systempay reste vide et le filtre par marque ne se voit pas.
+#
+# Les trois collections y passent, parce que l'onglet est present sur
+# les trois ecrans : n'en peupler qu'un laisse croire que les deux
+# autres ne savent pas filtrer.
 foreach ($cas in @(
         @{ amount = 3990; order = 'CMD-SP-01' },
         @{ amount = 1001; order = 'CMD-SP-02' })) {
@@ -353,7 +359,15 @@ foreach ($cas in @(
     }
     $null = Invoke-JsonPost "/payments/$($r.uuid)/simulate" @{ outcome = 'PAID'; channel = 'ipn' }
 }
-Write-Host '  marques : CMD-SP-01 et CMD-SP-02 en systempay'
+$TSP = Register-Card 'REGISTER-SP-01' `
+    @{ pan = '4111111111111111'; expiryMonth = 4; expiryYear = 2031 } 'systempay'
+$SSP = Invoke-JsonPost '/subscriptions' @{
+    provider = 'systempay'; paymentMethodToken = $TSP
+    amount   = 1290; currency = 'EUR'; orderId = 'SUB-SP-01'
+    rrule    = 'RRULE:FREQ=MONTHLY;INTERVAL=1'
+}
+$null = Invoke-JsonPost "/subscriptions/$($SSP.id)/trigger-billing"
+Write-Host '  marques : paiements, alias et abonnement en systempay'
 
 # Des rejeux sur trois paiements, en nombres differents : c'est la
 # pastille du bouton de renvoi qui les compte, et sans eux elle ne
@@ -381,5 +395,6 @@ Write-Host 'Etats des moyens     : REGISTER-2043 expire, REGISTER-2044 revoque'
 Write-Host 'Abonnements          : SUB-77 (2 echeances), SUB-78 (refus sans code), SUB-79 (annule), SUB-80 (aucune), SUB-81 (refus 51)'
 Write-Host 'Recherche            : taper « client-2 » pour filtrer le volume'
 Write-Host 'Pastille de rejeux   : CMD-1042 (1), CMD-1047 (2), CMD-2012 (3)'
+Write-Host 'Onglets de marque    : systempay a ses paiements, son alias et son abonnement'
 Write-Host ''
 Write-Host "Pour arreter : docker rm -f $Name $Sink; docker network rm $Net"
