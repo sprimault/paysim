@@ -799,6 +799,19 @@ export interface WebhookChaos {
    */
   badSignature?: boolean;
   /**
+   * BadAlgorithm : kr-hash-algorithm annonce un algorithme que le SDK
+   * marchand ne supporte pas, le kr-hash restant valide.
+   * Panne distincte de BadSignature, et que la vraie plateforme rend
+   * possible : son client JavaScript reposte tel quel l'algorithme
+   * reçu du serveur sans le valider — la chaîne « sha256_hmac » n'y
+   * figure nulle part. La restriction vit uniquement côté SDK
+   * marchand, qui lève une exception au lieu de comparer.
+   * C'est la branche d'erreur que personne ne couvre : un marchand
+   * teste qu'une signature fausse est refusée, jamais qu'un
+   * algorithme inconnu ne fait pas tomber son webhook en 500.
+   */
+  badAlgorithm?: boolean;
+  /**
    * RaceBeforeResponse : la reponse HTTP au simulate est retardee
    * de 500 ms, laissant le temps au webhook de partir en avance.
    * Cote client, la webhook arrive avant la reponse a l'appel de
