@@ -54,6 +54,10 @@ export function PaymentOverview({ payment }: { payment: PaymentInStore }) {
         </h3>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
           <Info label={t('payment.detail.overview.fieldState')} value={payment.state} mono />
+          {/* La marque telle qu'elle est stockée, pas le libellé
+              commercial des onglets : c'est cette valeur-là qu'on
+              repasse dans provider à la création. */}
+          <Info label={t('payment.detail.overview.fieldProvider')} value={payment.provider} mono />
           <Info label={t('payment.detail.overview.fieldCurrency')} value={payment.currency} />
           {/*
             Le motif bancaire en clair, code et libelle : sur la fiche on
