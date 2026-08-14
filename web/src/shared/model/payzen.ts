@@ -456,6 +456,16 @@ export interface Transaction {
    */
   UUID: string;
   /**
+   * Brand est la marque Lyra qui porte ce paiement — payzen,
+   * systempay, sogecommerce, scellius ou lyra. Vide vaut la marque par
+   * défaut de l'adaptateur.
+   * Portée par le paiement et non par l'instance : une instance peut
+   * héberger plusieurs intégrations à la fois, chacune étiquetée. Le
+   * trafic arrivant par les routes du protocole prend la marque de
+   * l'instance, ces routes n'en transportant aucune.
+   */
+  Brand: string;
+  /**
    * OrderID est la référence de commande du marchand, libre.
    */
   OrderID: string;
@@ -681,6 +691,11 @@ export interface Subscription {
    * ID est le subscriptionId assigné par Paysim.
    */
   ID: string;
+  /**
+   * Brand est la marque Lyra de l'abonnement, héritée par ses
+   * échéances. Vide vaut celle de l'instance.
+   */
+  Brand: string;
   /**
    * OrderID est la référence marchand de l'abonnement.
    */
@@ -987,6 +1002,18 @@ export interface KrAnswer {
    * Paysim, une constante qui l'identifie comme simulateur.
    */
   applicationVersion?: string;
+  /**
+   * ApplicationProvider nomme la marque émettrice, avec les valeurs
+   * réelles de la plateforme : PAYZEN, NPS pour Systempay, SOGECOM,
+   * LBP pour Scellius, LYRA. Le champ manquait, et un marchand qui s'y
+   * fie ne trouvait rien.
+   * La valeur ne se déduit pas de l'hôte — quatre hôtes distincts
+   * annoncent PAYZEN — elle vient donc de la marque du paiement. Aucun
+   * risque de se faire passer pour la vraie plateforme :
+   * ApplicationVersion annonce juste à côté qu'il s'agit d'un
+   * simulateur.
+   */
+  applicationProvider?: string;
   /**
    * Mode vaut toujours TEST : un simulateur n'a pas de production.
    */

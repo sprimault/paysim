@@ -16,6 +16,7 @@ import (
 	"github.com/sprimault/paysim/internal/bus"
 	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/delivery"
+	"github.com/sprimault/paysim/internal/providers/payzen"
 )
 
 // setupHorloge monte une API avec une horloge pilotable et la rend, pour
@@ -169,5 +170,55 @@ func TestClock_absente(t *testing.T) {
 			t.Errorf("%s %s : status = %d, veut 500", cas.methode, cas.chemin, resp.StatusCode)
 		}
 		_ = resp.Body.Close()
+	}
+}
+
+// TestCreatePayment_marquesLyra couvre le point d'entrée du multi-marque
+// côté API : les cinq marques sont acceptées et conservées, une valeur
+// étrangère est refusée.
+//
+// C'est le contrat que voit un scénario ou l'interface — le protocole,
+// lui, ne transporte pas de marque et prend celle de l'instance.
+func TestCreatePayment_marquesLyra(t *testing.T) {
+	t.Parallel()
+	logger := discardLogger()
+	store := newMemStore()
+	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
+	b := bus.New()
+	ph := payzen.NewHandler(store, queue, logger, clock.System{}, payzen.HandlerConfig{
+		HMACKey: "k", RESTPassword: "p", Publisher: b,
+	})
+	server := httptest.NewServer(NewHandler(Deps{
+		Store: store, Queue: queue, Publisher: b, Logger: logger, PayzenHandler: ph,
+	}))
+	t.Cleanup(server.Close)
+
+	creer := func(provider string) int {
+		t.Helper()
+		corps := `{"amount":1000,"currency":"EUR","orderId":"CMD-` + provider + `"}`
+		if provider != "" {
+			corps = `{"provider":"` + provider + `","amount":1000,"currency":"EUR","orderId":"CMD-` + provider + `"}`
+		}
+		resp, err := http.Post(server.URL+"/paysim/api/v1/payments",
+			"application/json", bytes.NewBufferString(corps))
+		if err != nil {
+			t.Fatalf("POST %s : %v", provider, err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		return resp.StatusCode
+	}
+
+	for _, marque := range payzen.MarquesLyra {
+		if got := creer(marque); got != http.StatusCreated && got != http.StatusOK {
+			t.Errorf("provider %q : status = %d, veut une création", marque, got)
+		}
+	}
+	if got := creer(""); got != http.StatusCreated && got != http.StatusOK {
+		t.Errorf("provider vide : status = %d, veut une création", got)
+	}
+	// Une marque étrangère reste refusée : accepter n'importe quoi
+	// laisserait un paiement invisible de tout adaptateur.
+	if got := creer("monetico"); got != http.StatusBadRequest {
+		t.Errorf("provider inconnu : status = %d, veut 400", got)
 	}
 }

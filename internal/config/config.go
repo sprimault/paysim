@@ -78,6 +78,17 @@ type Config struct {
 	// rien.
 	PayzenRESTPassword string
 
+	// PayzenBrand est la marque Lyra que porte le trafic arrivant par les
+	// routes du protocole. Lue depuis PAYSIM_PAYZEN_BRAND, défaut
+	// "payzen".
+	//
+	// Elle est nécessaire parce que /api-payment/V4/* ne transporte
+	// aucune marque : chez Lyra c'est l'hôte qui la désigne, et Paysim
+	// n'en a qu'un. L'API de contrôle, elle, prend la marque dans le
+	// corps de la requête — une instance peut donc héberger plusieurs
+	// intégrations, celle du protocole recevant celle-ci par défaut.
+	PayzenBrand string
+
 	// HTTPAddr est l'adresse d'écoute du serveur HTTP, au format Go
 	// (":8080", "127.0.0.1:8080"). Défaut ":8080". Un seul port pour
 	// tout — interface, API de contrôle, endpoints REST V4 (invariant
@@ -201,6 +212,15 @@ func loadFrom(
 		return nil, err
 	}
 	cfg.PayzenRESTPassword = restPassword
+
+	// La valeur est reprise telle quelle : la liste des marques valides
+	// est une connaissance du protocole, elle vit dans l'adaptateur. La
+	// configuration ne doit pas importer un fournisseur — elle en
+	// importerait deux le jour du deuxième. cmd/paysim valide avant de
+	// câbler, et refuse de démarrer sur une marque inconnue.
+	if raw, ok := lookup("PAYSIM_PAYZEN_BRAND"); ok {
+		cfg.PayzenBrand = raw
+	}
 
 	// Refus au démarrage plutôt qu'au premier IPN : une instance qui
 	// signe ses notifications avec la mauvaise clé valide chez le

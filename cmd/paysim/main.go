@@ -103,6 +103,14 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		"chaos_error_rate", cfg.ChaosErrorRate,
 	)
 
+	// Une marque inconnue arrête le démarrage. La liste vit dans
+	// l'adaptateur, pas dans la configuration : celle-ci n'a pas à
+	// connaître les fournisseurs, elle en importerait deux au deuxième.
+	if cfg.PayzenBrand != "" && !payzen.EstMarqueLyra(cfg.PayzenBrand) {
+		return fmt.Errorf("PAYSIM_PAYZEN_BRAND invalide (%q), attendu l'une de %v",
+			cfg.PayzenBrand, payzen.MarquesLyra)
+	}
+
 	// Chaos reste nil (donc inerte) si la config est vide — invariant 5.
 	var chaosInj *chaos.Chaos
 	if cfg.ChaosLatencyMs > 0 || cfg.ChaosErrorRate > 0 {
@@ -202,6 +210,7 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		Publisher:          eventBus,
 		DefaultCallbackURL: cfg.CallbackURL.String(),
 		Autoplay:           cfg.Autoplay,
+		Brand:              cfg.PayzenBrand,
 	})
 	if cfg.Autoplay {
 		logger.Warn("autoplay_actif",
