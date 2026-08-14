@@ -456,6 +456,16 @@ export interface Transaction {
    */
   UUID: string;
   /**
+   * Brand est la marque Lyra qui porte ce paiement — payzen,
+   * systempay, sogecommerce, scellius ou lyra. Vide vaut la marque par
+   * défaut de l'adaptateur.
+   * Portée par le paiement et non par l'instance : une instance peut
+   * héberger plusieurs intégrations à la fois, chacune étiquetée. Le
+   * trafic arrivant par les routes du protocole prend la marque de
+   * l'instance, ces routes n'en transportant aucune.
+   */
+  Brand: string;
+  /**
    * OrderID est la référence de commande du marchand, libre.
    */
   OrderID: string;
@@ -681,6 +691,11 @@ export interface Subscription {
    * ID est le subscriptionId assigné par Paysim.
    */
   ID: string;
+  /**
+   * Brand est la marque Lyra de l'abonnement, héritée par ses
+   * échéances. Vide vaut celle de l'instance.
+   */
+  Brand: string;
   /**
    * OrderID est la référence marchand de l'abonnement.
    */

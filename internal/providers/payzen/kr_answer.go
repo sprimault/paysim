@@ -21,6 +21,7 @@ import (
 // arbitraire, cohérente avec ce qu'un vrai back-office annoncerait.
 const applicationVersion = "6.0.0-paysim"
 
+
 // mapping outcome → contexte de transition et status/detailedStatus
 // PayZen. Regroupé ici pour rester une seule source de vérité et
 // éviter les switch dispersés.

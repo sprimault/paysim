@@ -9,6 +9,7 @@ import (
 
 	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/domain"
+	"github.com/sprimault/paysim/internal/format"
 	"github.com/sprimault/paysim/internal/store/inmem"
 )
 
@@ -183,5 +184,108 @@ func TestStoreConcurrentAccess(t *testing.T) {
 
 	if n, _ := s.Len(); n == 0 {
 		t.Error("Len() = 0 apres writes concurrents")
+	}
+}
+
+// TestRepoStore_marquesLyra couvre le cœur du multi-marque : un paiement
+// étiqueté systempay doit rester visible de l'adaptateur, qui filtrait
+// auparavant sur la seule valeur « payzen ».
+//
+// Sans ce test, un paiement d'une autre marque disparaîtrait des listes,
+// de la relecture par formToken et du compte — silencieusement, puisque
+// « aucun résultat » est une réponse plausible.
+func TestRepoStore_marquesLyra(t *testing.T) {
+	t.Parallel()
+	s := newMemStore()
+
+	for i, marque := range MarquesLyra {
+		p, err := domain.New(clock.System{}, "u-"+marque, 1000, "EUR")
+		if err != nil {
+			t.Fatalf("domain.New : %v", err)
+		}
+		if err := s.Save(&Transaction{
+			FormToken: "tok-" + marque,
+			UUID:      "u-" + marque,
+			Brand:     marque,
+			OrderID:   "CMD-" + marque,
+			Amount:    format.Amount(1000 + i),
+			Currency:  "EUR",
+			Payment:   p,
+		}); err != nil {
+			t.Fatalf("Save %s : %v", marque, err)
+		}
+	}
+
+	n, err := s.Len()
+	if err != nil {
+		t.Fatalf("Len : %v", err)
+	}
+	if n != len(MarquesLyra) {
+		t.Errorf("Len = %d, veut %d — une marque est invisible de l'adaptateur", n, len(MarquesLyra))
+	}
+
+	all, err := s.AllTransactions()
+	if err != nil {
+		t.Fatalf("AllTransactions : %v", err)
+	}
+	if len(all) != len(MarquesLyra) {
+		t.Fatalf("AllTransactions = %d, veut %d", len(all), len(MarquesLyra))
+	}
+
+	for _, marque := range MarquesLyra {
+		tx, err := s.ByToken("tok-" + marque)
+		if err != nil {
+			t.Fatalf("ByToken %s : %v", marque, err)
+		}
+		if tx == nil {
+			t.Errorf("ByToken %s = nil : le formToken d'une marque n'est pas retrouvé", marque)
+			continue
+		}
+		if tx.Brand != marque {
+			t.Errorf("ByToken %s : Brand = %q, la marque ne survit pas à l'aller-retour", marque, tx.Brand)
+		}
+		byUUID, err := s.ByUUID("u-" + marque)
+		if err != nil || byUUID == nil {
+			t.Errorf("ByUUID %s : %v / %v", marque, byUUID, err)
+		}
+	}
+}
+
+// TestRepoStore_marqueVideVautDefaut : un appelant qui n'exprime pas de
+// marque doit produire un enregistrement visible, pas un provider vide
+// que le filtre écarterait.
+func TestRepoStore_marqueVideVautDefaut(t *testing.T) {
+	t.Parallel()
+	s := newMemStore()
+	p, err := domain.New(clock.System{}, "u-vide", 1000, "EUR")
+	if err != nil {
+		t.Fatalf("domain.New : %v", err)
+	}
+	if err := s.Save(&Transaction{
+		FormToken: "tok-vide", UUID: "u-vide", OrderID: "CMD", Amount: 1000,
+		Currency: "EUR", Payment: p,
+	}); err != nil {
+		t.Fatalf("Save : %v", err)
+	}
+	tx, err := s.ByUUID("u-vide")
+	if err != nil || tx == nil {
+		t.Fatalf("ByUUID = %v, %v", tx, err)
+	}
+	if tx.Brand != MarqueParDefaut {
+		t.Errorf("Brand = %q, veut %q", tx.Brand, MarqueParDefaut)
+	}
+}
+
+func TestEstMarqueLyra(t *testing.T) {
+	t.Parallel()
+	for _, m := range MarquesLyra {
+		if !EstMarqueLyra(m) {
+			t.Errorf("%q rejetee alors qu'elle est dans la liste", m)
+		}
+	}
+	for _, m := range []string{"stripe", "monetico", "", "PAYZEN"} {
+		if EstMarqueLyra(m) {
+			t.Errorf("%q acceptee a tort", m)
+		}
 	}
 }

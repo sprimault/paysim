@@ -69,6 +69,12 @@ type HandlerConfig struct {
 	// L'issue reste décidée par les valeurs magiques — ce mode
 	// automatise qui appuie sur le bouton, pas ce qui en sort.
 	Autoplay bool
+
+	// Brand est la marque Lyra attribuée au trafic arrivant par les
+	// routes du protocole, qui n'en transportent aucune — chez Lyra c'est
+	// l'hôte qui la désigne, et Paysim n'en a qu'un. Vide vaut
+	// MarqueParDefaut. Alimentée depuis PAYSIM_PAYZEN_BRAND.
+	Brand string
 }
 
 // Handler regroupe l'etat necessaire pour servir les endpoints REST V4
@@ -196,6 +202,11 @@ type CreateInput struct {
 	Amount   format.Amount
 	Currency string
 
+
+	// Brand désigne la marque Lyra du paiement. Vide vaut celle de
+	// l'instance. Renseignée par l'API de contrôle depuis le corps JSON ;
+	// les routes du protocole ne la portent pas.
+	Brand string
 	// OrderID est la référence de commande du marchand.
 	OrderID string
 
@@ -520,6 +531,7 @@ func (h *Handler) createNominal(in CreateInput) (*Transaction, error) {
 	tx := &Transaction{
 		FormToken:       token,
 		UUID:            uuid,
+		Brand:           h.marque(in.Brand),
 		OrderID:         in.OrderID,
 		Amount:          in.Amount,
 		Currency:        in.Currency,
@@ -709,6 +721,7 @@ func (h *Handler) createFromToken(in CreateInput) (*Transaction, error) {
 	tx := &Transaction{
 		FormToken:          formToken,
 		UUID:               uuid,
+		Brand:              h.marque(in.Brand),
 		OrderID:            in.OrderID,
 		Amount:             in.Amount,
 		Currency:           in.Currency,
@@ -1038,6 +1051,10 @@ type CreateSubscriptionInput struct {
 	// sans rien à débiter.
 	PaymentMethodToken string
 
+	// Brand désigne la marque Lyra de l'abonnement, héritée par ses
+	// échéances. Vide vaut celle de l'instance.
+	Brand string
+
 	// Amount en centimes entiers, Currency en ISO 4217, OrderID libre.
 	Amount   format.Amount
 	Currency string
@@ -1083,6 +1100,7 @@ func (h *Handler) CreateSubscription(in CreateSubscriptionInput) (*Subscription,
 	}
 	sub := &Subscription{
 		ID:                 subID,
+		Brand:              h.marque(in.Brand),
 		OrderID:            in.OrderID,
 		Amount:             in.Amount,
 		Currency:           in.Currency,
@@ -1184,6 +1202,7 @@ func (h *Handler) TriggerBilling(subID string) (*Transaction, error) {
 	tx := &Transaction{
 		FormToken:          formToken,
 		UUID:               uuid,
+		Brand:              h.marque(sub.Brand),
 		OrderID:            sub.OrderID,
 		Amount:             sub.Amount,
 		Currency:           sub.Currency,
@@ -1774,4 +1793,13 @@ func newUUID() (string, error) {
 	b[6] = (b[6] & 0x0f) | 0x40 // version 4
 	b[8] = (b[8] & 0x3f) | 0x80 // variant RFC 4122
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
+}
+
+// marque résout la marque d'un paiement : celle demandée, sinon celle de
+// l'instance, sinon celle par défaut de l'adaptateur.
+func (h *Handler) marque(demandee string) string {
+	if demandee != "" {
+		return demandee
+	}
+	return marqueOuDefaut(h.cfg.Brand)
 }

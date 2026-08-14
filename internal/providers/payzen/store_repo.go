@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/sprimault/paysim/internal/clock"
 	"github.com/sprimault/paysim/internal/domain"
@@ -51,8 +52,41 @@ type RepoStore struct {
 	pmRepo  store.PaymentMethodRepository
 }
 
-// providerName identifie PayZen dans la colonne payments.provider.
+// providerName est la marque par défaut de l'adaptateur, celle qu'il
+// écrit quand rien ne l'a précisée.
 const providerName = "payzen"
+
+// MarquesLyra énumère les marques que cet adaptateur possède dans la
+// colonne provider.
+//
+// PayZen, Systempay, Sogecommerce, Scellius et Lyra Collect sont la même
+// passerelle : mêmes chemins REST V4, même signature, seul l'hôte les
+// distingue — et l'hôte est ce que le marchand fait pointer sur Paysim.
+// Un seul adaptateur les sert donc toutes, mais chaque paiement garde sa
+// marque, ce qui permet à une instance d'héberger plusieurs intégrations
+// à la fois.
+//
+// Liste fixée par le protocole, pas par la configuration : elle ne
+// s'allonge que si Lyra ajoute une marque à sa plateforme. Voir
+// docs/providers/lyra-family.md.
+var MarquesLyra = []string{"payzen", "systempay", "sogecommerce", "scellius", "lyra"}
+
+// MarqueParDefaut est la marque écrite quand rien ne la précise.
+const MarqueParDefaut = providerName
+
+// EstMarqueLyra dit si une valeur de provider appartient à l'adaptateur.
+// Exportée pour que cmd/paysim valide PAYSIM_PAYZEN_BRAND au démarrage :
+// une instance qui croit servir Systempay et annonce PayZen dans ses
+// enveloppes est le genre de mensonge silencieux que ce simulateur
+// existe pour éviter.
+func EstMarqueLyra(provider string) bool {
+	for _, m := range MarquesLyra {
+		if m == provider {
+			return true
+		}
+	}
+	return false
+}
 
 // NewRepoStore construit un RepoStore autour des trois repositories.
 func NewRepoStore(
@@ -89,16 +123,23 @@ func (s *RepoStore) Save(tx *Transaction) error {
 	return s.repo.Save(rec)
 }
 
-// ByToken cherche par (provider=payzen, provider_ref=FormToken).
+// ByToken cherche un formToken parmi les marques de l'adaptateur.
+//
+// Une boucle plutôt qu'un filtre ensembliste dans le dépôt : le contrat
+// store.PaymentRepository prend un provider unique, et l'élargir
+// obligerait à toucher ses deux implémentations pour un gain nul. Sur
+// une instance mono-marque, quatre des cinq lectures rendent vide.
 func (s *RepoStore) ByToken(token string) (*Transaction, error) {
-	rec, err := s.repo.ByProviderRef(providerName, token)
-	if err != nil {
-		return nil, err
+	for _, marque := range MarquesLyra {
+		rec, err := s.repo.ByProviderRef(marque, token)
+		if err != nil {
+			return nil, err
+		}
+		if rec != nil {
+			return recordToPayzen(s.clk, rec)
+		}
 	}
-	if rec == nil {
-		return nil, nil
-	}
-	return recordToPayzen(s.clk, rec)
+	return nil, nil
 }
 
 // ByUUID cherche via l'UUID (indépendant du provider).
@@ -110,28 +151,53 @@ func (s *RepoStore) ByUUID(uuid string) (*Transaction, error) {
 	if rec == nil {
 		return nil, nil
 	}
-	// Filtre défensif : un UUID lookup pourrait matcher un autre
-	// provider. Cross-provider lookup non voulu depuis un RepoStore
-	// PayZen — on renvoie nil, cohérent avec l'API.
-	if rec.Provider != providerName {
+	// Filtre défensif : un UUID lookup pourrait matcher un provider
+	// étranger à cet adaptateur — un paiement Stripe le jour où il
+	// existera. On renvoie nil, cohérent avec l'API.
+	if !EstMarqueLyra(rec.Provider) {
 		return nil, nil
 	}
 	return recordToPayzen(s.clk, rec)
 }
 
-// Len compte les paiements PayZen uniquement.
+// Len compte les paiements de toutes les marques de l'adaptateur.
 func (s *RepoStore) Len() (int, error) {
-	recs, err := s.repo.ByProvider(providerName)
+	recs, err := s.recordsToutesMarques()
 	if err != nil {
 		return 0, err
 	}
 	return len(recs), nil
 }
 
-// AllTransactions retourne toutes les transactions PayZen. Ordre :
-// updated_at décroissant.
+// recordsToutesMarques concatène les paiements des cinq marques et
+// rétablit l'ordre attendu.
+//
+// Chaque lecture rend sa propre liste triée par date de modification
+// décroissante ; les concaténer perd cet ordre, d'où le tri final. Le
+// départage par UUID reprend celui du dépôt mémoire, pour que deux
+// écritures partageant la même nanoseconde ne s'ordonnent pas au hasard.
+func (s *RepoStore) recordsToutesMarques() ([]*store.PaymentRecord, error) {
+	var out []*store.PaymentRecord
+	for _, marque := range MarquesLyra {
+		recs, err := s.repo.ByProvider(marque)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, recs...)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
+			return out[i].UUID < out[j].UUID
+		}
+		return out[i].UpdatedAt.After(out[j].UpdatedAt)
+	})
+	return out, nil
+}
+
+// AllTransactions retourne toutes les transactions de l'adaptateur,
+// toutes marques confondues. Ordre : updated_at décroissant.
 func (s *RepoStore) AllTransactions() ([]*Transaction, error) {
-	recs, err := s.repo.ByProvider(providerName)
+	recs, err := s.recordsToutesMarques()
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +234,7 @@ func (s *RepoStore) SubscriptionByID(id string) (*Subscription, error) {
 	if err != nil {
 		return nil, err
 	}
-	if rec == nil || rec.Provider != providerName {
+	if rec == nil || !EstMarqueLyra(rec.Provider) {
 		return nil, nil
 	}
 	return recordToPayzenSub(rec), nil
@@ -176,7 +242,7 @@ func (s *RepoStore) SubscriptionByID(id string) (*Subscription, error) {
 
 // LenSubscriptions compte les abonnements PayZen uniquement.
 func (s *RepoStore) LenSubscriptions() (int, error) {
-	recs, err := s.subRepo.ByProvider(providerName)
+	recs, err := s.subsToutesMarques()
 	if err != nil {
 		return 0, err
 	}
@@ -203,7 +269,7 @@ func (s *RepoStore) MethodByToken(token string) (*PaymentMethod, error) {
 	if err != nil {
 		return nil, err
 	}
-	if rec == nil || rec.Provider != providerName {
+	if rec == nil || !EstMarqueLyra(rec.Provider) {
 		return nil, nil
 	}
 	return recordToPayzenMethod(rec), nil
@@ -223,7 +289,7 @@ func (s *RepoStore) Delete(uuid string) error {
 // DeleteAllTransactions supprime toutes les transactions PayZen —
 // délègue au repo générique avec le filtre provider.
 func (s *RepoStore) DeleteAllTransactions() (int, error) {
-	return s.repo.DeleteByProvider(providerName)
+	return s.supprimerToutesMarques()
 }
 
 // -----------------------------------------------------------------------------
@@ -286,7 +352,7 @@ func payzenToRecord(tx *Transaction) (*store.PaymentRecord, error) {
 	}
 	return &store.PaymentRecord{
 		UUID:             tx.UUID,
-		Provider:         providerName,
+		Provider:         marqueOuDefaut(tx.Brand),
 		ProviderRef:      tx.FormToken,
 		OrderID:          tx.OrderID,
 		Amount:           tx.Amount,
@@ -321,7 +387,7 @@ func payzenSubToRecord(sub *Subscription) (*store.SubscriptionRecord, error) {
 	// modèle Subscription actuel ne trace pas de dernière modification.
 	return &store.SubscriptionRecord{
 		ID:                 sub.ID,
-		Provider:           providerName,
+		Provider:           marqueOuDefaut(sub.Brand),
 		OrderID:            sub.OrderID,
 		Amount:             sub.Amount,
 		Currency:           sub.Currency,
@@ -344,6 +410,7 @@ func recordToPayzenSub(rec *store.SubscriptionRecord) *Subscription {
 	}
 	return &Subscription{
 		ID:                 rec.ID,
+		Brand:              rec.Provider,
 		OrderID:            rec.OrderID,
 		Amount:             rec.Amount,
 		Currency:           rec.Currency,
@@ -446,6 +513,7 @@ func recordToPayzen(clk clock.Clock, rec *store.PaymentRecord) (*Transaction, er
 	return &Transaction{
 		FormToken:          rec.ProviderRef,
 		UUID:               rec.UUID,
+		Brand:              rec.Provider,
 		OrderID:            rec.OrderID,
 		Amount:             rec.Amount,
 		Currency:           rec.Currency,
@@ -462,4 +530,42 @@ func recordToPayzen(clk clock.Clock, rec *store.PaymentRecord) (*Transaction, er
 		CreatedAt:          rec.CreatedAt,
 		UpdatedAt:          rec.UpdatedAt,
 	}, nil
+}
+
+// subsToutesMarques concatène les abonnements des marques de
+// l'adaptateur. Même raison que pour les paiements.
+func (s *RepoStore) subsToutesMarques() ([]*store.SubscriptionRecord, error) {
+	var out []*store.SubscriptionRecord
+	for _, marque := range MarquesLyra {
+		recs, err := s.subRepo.ByProvider(marque)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, recs...)
+	}
+	return out, nil
+}
+
+// supprimerToutesMarques purge les paiements de toutes les marques et
+// retourne le total supprimé.
+func (s *RepoStore) supprimerToutesMarques() (int, error) {
+	total := 0
+	for _, marque := range MarquesLyra {
+		n, err := s.repo.DeleteByProvider(marque)
+		if err != nil {
+			return total, err
+		}
+		total += n
+	}
+	return total, nil
+}
+
+// marqueOuDefaut résout une marque vide vers celle par défaut. Un
+// enregistrement sans provider serait invisible de l'adaptateur, qui
+// filtre sur l'ensemble des marques.
+func marqueOuDefaut(brand string) string {
+	if brand == "" {
+		return MarqueParDefaut
+	}
+	return brand
 }
