@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/sprimault/paysim/internal/bus"
 	"github.com/sprimault/paysim/internal/providers/payzen"
 )
 
@@ -105,6 +106,7 @@ func (h *Handler) advanceClock(w http.ResponseWriter, r *http.Request) {
 	h.clock.Advance(d)
 	etat := h.etatHorloge()
 	h.logger.Info("horloge avancee", "duration", d.String(), "offset", etat.Offset)
+	h.annoncerHorloge(etat)
 	writeJSON(w, http.StatusOK, etat)
 }
 
@@ -115,7 +117,32 @@ func (h *Handler) resetClock(w http.ResponseWriter, _ *http.Request) {
 	}
 	h.clock.Reset()
 	h.logger.Info("horloge reinitialisee")
-	writeJSON(w, http.StatusOK, h.etatHorloge())
+	etat := h.etatHorloge()
+	h.annoncerHorloge(etat)
+	writeJSON(w, http.StatusOK, etat)
+}
+
+// annoncerHorloge publie le nouvel état sur le bus.
+//
+// Sans annonce, une instance avancée par curl, par un scénario ou
+// depuis un autre onglet laisse les interfaces déjà ouvertes sur des
+// données périmées, et leur bandeau ambre éteint alors que l'instance
+// est décalée. Ce n'est pas cosmétique : l'exploitabilité d'un alias
+// est calculée à la lecture, depuis l'horloge du serveur.
+//
+// Publié aussi quand le décalage est déjà nul. L'idempotence de reset
+// ne rend pas l'annonce inutile — un client qui vient de se connecter
+// n'a rien vu passer.
+func (h *Handler) annoncerHorloge(etat ClockState) {
+	h.publisher.Publish(bus.Event{
+		Type: "clock_changed",
+		At:   h.now(),
+		Data: map[string]any{
+			"now":           etat.Now,
+			"offset":        etat.Offset,
+			"offsetSeconds": etat.OffsetSeconds,
+		},
+	})
 }
 
 // parMarquesLyra concatène le résultat d'une lecture par provider sur

@@ -7,8 +7,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -22,7 +25,7 @@ import (
 // setupHorloge monte une API avec une horloge pilotable et la rend, pour
 // que le test puisse vérifier l'effet côté serveur et pas seulement la
 // réponse HTTP.
-func setupHorloge(t *testing.T) (*httptest.Server, *clock.Controllable) {
+func setupHorloge(t *testing.T) (*httptest.Server, *clock.Controllable, *bus.Bus) {
 	t.Helper()
 	logger := discardLogger()
 	queue := delivery.New(&http.Client{Timeout: 2 * time.Second}, logger, clock.System{}, 100)
@@ -43,7 +46,7 @@ func setupHorloge(t *testing.T) (*httptest.Server, *clock.Controllable) {
 		Clock:     clk,
 	}))
 	t.Cleanup(func() { server.Close(); cancel(); wg.Wait() })
-	return server, clk
+	return server, clk, b
 }
 
 func lireEtat(t *testing.T, url string) ClockState {
@@ -70,7 +73,7 @@ func avancer(t *testing.T, url, corps string) *http.Response {
 
 func TestClock_neutreAuDemarrage(t *testing.T) {
 	t.Parallel()
-	server, _ := setupHorloge(t)
+	server, _, _ := setupHorloge(t)
 	got := lireEtat(t, server.URL)
 	if got.OffsetSeconds != 0 {
 		t.Errorf("offsetSeconds = %v, veut 0 — la capacite doit etre inerte par defaut", got.OffsetSeconds)
@@ -85,7 +88,7 @@ func TestClock_neutreAuDemarrage(t *testing.T) {
 // domaine qui doit bouger.
 func TestClock_avanceEtCumul(t *testing.T) {
 	t.Parallel()
-	server, clk := setupHorloge(t)
+	server, clk, _ := setupHorloge(t)
 
 	resp := avancer(t, server.URL, `{"duration":"48h"}`)
 	defer func() { _ = resp.Body.Close() }()
@@ -105,7 +108,7 @@ func TestClock_avanceEtCumul(t *testing.T) {
 
 func TestClock_reculRefuse(t *testing.T) {
 	t.Parallel()
-	server, clk := setupHorloge(t)
+	server, clk, _ := setupHorloge(t)
 	resp := avancer(t, server.URL, `{"duration":"-1h"}`)
 	defer func() { _ = resp.Body.Close() }()
 
@@ -119,7 +122,7 @@ func TestClock_reculRefuse(t *testing.T) {
 
 func TestClock_dureeInvalide(t *testing.T) {
 	t.Parallel()
-	server, clk := setupHorloge(t)
+	server, clk, _ := setupHorloge(t)
 	for _, corps := range []string{`{"duration":"demain"}`, `{"duration":""}`, `{}`} {
 		resp := avancer(t, server.URL, corps)
 		if resp.StatusCode != http.StatusBadRequest {
@@ -134,7 +137,7 @@ func TestClock_dureeInvalide(t *testing.T) {
 
 func TestClock_reset(t *testing.T) {
 	t.Parallel()
-	server, clk := setupHorloge(t)
+	server, clk, _ := setupHorloge(t)
 	clk.Advance(96 * time.Hour)
 
 	resp, err := http.Post(server.URL+"/paysim/api/v1/clock/reset", "application/json", nil)
@@ -221,4 +224,77 @@ func TestCreatePayment_marquesLyra(t *testing.T) {
 	if got := creer("monetico"); got != http.StatusBadRequest {
 		t.Errorf("provider inconnu : status = %d, veut 400", got)
 	}
+}
+
+// Sans annonce sur le bus, une instance avancée depuis un scénario, un
+// curl ou un autre onglet laisse les interfaces déjà ouvertes sur des
+// données périmées — et leur bandeau ambre éteint alors que l'instance
+// est décalée.
+func TestHorloge_annonceSurLeBus(t *testing.T) {
+	t.Parallel()
+	server, _, b := setupHorloge(t)
+	evts, unsub := b.Subscribe(8)
+	defer unsub()
+
+	attendre := func() bus.Event {
+		t.Helper()
+		for {
+			select {
+			case e := <-evts:
+				if e.Type == "clock_changed" {
+					return e
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("aucun clock_changed publie")
+			}
+		}
+	}
+
+	poster(t, server, "/clock/advance", `{"duration":"48h"}`)
+	e := attendre()
+	if got := champHorloge(t, e, "offsetSeconds"); got != fmt.Sprint(48*3600) {
+		t.Errorf("offsetSeconds = %s, veut %d", got, 48*3600)
+	}
+
+	// Reset annonce aussi, y compris s'il ne change rien : un client
+	// qui vient de se connecter n'a pas vu l'avance passer.
+	poster(t, server, "/clock/reset", "")
+	e = attendre()
+	if got := champHorloge(t, e, "offsetSeconds"); got != "0" {
+		t.Errorf("apres reset : offsetSeconds = %s, veut 0", got)
+	}
+	poster(t, server, "/clock/reset", "")
+	if e = attendre(); e.Type != "clock_changed" {
+		t.Error("le second reset n'a rien annonce")
+	}
+}
+
+// poster envoie un POST sans corps ou avec, et échoue sur statut >= 300.
+func poster(t *testing.T, server *httptest.Server, chemin, corps string) {
+	t.Helper()
+	var body io.Reader
+	if corps != "" {
+		body = strings.NewReader(corps)
+	}
+	req, _ := http.NewRequest(http.MethodPost, server.URL+"/paysim/api/v1"+chemin, body)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", chemin, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		t.Fatalf("POST %s: statut %d", chemin, resp.StatusCode)
+	}
+}
+
+// champHorloge lit un champ de la charge utile d'un clock_changed. Data
+// est un any : le bus transporte ce qu'on lui donne sans le typer.
+func champHorloge(t *testing.T, e bus.Event, cle string) string {
+	t.Helper()
+	m, ok := e.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("charge utile inattendue : %T", e.Data)
+	}
+	return fmt.Sprint(m[cle])
 }
