@@ -22,6 +22,7 @@ interface WebhookState {
   upsert: (webhook: WebhookEntry) => void;
   setDetail: (detail: WebhookDetail) => void;
   remove: (id: string) => void;
+  removeByPayment: (paymentUuid: string) => void;
   clear: () => void;
 }
 
@@ -61,6 +62,30 @@ export const useWebhookStore = create<WebhookState>((set) => ({
       const next = { ...s.webhooks };
       delete next[id];
       return { webhooks: next };
+    }),
+  /**
+   * Retire les livraisons d'un paiement — le serveur les supprime avec
+   * lui, l'écran doit suivre sans attendre un rechargement.
+   *
+   * La garde sur l'uuid vide n'est pas défensive : les livraisons sans
+   * paiement rattaché sont légitimes, et un appel avec une chaîne vide
+   * les emporterait toutes. Aujourd'hui le champ arrive `undefined`
+   * parce que le serveur l'omet, ce qui masque le problème — jusqu'au
+   * jour où il ne l'omettra plus.
+   */
+  removeByPayment: (paymentUuid) =>
+    set((s) => {
+      if (!paymentUuid) return s;
+      const next: Record<string, WebhookInStore> = {};
+      let retire = false;
+      for (const [id, w] of Object.entries(s.webhooks)) {
+        if (w.paymentUuid === paymentUuid) {
+          retire = true;
+          continue;
+        }
+        next[id] = w;
+      }
+      return retire ? { webhooks: next } : s;
     }),
   clear: () => set({ webhooks: {}, listLoaded: false }),
 }));

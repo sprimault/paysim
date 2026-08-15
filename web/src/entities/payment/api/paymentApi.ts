@@ -3,8 +3,10 @@
 
 import { apiDelete, apiGetJson, apiPostJson } from '@/shared/api/client';
 import type {
+  DeletePaymentOutput,
   PaymentDetail,
   PaymentSummary,
+  PurgePaymentsOutput,
   SimulatePaymentRequest,
   SimulatePaymentResponse,
 } from '@/shared/model';
@@ -71,30 +73,36 @@ export function simulatePayment(
 }
 
 /**
- * deletePayment supprime un paiement. Idempotent — un UUID inconnu
- * renvoie 204 sans erreur.
+ * deletePayment supprime un paiement et ses livraisons. Idempotent —
+ * un UUID inconnu renvoie 204 sans erreur.
+ *
+ * Le corps n'existe que si la cascade a échoué : le cas nominal répond
+ * 204, d'où l'`undefined` du type de retour.
  */
-export function deletePayment(uuid: string, signal?: AbortSignal): Promise<void> {
-  return apiDelete<void>(`${BASE}/${encodeURIComponent(uuid)}`, signal);
-}
-
-/**
- * PurgePaymentsResponse est la réponse du bulk delete.
- */
-export interface PurgePaymentsResponse {
-  deleted: number;
+export function deletePayment(
+  uuid: string,
+  signal?: AbortSignal,
+): Promise<DeletePaymentOutput | undefined> {
+  return apiDelete<DeletePaymentOutput | undefined>(
+    `${BASE}/${encodeURIComponent(uuid)}`,
+    signal,
+  );
 }
 
 /**
  * purgePayments supprime tous les paiements, avec filtre provider
  * optionnel. Sans `provider`, purge cross-provider complète.
+ *
+ * La forme de la réponse est générée depuis le DTO Go : elle a gagné
+ * le compte des livraisons emportées, et une réécriture à la main
+ * l'aurait manqué.
  */
 export function purgePayments(
   provider?: string,
   signal?: AbortSignal,
-): Promise<PurgePaymentsResponse> {
+): Promise<PurgePaymentsOutput> {
   const path = provider
     ? `${BASE}?provider=${encodeURIComponent(provider)}`
     : BASE;
-  return apiDelete<PurgePaymentsResponse>(path, signal);
+  return apiDelete<PurgePaymentsOutput>(path, signal);
 }

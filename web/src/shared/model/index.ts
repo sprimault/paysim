@@ -28,6 +28,8 @@ import type {
   PaymentMethodOutput,
   ClockState,
   AdvanceRequest,
+  DeletePaymentOutput,
+  PurgePaymentsOutput,
 } from './api';
 import type {
   PaymentState,
@@ -95,6 +97,10 @@ export type {
   // `offset` une durée Go, les deux libres côté front.
   ClockState,
   AdvanceRequest,
+  // Comptes rendus des deux routes de suppression. Réexports directs :
+  // deux entiers et un booléen, rien à affiner côté front.
+  DeletePaymentOutput,
+  PurgePaymentsOutput,
 };
 export type {
   PaymentState,

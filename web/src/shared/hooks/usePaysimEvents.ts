@@ -93,6 +93,7 @@ export function usePaysimEvents(
   const setWebhookList = useWebhookStore((s) => s.setList);
 
   const removePayment = usePaymentStore((s) => s.remove);
+  const removeWebhooksByPayment = useWebhookStore((s) => s.removeByPayment);
   const setPaymentList = usePaymentStore((s) => s.setList);
 
   return useSSE(streamPath, (raw) => {
@@ -121,6 +122,10 @@ export function usePaysimEvents(
       case 'payment_deleted':
         // Retire directement du store — pas de refetch nécessaire.
         removePayment(raw.data.uuid);
+        // Le serveur a supprimé les livraisons avec le paiement. Sans
+        // cette ligne, l'écran des webhooks continue d'afficher des
+        // livraisons rattachées à un paiement introuvable.
+        removeWebhooksByPayment(raw.data.uuid);
         planifierResync();
         return;
       case 'payments_purged':
