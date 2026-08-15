@@ -218,6 +218,7 @@ export const messages = {
     'payment.detail.webhooks.toast.replayError': 'Rejeu échoué',
     // Webhook detail
     'webhook.detail.notFound': 'Webhook introuvable : {id}',
+    'webhook.detail.deleted': 'Cette livraison a été supprimée avec son paiement.',
     'webhook.detail.actionReplay': 'Rejouer',
     'webhook.detail.section.request': 'Requête',
     'webhook.detail.section.response': 'Réponse',
@@ -524,6 +525,7 @@ export const messages = {
     'payment.detail.webhooks.toast.replaySuccess': 'Webhook replayed',
     'payment.detail.webhooks.toast.replayError': 'Replay failed',
     'webhook.detail.notFound': 'Webhook not found: {id}',
+    'webhook.detail.deleted': 'This delivery was deleted along with its payment.',
     'webhook.detail.actionReplay': 'Replay',
     'webhook.detail.section.request': 'Request',
     'webhook.detail.section.response': 'Response',

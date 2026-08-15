@@ -7,6 +7,7 @@ import {
   fetchWebhooks,
   fetchWebhooksOfPayment,
 } from '@/entities/webhook/api/webhookApi';
+import { ApiError } from '@/shared/api/client';
 import { useWebhookStore, type WebhookInStore } from './webhookStore';
 
 /**
@@ -18,6 +19,11 @@ import { useWebhookStore, type WebhookInStore } from './webhookStore';
 interface FetchState {
   loading: boolean;
   error?: string;
+
+  // Distingue « supprimée » d'« en panne » : le premier est un état
+  // attendu depuis que la suppression d'un paiement emporte ses
+  // livraisons, le second reste une erreur à afficher comme telle.
+  supprimee?: boolean;
 }
 
 export function useWebhooksList(): {
@@ -125,6 +131,7 @@ export function useWebhook(id: string): {
   webhook: WebhookInStore | undefined;
   loading: boolean;
   error?: string;
+  supprimee: boolean;
 } {
   const webhook = useWebhookStore((s) => s.webhooks[id]);
   const setDetail = useWebhookStore((s) => s.setDetail);
@@ -145,10 +152,23 @@ export function useWebhook(id: string): {
       })
       .catch((e: unknown) => {
         if ((e as { name?: string }).name === 'AbortError') return;
+        // Un 404 n'est pas une panne : la livraison a été supprimée
+        // avec son paiement, éventuellement depuis un autre onglet.
+        // Afficher « HTTP 404 » ferait passer un état normal pour un
+        // incident d'infrastructure.
+        if (e instanceof ApiError && e.status === 404) {
+          setState({ loading: false, supprimee: true });
+          return;
+        }
         setState({ loading: false, error: (e as Error).message });
       });
     return () => controller.abort();
   }, [id, webhook?.body, setDetail]);
 
-  return { webhook, loading: state.loading, error: state.error };
+  return {
+    webhook,
+    loading: state.loading,
+    error: state.error,
+    supprimee: state.supprimee ?? false,
+  };
 }

@@ -51,9 +51,20 @@ describe('WebhookDetail', () => {
     expect(screen.getByText('kr-hash=abc')).toBeInTheDocument();
   });
 
-  it('affiche une erreur si l\'API échoue', async () => {
+  // Un 404 annonçait « erreur ». Depuis que la suppression d'un
+  // paiement emporte ses livraisons, c'est un état normal — et le seul
+  // qu'un onglet resté ouvert rencontre.
+  it('annonce une livraison supprimée sur un 404', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       new Response('not found', { status: 404 }),
+    );
+    renderAt('inexistant');
+    expect(await screen.findByText(/supprimée avec son paiement/i)).toBeInTheDocument();
+  });
+
+  it('affiche une erreur si l\'API échoue vraiment', async () => {
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Response('boom', { status: 500 }),
     );
     renderAt('inexistant');
     expect(await screen.findByText(/erreur/i)).toBeInTheDocument();
