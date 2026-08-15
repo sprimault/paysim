@@ -3,7 +3,7 @@
 Chaque phase est livrable seule et a un critère de fin vérifiable. On ne commence pas la
 suivante avant que le critère soit atteint.
 
-**Phase en cours : 5** (phase 4 close le 2026-08-02, tag `v0.4.0`)
+**Phase en cours : 6** (phase 5 close le 2026-08-12, tag `v0.7.0`)
 
 ---
 
@@ -307,6 +307,15 @@ dans le calcul du sceau, donc il compte réellement.
 ---
 
 ## Phase 5 — Horloge contrôlable
+
+**Close le 2026-08-12**, tag `v0.7.0`. Le critère est atteint : `clock-expiry` fait
+basculer un alias en expiré par une avance de soixante jours, sans dépôt ni sommeil.
+L'avance s'exposait en API, en scénario et dans l'en-tête de l'interface.
+
+Le badge d'expiration a continué de mentir jusqu'à la v0.7.1 : il se calculait sur
+l'horloge du poste, si bien qu'une instance avancée affichait « Actif » sur un alias que le
+serveur refusait déjà. Sortir `time.Now()` du serveur ne suffit pas — l'interface a le
+sien.
 
 Le temps réel est appelé en direct 26 fois, dans huit paquets — dont `internal/domain`, qui
 en devient non déterministe, et `internal/delivery`, où vit la temporisation exponentielle
