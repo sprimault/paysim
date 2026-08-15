@@ -3,6 +3,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { PaymentList } from '@/features/payment-list/ui/PaymentList';
 import { usePaymentStore } from '@/entities/payment/model/paymentStore';
@@ -68,6 +69,35 @@ describe('PaymentList', () => {
     for (const p of samples) {
       expect(screen.getByText(p.orderId)).toBeInTheDocument();
     }
+  });
+
+  // Le bouton dépendait de la liste affichée, alors que la purge ne
+  // connaît que la marque : une recherche sans résultat le faisait
+  // disparaître, et trois lignes filtrées annonçaient « vider » pour
+  // cinquante suppressions.
+  it('garde le bouton de purge quand une recherche ne trouve rien', async () => {
+    const user = userEvent.setup();
+    usePaymentStore.getState().setList(samples);
+    render(
+      <MemoryRouter>
+        <PaymentList />
+      </MemoryRouter>,
+    );
+    const bouton = screen.getByRole('button', { name: /vider les paiements/i });
+    expect(bouton).toBeEnabled();
+
+    await user.type(screen.getByPlaceholderText(/Commande/), 'introuvable-xyz');
+    expect(screen.getByRole('button', { name: /vider les paiements/i })).toBeEnabled();
+  });
+
+  it('désactive le bouton de purge quand la marque n’a aucun paiement', () => {
+    usePaymentStore.getState().setList([]);
+    render(
+      <MemoryRouter>
+        <PaymentList />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('button', { name: /vider les paiements/i })).toBeDisabled();
   });
 
   it('affiche EmptyState quand store vide et fetch retourne []', async () => {

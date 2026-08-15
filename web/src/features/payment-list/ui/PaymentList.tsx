@@ -11,6 +11,7 @@ import { ErrorBanner } from '@/shared/ui/ErrorBanner';
 import { ListFilters, type FilterState } from '@/shared/ui/ListFilters';
 import { ProviderTabs } from '@/shared/ui/ProviderTabs';
 import { RefreshButton } from '@/shared/ui/RefreshButton';
+import { Tooltip } from '@/shared/ui/Tooltip';
 import { toast } from '@/shared/ui/toastStore';
 import { useT } from '@/shared/i18n/useT';
 import { deletePayment, purgePayments } from '@/entities/payment/api/paymentApi';
@@ -57,6 +58,10 @@ export function PaymentList() {
   const [ancrePurge, setAncrePurge] = useState<HTMLElement | null>(null);
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // Ce que la purge emporterait vraiment : la marque entière, recherche
+  // et filtres d'état exclus. C'est cette valeur qui commande le bouton.
+  const aucunDeLaMarque = !payments.some((p) => !providerFilter || p.provider === providerFilter);
 
   const { query, setQuery, etats, setEtats, filtered, total } = useListFilters(payments, {
     provider: providerFilter,
@@ -144,11 +149,18 @@ export function PaymentList() {
         </div>
         <div className="flex items-center gap-2">
           <RefreshButton onRefresh={refresh} />
-          {filtered.length > 0 && (
+          {/* Le bouton suit l'onglet de marque, pas la liste affichée —
+              parce que c'est tout ce que la purge sait faire. Il
+              dépendait de `filtered`, donc de la recherche et des
+              filtres d'état : avec trois lignes à l'écran il annonçait
+              « vider » et en supprimait cinquante, et il disparaissait
+              dès qu'une recherche ne trouvait rien. */}
+          <Tooltip label={aucunDeLaMarque ? t('payment.list.action.purgeEmpty') : ''}>
             <Button
               variant="danger"
               size="sm"
               leftIcon={<Trash2 size={14} />}
+              disabled={aucunDeLaMarque}
               onClick={(e) => {
                 setAncrePurge(e.currentTarget);
                 setPurgeOpen(true);
@@ -158,7 +170,7 @@ export function PaymentList() {
                 ? t('payment.list.action.purgeProvider', { provider: providerFilter })
                 : t('payment.list.action.purgeAll')}
             </Button>
-          )}
+          </Tooltip>
         </div>
       </div>
 
