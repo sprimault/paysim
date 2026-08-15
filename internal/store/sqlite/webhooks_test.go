@@ -4,6 +4,7 @@
 package sqlite
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -303,5 +304,87 @@ func TestWebhooks_migrateExistingTable(t *testing.T) {
 	// ne peut pas le reconstituer sans relire son corps.
 	if got.Outcome != "" {
 		t.Errorf("Outcome = %q, veut vide sur une ligne ancienne", got.Outcome)
+	}
+}
+
+// Le découpage en lots est du code à nous, pas au moteur : au-delà de
+// lotCascade, l'instruction est scindée et les comptes s'additionnent.
+// Un test à trois UUID ne l'exercerait jamais.
+func TestDeleteByPayment_lots(t *testing.T) {
+	t.Parallel()
+	repo := buildWebhookRepo(t)
+	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+
+	const vises = 600
+	uuids := make([]string, 0, vises)
+	for i := 0; i < vises; i++ {
+		uuid := fmt.Sprintf("pay-%04d", i)
+		uuids = append(uuids, uuid)
+		rec := sampleWebhook(fmt.Sprintf("wh-%04d", i), base.Add(time.Duration(i)*time.Second))
+		rec.PaymentUUID = uuid
+		if err := repo.Save(rec); err != nil {
+			t.Fatalf("Save %s: %v", uuid, err)
+		}
+	}
+	// Un témoin qu'aucun lot ne doit emporter.
+	temoin := sampleWebhook("wh-temoin", base.Add(time.Hour))
+	temoin.PaymentUUID = "pay-temoin"
+	if err := repo.Save(temoin); err != nil {
+		t.Fatalf("Save temoin: %v", err)
+	}
+
+	n, err := repo.DeleteByPayment(uuids...)
+	if err != nil {
+		t.Fatalf("DeleteByPayment: %v", err)
+	}
+	if n != vises {
+		t.Errorf("supprimes = %d, veut %d", n, vises)
+	}
+	// Relire plutôt que se fier au compte : RowsAffected ne dit rien
+	// d'un prédicat mal écrit qui aurait aussi emporté le témoin.
+	restants, err := repo.Recent(10)
+	if err != nil {
+		t.Fatalf("Recent: %v", err)
+	}
+	if len(restants) != 1 || restants[0].ID != "wh-temoin" {
+		t.Errorf("restants = %+v, veut le seul temoin", restants)
+	}
+}
+
+// Les doublons ne doivent ni gonfler l'instruction ni fausser le compte.
+func TestDeleteByPayment_doublonsEtVides(t *testing.T) {
+	t.Parallel()
+	repo := buildWebhookRepo(t)
+	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+
+	rec := sampleWebhook("wh-1", base)
+	rec.PaymentUUID = "pay-a"
+	if err := repo.Save(rec); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	orpheline := sampleWebhook("wh-orpheline", base.Add(time.Second))
+	if err := repo.Save(orpheline); err != nil {
+		t.Fatalf("Save orpheline: %v", err)
+	}
+
+	n, err := repo.DeleteByPayment("pay-a", "pay-a", "", "pay-a")
+	if err != nil {
+		t.Fatalf("DeleteByPayment: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("supprimes = %d, veut 1", n)
+	}
+	restants, _ := repo.Recent(10)
+	if len(restants) != 1 || restants[0].ID != "wh-orpheline" {
+		t.Errorf("l'orpheline devait survivre, restants = %+v", restants)
+	}
+
+	// DeleteAttached l'épargne aussi : c'est ce qui la distingue de
+	// DeleteAll.
+	if n, err = repo.DeleteAttached(); err != nil || n != 0 {
+		t.Errorf("DeleteAttached = (%d, %v), veut (0, nil)", n, err)
+	}
+	if restants, _ = repo.Recent(10); len(restants) != 1 {
+		t.Errorf("DeleteAttached a emporte l'orpheline")
 	}
 }

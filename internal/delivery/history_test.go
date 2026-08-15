@@ -4,6 +4,7 @@
 package delivery
 
 import (
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -148,6 +149,72 @@ func runHistoryContract(t *testing.T, h HistoryStore) {
 	if r := h.Recent(10); len(r) != 0 {
 		t.Errorf("apres purge : Recent len = %d", len(r))
 	}
+
+	// Cascade. Repeuple sur un tampon vide, avec une orpheline : c'est
+	// elle qui distingue « supprimer ce qui appartient a un paiement »
+	// de « tout supprimer ».
+	//
+	// Place apres DeleteAll et non avant : le bloc precedent compte les
+	// entrees, et en ajouter en amont ferait echouer son assertion sur
+	// les deux implementations a la fois.
+	ajouter := func(id, payment string, decalage int) {
+		t.Helper()
+		at := base.Add(time.Duration(100+decalage) * time.Second)
+		if err := h.Add(WebhookRecord{
+			Webhook: Webhook{
+				ID: id, URL: "http://x", Body: []byte("payload-" + id),
+				PaymentUUID: payment, Attempts: 1, CreatedAt: at,
+			},
+			Status: "delivered", StatusCode: 200, CompletedAt: at,
+		}); err != nil {
+			t.Fatalf("Add %s: %v", id, err)
+		}
+	}
+	ajouter("wh-10", "pay-a", 0)
+	ajouter("wh-11", "pay-b", 1)
+	ajouter("wh-12", "", 2)
+
+	// Un appel qui ne designe rien ne doit rien supprimer — surtout pas
+	// l'orpheline, qu'un uuid vide laisse passer si la garde manque.
+	for _, cas := range [][]string{{}, {""}, {"", ""}, {"inconnu"}} {
+		if n, err := h.DeleteByPayment(cas...); err != nil || n != 0 {
+			t.Errorf("DeleteByPayment(%v) = (%d, %v), veut (0, nil)", cas, n, err)
+		}
+	}
+	if r := h.Recent(10); len(r) != 3 {
+		t.Fatalf("un appel sans cible a supprime : Recent len = %d, veut 3", len(r))
+	}
+
+	n, err = h.DeleteByPayment("pay-a")
+	if err != nil || n != 1 {
+		t.Fatalf("DeleteByPayment(pay-a) = (%d, %v), veut (1, nil)", n, err)
+	}
+	if got := h.ByPayment("pay-a", 10); len(got) != 0 {
+		t.Errorf("pay-a garde %d livraison(s)", len(got))
+	}
+	if got := h.ByPayment("pay-b", 10); len(got) != 1 {
+		t.Errorf("pay-b a perdu ses livraisons : %d restante(s)", len(got))
+	}
+	// L'ordre doit rester decroissant apres compaction : c'est ce qui
+	// casserait si le tampon gardait des trous.
+	rest := h.Recent(10)
+	if len(rest) != 2 {
+		t.Fatalf("apres cascade : Recent len = %d, veut 2", len(rest))
+	}
+	if rest[0].CompletedAt.Before(rest[1].CompletedAt) {
+		t.Errorf("ordre casse apres compaction : %v avant %v",
+			rest[0].CompletedAt, rest[1].CompletedAt)
+	}
+
+	// DeleteAttached emporte ce qui reste de rattache, jamais l'orpheline.
+	n, err = h.DeleteAttached()
+	if err != nil || n != 1 {
+		t.Fatalf("DeleteAttached = (%d, %v), veut (1, nil)", n, err)
+	}
+	rest = h.Recent(10)
+	if len(rest) != 1 || rest[0].Webhook.ID != "wh-12" {
+		t.Errorf("l'orpheline devait survivre, reste = %+v", rest)
+	}
 }
 
 func TestMemoryHistoryContract(t *testing.T) {
@@ -167,6 +234,62 @@ func TestSQLiteHistoryContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	runHistoryContract(t, NewSQLiteHistory(repo))
+}
+
+// La compaction doit tenir sur un tampon qui a bouclé, cas où l'ordre
+// logique ne suit plus l'ordre des positions. Un parcours naïf de 0 à
+// idx-1 rendrait ici une liste dans le désordre et des entrées à zéro.
+func TestMemoryHistoryDeleteByPaymentApresBouclage(t *testing.T) {
+	t.Parallel()
+	h := NewMemoryHistory()
+	base := time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)
+
+	// 250 entrées pour dépasser la capacité de 200 : le tampon a bouclé
+	// et idx est au milieu quand la suppression arrive.
+	for i := 0; i < 250; i++ {
+		paiement := "pay-pair"
+		if i%2 == 1 {
+			paiement = "pay-impair"
+		}
+		at := base.Add(time.Duration(i) * time.Second)
+		_ = h.Add(WebhookRecord{
+			Webhook: Webhook{
+				ID: fmt.Sprintf("wh-%03d", i), PaymentUUID: paiement,
+				CreatedAt: at,
+			},
+			Status: "delivered", CompletedAt: at,
+		})
+	}
+
+	n, err := h.DeleteByPayment("pay-pair")
+	if err != nil {
+		t.Fatalf("DeleteByPayment: %v", err)
+	}
+	restant := h.Recent(historyCap)
+	if len(restant) != historyCap-n {
+		t.Fatalf("Recent len = %d, veut %d apres %d suppressions",
+			len(restant), historyCap-n, n)
+	}
+
+	for i, rec := range restant {
+		if rec.Webhook.ID == "" || rec.CompletedAt.IsZero() {
+			t.Fatalf("entree a zero en position %d : la compaction a laisse un trou", i)
+		}
+		if rec.Webhook.PaymentUUID != "pay-impair" {
+			t.Errorf("position %d : %s a survecu", i, rec.Webhook.PaymentUUID)
+		}
+		if i > 0 && restant[i-1].CompletedAt.Before(rec.CompletedAt) {
+			t.Fatalf("ordre casse en position %d", i)
+		}
+	}
+
+	// Les deux lectures doivent voir le même tampon.
+	if got := len(h.ByPayment("pay-impair", 500)); got != len(restant) {
+		t.Errorf("ByPayment = %d, Recent = %d", got, len(restant))
+	}
+	if c := h.CountsByPayment(); c["pay-pair"].Total != 0 {
+		t.Errorf("pay-pair compte encore %d livraisons", c["pay-pair"].Total)
+	}
 }
 
 func TestMemoryHistoryRingWrapping(t *testing.T) {

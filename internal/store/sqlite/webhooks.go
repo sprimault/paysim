@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sprimault/paysim/internal/store"
@@ -135,7 +136,7 @@ func (r *WebhooksRepository) Recent(limit int) ([]*store.WebhookRecord, error) {
 	rows, err := r.db.Query(`
 		SELECT `+webhookColumns+`
 		FROM webhooks
-		ORDER BY completed_at DESC
+		ORDER BY completed_at DESC, id DESC
 		LIMIT ?
 	`, limit)
 	if err != nil {
@@ -157,7 +158,7 @@ func (r *WebhooksRepository) ByPayment(paymentUUID string, limit int) ([]*store.
 		SELECT `+webhookColumns+`
 		FROM webhooks
 		WHERE payment_uuid = ?
-		ORDER BY completed_at DESC
+		ORDER BY completed_at DESC, id DESC
 		LIMIT ?
 	`, paymentUUID, limit)
 	if err != nil {
@@ -233,6 +234,70 @@ func (r *WebhooksRepository) DeleteAll() (int, error) {
 	}
 	n, err := res.RowsAffected()
 	return int(n), err
+}
+
+// lotCascade borne le nombre d'UUID par instruction. La limite de
+// paramètres de SQLite est très au-dessus (32 766) : ce qu'on borne
+// ici, c'est la taille du SQL généré et la mémoire du plan, pas une
+// contrainte du moteur.
+const lotCascade = 500
+
+// DeleteByPayment supprime les livraisons des paiements désignés.
+//
+// Hors transaction, un lot à la fois. Le paquet expose bien un
+// helper transactionnel, mais il retient l'unique connexion du pool
+// (SetMaxOpenConns(1)) sous un gabarit de délai court : une cascade de
+// plusieurs milliers de livraisons y serait annulée en bloc. L'atomicité
+// n'achèterait d'ailleurs rien — le paiement est déjà supprimé quand on
+// arrive ici, et un lot en échec laisse des orphelines qu'un second
+// appel rattrape.
+//
+// Le total rendu est celui réellement supprimé, même en cas d'échec en
+// cours de route : l'appelant journalise l'erreur et annonce le partiel.
+func (r *WebhooksRepository) DeleteByPayment(paymentUUIDs ...string) (int, error) {
+	uuids := store.UUIDsDistincts(paymentUUIDs)
+	if len(uuids) == 0 {
+		return 0, nil
+	}
+	total := 0
+	for debut := 0; debut < len(uuids); debut += lotCascade {
+		fin := min(debut+lotCascade, len(uuids))
+		lot := uuids[debut:fin]
+
+		args := make([]any, len(lot))
+		for i, u := range lot {
+			args[i] = u
+		}
+		res, err := r.db.Exec(
+			`DELETE FROM webhooks WHERE payment_uuid IN (`+placeholders(len(lot))+`)`, args...)
+		if err != nil {
+			return total, err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return total, err
+		}
+		total += int(n)
+	}
+	return total, nil
+}
+
+// DeleteAttached supprime les livraisons rattachées à un paiement et
+// conserve les orphelines — même prédicat que CountsByPayment, pour que
+// « ce qui compte pour un paiement » et « ce qui part avec les
+// paiements » désignent exactement le même ensemble.
+func (r *WebhooksRepository) DeleteAttached() (int, error) {
+	res, err := r.db.Exec(`DELETE FROM webhooks WHERE payment_uuid <> ''`)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
+}
+
+// placeholders rend « ?, ?, ? » pour n paramètres.
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
 }
 
 // Close ferme la DB sous-jacente.

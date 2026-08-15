@@ -81,6 +81,32 @@ type DeliveryCounts struct {
 	Replays int
 }
 
+// UUIDsDistincts filtre une liste d'UUID pour une suppression en
+// cascade : chaînes vides écartées, doublons retirés, ordre d'apparition
+// conservé.
+//
+// Exportée parce que les deux implémentations de l'historique en ont
+// besoin et qu'elles vivent dans des paquets différents. La garde sur
+// la chaîne vide n'est pas cosmétique : un UUID vide laissé passer
+// emporterait toutes les livraisons orphelines, qui sont légitimes —
+// un webhook dont la réponse ne porte aucune transaction n'a pas de
+// paiement à rattacher.
+func UUIDsDistincts(uuids []string) []string {
+	vus := make(map[string]struct{}, len(uuids))
+	out := make([]string, 0, len(uuids))
+	for _, u := range uuids {
+		if u == "" {
+			continue
+		}
+		if _, deja := vus[u]; deja {
+			continue
+		}
+		vus[u] = struct{}{}
+		out = append(out, u)
+	}
+	return out
+}
+
 // WebhookRepository est le contrat de persistance de l'historique des
 // livraisons de webhooks. Toute impl (mémoire, SQLite) le respecte.
 type WebhookRepository interface {
@@ -114,6 +140,30 @@ type WebhookRepository interface {
 
 	// DeleteAll purge l'historique. Retourne le nombre supprimé.
 	DeleteAll() (int, error)
+
+	// DeleteByPayment supprime les livraisons rattachées aux paiements
+	// désignés. Retourne le nombre supprimé.
+	//
+	// Variadique parce que la purge en supprime autant qu'elle a de
+	// paiements : une boucle d'appels ferait une requête par UUID là où
+	// une seule suffit. Les doublons et les chaînes vides sont écartés
+	// avant tout accès au dépôt — sans cette garde, un UUID vide
+	// emporterait toutes les livraisons orphelines, celles qu'un
+	// webhook sans transaction produit légitimement.
+	//
+	// Appel sans argument, ou dont il ne reste rien après filtrage :
+	// (0, nil), sans toucher au dépôt.
+	DeleteByPayment(paymentUUIDs ...string) (int, error)
+
+	// DeleteAttached supprime toutes les livraisons rattachées à un
+	// paiement, quel qu'il soit, et conserve les orphelines.
+	//
+	// C'est elle que la purge totale emploie, et non une liste d'UUID
+	// lus au préalable : entre la lecture et la suppression, un
+	// paiement créé disparaîtrait sans figurer dans la liste, et ses
+	// livraisons deviendraient des orphelines qu'aucun identifiant ne
+	// permettrait plus de rattraper.
+	DeleteAttached() (int, error)
 
 	// Close libère les ressources sous-jacentes (no-op pour l'impl
 	// mémoire, checkpoint WAL pour SQLite).

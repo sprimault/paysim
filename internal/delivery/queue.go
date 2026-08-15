@@ -273,6 +273,33 @@ func (q *Queue) PurgeWebhooks() (int, error) {
 	return q.history.DeleteAll()
 }
 
+// PurgeWebhooksByPayment retire de l'historique les livraisons des
+// paiements désignés. Appelée quand un paiement est supprimé : sans
+// elle, ses livraisons survivent en pointant vers un paiement qui
+// n'existe plus.
+//
+// Une livraison encore en file au moment de l'appel sera historisée
+// après coup et recréera une orpheline. C'est admis : la file se vide
+// en quelques centaines de millisecondes, et retenir la suppression le
+// temps de la drainer coûterait plus que le cas qu'elle évite.
+func (q *Queue) PurgeWebhooksByPayment(paymentUUIDs ...string) (int, error) {
+	if q.history == nil {
+		return 0, nil
+	}
+	return q.history.DeleteByPayment(paymentUUIDs...)
+}
+
+// PurgeWebhooksAttached retire les livraisons rattachées à un paiement,
+// quel qu'il soit, et laisse les orphelines. C'est la cascade d'une
+// purge totale — à ne pas confondre avec PurgeWebhooks, qui emporte
+// aussi les livraisons sans paiement.
+func (q *Queue) PurgeWebhooksAttached() (int, error) {
+	if q.history == nil {
+		return 0, nil
+	}
+	return q.history.DeleteAttached()
+}
+
 // recordHistory ajoute une entrée à l'historique. Erreurs de
 // persistance loguées mais non-bloquantes — un webhook livré ne doit
 // pas échouer côté marchand si l'historique disque flanche.
