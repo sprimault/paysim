@@ -70,6 +70,7 @@ cd paysim
 | `make lint` | `golangci-lint run` |
 | `make build` | Single binary, front-end embedded |
 | `make web-types` | Regenerates the TypeScript types from the Go structs |
+| `make web-types-check` | Regenerates and fails if the types have drifted |
 
 Always go through the `make` targets rather than calling `go test`
 directly: they build the front-end first, which `internal/webui` embeds
@@ -78,7 +79,12 @@ via `//go:embed` and without which the Go build does not even compile.
 `make web-types` matters more than it looks. The TypeScript types under
 `web/src/shared/model/` are generated from the Go structs by tygo, and a
 CI job fails as soon as they drift. Run it whenever you touch an exported
-struct or an exported constant that the front-end consumes.
+struct or an exported constant that the front-end consumes — **including
+to reword a comment**: tygo copies Go doc comments into the generated
+TypeScript.
+
+`make lint` depends on it, so drift shows up before the push rather than
+once the pull request is open. `make web-types-check` runs it alone.
 
 ## What a pull request needs
 
