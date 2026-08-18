@@ -1239,9 +1239,22 @@ func (h *Handler) getPayment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toPaymentDetail(tx, h.queue.WebhookCounts()[tx.UUID]))
 }
 
-// deletePayment supprime un paiement précis. Idempotent : un UUID
-// inconnu retourne 204 (l'état demandé est atteint : ce paiement
-// n'existe pas). 500 uniquement sur erreur d'infra.
+// deletePayment supprime un paiement précis, et avec lui ses livraisons.
+// Idempotent : un UUID inconnu retourne 204 (l'état demandé est atteint :
+// ce paiement n'existe pas). 500 uniquement sur erreur d'infra.
+//
+// Le journal du paiement part sans traitement particulier : il est
+// embarqué dans son enregistrement en mémoire, et la clé étrangère de
+// payment_events est en ON DELETE CASCADE côté SQLite.
+//
+// La cascade décide d'un champ, pas du code de retour. Un 500 sur une
+// cascade échouée ferait dire à l'interface « suppression échouée »
+// pendant que l'événement fait disparaître la ligne — le paiement,
+// lui, est bien supprimé.
+//
+// Une livraison encore en file au moment de l'appel sera historisée
+// après la cascade et recréera une orpheline. Rejouer la suppression
+// l'emporte.
 //
 // Utilise en priorité le PaymentRepository cross-provider (permet de
 // supprimer un paiement Stripe depuis la même route). Fallback sur
@@ -1263,11 +1276,24 @@ func (h *Handler) deletePayment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "store failure", http.StatusInternalServerError)
 		return
 	}
+	// Hors du branchement ci-dessus : en production le dépôt
+	// cross-provider est toujours câblé, et une cascade posée dans une
+	// seule des deux branches serait soit jamais exécutée, soit jamais
+	// testée.
+	webhooks, errCascade := h.queue.PurgeWebhooksByPayment(uuid)
+	if errCascade != nil {
+		h.logger.Error("api_store_failure", "op", "cascade_webhooks",
+			"err", errCascade, "uuid", uuid)
+	}
 	h.publisher.Publish(bus.Event{
 		Type: "payment_deleted",
 		At:   h.now(),
 		Data: map[string]any{"uuid": uuid},
 	})
+	if errCascade != nil {
+		writeJSON(w, http.StatusOK, DeletePaymentOutput{Webhooks: webhooks, Partial: true})
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1277,6 +1303,37 @@ func (h *Handler) deletePayment(w http.ResponseWriter, r *http.Request) {
 //
 // Retourne 200 avec le compteur du nombre supprimé, pour que l'UI
 // puisse afficher un feedback (« 42 paiements supprimés »).
+// DeletePaymentOutput rend compte d'une suppression unitaire dont la
+// cascade n'a pas abouti. Absent du cas nominal, qui répond 204 sans
+// corps — un intégrateur qui ignore ce type continue de fonctionner.
+type DeletePaymentOutput struct {
+	// Webhooks est le nombre de livraisons retirées de l'historique.
+	Webhooks int `json:"webhooks"`
+
+	// Partial signale que le paiement est bien supprimé mais que
+	// certaines de ses livraisons subsistent. Rejouer la même
+	// suppression les emporte : la route reste idempotente, et c'est
+	// elle qui répare.
+	Partial bool `json:"partial"`
+}
+
+// PurgePaymentsOutput rend compte d'une purge : les paiements
+// supprimés, et les livraisons parties avec eux.
+//
+// Deux nombres et non un : la purge détruit désormais l'historique des
+// paiements qu'elle emporte, et l'annoncer est ce qui distingue une
+// purge d'une disparition inexpliquée de l'écran des webhooks.
+type PurgePaymentsOutput struct {
+	Deleted  int `json:"deleted"`
+	Webhooks int `json:"webhooks"`
+
+	// Partial signale des livraisons subsistantes. Contrairement à la
+	// suppression unitaire, une purge partielle ne se rejoue pas — la
+	// liste des paiements est vide au second appel. La sortie est
+	// POST /reset.
+	Partial bool `json:"partial,omitempty"`
+}
+
 // ResetOutput détaille ce qu'une réinitialisation a supprimé. Le
 // compte par table sert à la confirmation côté interface : annoncer
 // « 12 paiements, 4 moyens, 2 abonnements et 18 webhooks » dit à
@@ -1370,17 +1427,30 @@ func (h *Handler) deletePayments(w http.ResponseWriter, r *http.Request) {
 	var (
 		deleted int
 		err     error
+		// cascade est appelée après la suppression. Deux formes : par
+		// UUID quand le filtre restreint la purge, sur tout ce qui est
+		// rattaché quand elle emporte l'ensemble. La seconde évite de
+		// lire les paiements d'abord, donc la fenêtre pendant laquelle
+		// un paiement créé partirait sans figurer dans la liste.
+		cascade func() (int, error)
 	)
 	switch {
 	case h.paymentRepo != nil && provider != "":
-		deleted, err = h.paymentRepo.DeleteByProvider(provider)
+		var uuids []string
+		uuids, err = h.uuidsDuProvider(provider)
+		if err == nil {
+			deleted, err = h.paymentRepo.DeleteByProvider(provider)
+			cascade = func() (int, error) { return h.queue.PurgeWebhooksByPayment(uuids...) }
+		}
 	case h.paymentRepo != nil:
 		deleted, err = h.paymentRepo.DeleteAll()
+		cascade = h.queue.PurgeWebhooksAttached
 	case provider == "" || payzen.EstMarqueLyra(provider):
 		// Mode mémoire — seul l'adaptateur Lyra existe, DeleteAll s'y
 		// applique. Un provider étranger est traité comme un no-op
 		// (aucune entrée à supprimer chez nous).
 		deleted, err = h.store.DeleteAllTransactions()
+		cascade = h.queue.PurgeWebhooksAttached
 	default:
 		deleted = 0
 	}
@@ -1388,6 +1458,16 @@ func (h *Handler) deletePayments(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("api_store_failure", "op", "DeleteAll", "err", err, "provider", provider)
 		http.Error(w, "store failure", http.StatusInternalServerError)
 		return
+	}
+	out := PurgePaymentsOutput{Deleted: deleted}
+	if cascade != nil {
+		var errCascade error
+		out.Webhooks, errCascade = cascade()
+		if errCascade != nil {
+			h.logger.Error("api_store_failure", "op", "cascade_webhooks",
+				"err", errCascade, "provider", provider, "deleted", deleted)
+			out.Partial = true
+		}
 	}
 	h.publisher.Publish(bus.Event{
 		Type: "payments_purged",
@@ -1397,7 +1477,28 @@ func (h *Handler) deletePayments(w http.ResponseWriter, r *http.Request) {
 			"deleted":  deleted,
 		},
 	})
-	writeJSON(w, http.StatusOK, map[string]int{"deleted": deleted})
+	writeJSON(w, http.StatusOK, out)
+}
+
+// uuidsDuProvider liste les paiements d'une marque avant de les
+// supprimer — leurs identifiants sont le seul moyen de retrouver leurs
+// livraisons ensuite.
+//
+// Une fenêtre subsiste entre cette lecture et la suppression : un
+// paiement créé entre les deux part sans que ses livraisons soient
+// cascadées. Les deux appels sont adjacents, ce qui la réduit sans la
+// fermer ; la purge non filtrée, elle, ne l'a pas du tout, puisqu'elle
+// n'a rien à lire.
+func (h *Handler) uuidsDuProvider(provider string) ([]string, error) {
+	recs, err := h.paymentRepo.ByProvider(provider)
+	if err != nil {
+		return nil, err
+	}
+	uuids := make([]string, 0, len(recs))
+	for _, rec := range recs {
+		uuids = append(uuids, rec.UUID)
+	}
+	return uuids, nil
 }
 
 // listWebhooks retourne l'historique de livraison, restreint à un

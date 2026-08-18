@@ -11,11 +11,13 @@ import { ErrorBanner } from '@/shared/ui/ErrorBanner';
 import { ListFilters, type FilterState } from '@/shared/ui/ListFilters';
 import { ProviderTabs } from '@/shared/ui/ProviderTabs';
 import { RefreshButton } from '@/shared/ui/RefreshButton';
+import { Tooltip } from '@/shared/ui/Tooltip';
 import { toast } from '@/shared/ui/toastStore';
 import { useT } from '@/shared/i18n/useT';
 import { deletePayment, purgePayments } from '@/entities/payment/api/paymentApi';
 import { usePaymentsList } from '@/entities/payment/model/usePayments';
 import { usePaymentStore } from '@/entities/payment/model/paymentStore';
+import { useWebhookStore } from '@/entities/webhook/model/webhookStore';
 import { useListFilters } from '@/shared/hooks/useListFilters';
 import type { PaymentSummary } from '@/shared/model';
 import { usePaymentColumns } from './paymentColumns';
@@ -46,6 +48,7 @@ export function PaymentList() {
   const t = useT();
   const { payments, loading, error, refresh } = usePaymentsList();
   const removeFromStore = usePaymentStore((s) => s.remove);
+  const removeWebhooksByPayment = useWebhookStore((s) => s.removeByPayment);
   const [providerFilter, setProviderFilter] = useState<string>('');
   const [toDelete, setToDelete] = useState<PaymentSummary | null>(null);
   // Element cliqué : chaque boîte s'ancre sous son propre déclencheur.
@@ -55,6 +58,10 @@ export function PaymentList() {
   const [ancrePurge, setAncrePurge] = useState<HTMLElement | null>(null);
   const [purgeOpen, setPurgeOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // Ce que la purge emporterait vraiment : la marque entière, recherche
+  // et filtres d'état exclus. C'est cette valeur qui commande le bouton.
+  const aucunDeLaMarque = !payments.some((p) => !providerFilter || p.provider === providerFilter);
 
   const { query, setQuery, etats, setEtats, filtered, total } = useListFilters(payments, {
     provider: providerFilter,
@@ -75,11 +82,18 @@ export function PaymentList() {
     if (!toDelete) return;
     setBusy(true);
     try {
-      await deletePayment(toDelete.uuid);
+      const res = await deletePayment(toDelete.uuid);
       // Optimiste : on retire du store tout de suite. L'event SSE
-      // payment_deleted fera la même chose, no-op idempotent.
+      // payment_deleted fera la même chose, no-op idempotent. Les
+      // livraisons partent avec, sinon l'onglet des webhooks les
+      // affiche encore pendant le délai de regroupement.
       removeFromStore(toDelete.uuid);
-      toast.success(t('payment.list.toast.deleteSuccess'), toDelete.orderId);
+      removeWebhooksByPayment(toDelete.uuid);
+      if (res?.partial) {
+        toast.warning(t('payment.list.toast.deletePartial'), t('payment.list.toast.retryHint'));
+      } else {
+        toast.success(t('payment.list.toast.deleteSuccess'), toDelete.orderId);
+      }
     } catch (e) {
       toast.error(t('payment.list.toast.deleteError'), (e as Error).message);
     } finally {
@@ -92,11 +106,18 @@ export function PaymentList() {
     setBusy(true);
     try {
       const res = await purgePayments(providerFilter || undefined);
-      toast.success(
+      const titre =
         res.deleted === 1
           ? t('payment.list.toast.purgeSuccessOne')
-          : t('payment.list.toast.purgeSuccessMany', { count: res.deleted }),
-      );
+          : t('payment.list.toast.purgeSuccessMany', { count: res.deleted });
+      // Un seul détail, sans pluralisation : le webhook parti avec le
+      // paiement doit être annoncé, sinon sa disparition de l'écran des
+      // livraisons ressemble à une perte de données.
+      if (res.partial) {
+        toast.warning(t('payment.list.toast.purgePartial'), t('payment.list.toast.resetHint'));
+      } else {
+        toast.success(titre, t('payment.list.toast.purgeDetail', { webhooks: res.webhooks }));
+      }
       // L'event SSE payments_purged refetch la liste — pas de trim
       // local nécessaire.
       await refresh();
@@ -128,11 +149,18 @@ export function PaymentList() {
         </div>
         <div className="flex items-center gap-2">
           <RefreshButton onRefresh={refresh} />
-          {filtered.length > 0 && (
+          {/* Le bouton suit l'onglet de marque, pas la liste affichée —
+              parce que c'est tout ce que la purge sait faire. Il
+              dépendait de `filtered`, donc de la recherche et des
+              filtres d'état : avec trois lignes à l'écran il annonçait
+              « vider » et en supprimait cinquante, et il disparaissait
+              dès qu'une recherche ne trouvait rien. */}
+          <Tooltip label={aucunDeLaMarque ? t('payment.list.action.purgeEmpty') : ''}>
             <Button
               variant="danger"
               size="sm"
               leftIcon={<Trash2 size={14} />}
+              disabled={aucunDeLaMarque}
               onClick={(e) => {
                 setAncrePurge(e.currentTarget);
                 setPurgeOpen(true);
@@ -142,7 +170,7 @@ export function PaymentList() {
                 ? t('payment.list.action.purgeProvider', { provider: providerFilter })
                 : t('payment.list.action.purgeAll')}
             </Button>
-          )}
+          </Tooltip>
         </div>
       </div>
 

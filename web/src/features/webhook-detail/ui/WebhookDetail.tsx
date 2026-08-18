@@ -21,7 +21,7 @@ import { KEY_REPLAY_WEBHOOK } from '@/shared/model/shortcuts';
 export function WebhookDetail() {
   const t = useT();
   const { id = '' } = useParams();
-  const { webhook: wh, loading, error } = useWebhook(id);
+  const { webhook: wh, loading, error, supprimee } = useWebhook(id);
   const [replaying, setReplaying] = useState(false);
 
   async function handleReplay() {
@@ -58,8 +58,17 @@ export function WebhookDetail() {
   if (error || !wh) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-16 text-center">
+        {/* Trois cas, trois messages : une panne, une livraison
+            supprimée avec son paiement, et un identifiant qui n'a
+            jamais existé. Le deuxième est devenu courant depuis que la
+            suppression cascade — le confondre avec une panne ferait
+            chercher un incident là où il n'y en a pas. */}
         <p className="text-sm text-zinc-500">
-          {error ? t('common.error.prefix', { error }) : t('webhook.detail.notFound', { id })}
+          {error
+            ? t('common.error.prefix', { error })
+            : supprimee
+              ? t('webhook.detail.deleted')
+              : t('webhook.detail.notFound', { id })}
         </p>
         <Link
           to="/"

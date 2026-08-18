@@ -689,6 +689,42 @@ export interface PaymentMethodOutput {
  * cross-provider.
  * Retourne 200 avec le compteur du nombre supprimé, pour que l'UI
  * puisse afficher un feedback (« 42 paiements supprimés »).
+ * DeletePaymentOutput rend compte d'une suppression unitaire dont la
+ * cascade n'a pas abouti. Absent du cas nominal, qui répond 204 sans
+ * corps — un intégrateur qui ignore ce type continue de fonctionner.
+ */
+export interface DeletePaymentOutput {
+  /**
+   * Webhooks est le nombre de livraisons retirées de l'historique.
+   */
+  webhooks: number /* int */;
+  /**
+   * Partial signale que le paiement est bien supprimé mais que
+   * certaines de ses livraisons subsistent. Rejouer la même
+   * suppression les emporte : la route reste idempotente, et c'est
+   * elle qui répare.
+   */
+  partial: boolean;
+}
+/**
+ * PurgePaymentsOutput rend compte d'une purge : les paiements
+ * supprimés, et les livraisons parties avec eux.
+ * Deux nombres et non un : la purge détruit désormais l'historique des
+ * paiements qu'elle emporte, et l'annoncer est ce qui distingue une
+ * purge d'une disparition inexpliquée de l'écran des webhooks.
+ */
+export interface PurgePaymentsOutput {
+  deleted: number /* int */;
+  webhooks: number /* int */;
+  /**
+   * Partial signale des livraisons subsistantes. Contrairement à la
+   * suppression unitaire, une purge partielle ne se rejoue pas — la
+   * liste des paiements est vide au second appel. La sortie est
+   * POST /reset.
+   */
+  partial?: boolean;
+}
+/**
  * ResetOutput détaille ce qu'une réinitialisation a supprimé. Le
  * compte par table sert à la confirmation côté interface : annoncer
  * « 12 paiements, 4 moyens, 2 abonnements et 18 webhooks » dit à

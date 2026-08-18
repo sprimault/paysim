@@ -17,6 +17,7 @@ import { useT } from '@/shared/i18n/useT';
 import { deletePayment } from '@/entities/payment/api/paymentApi';
 import { usePayment } from '@/entities/payment/model/usePayments';
 import { usePaymentStore } from '@/entities/payment/model/paymentStore';
+import { useWebhookStore } from '@/entities/webhook/model/webhookStore';
 import { useWebhooksOfPayment } from '@/entities/webhook/model/useWebhooks';
 import { TAB_IDS, TAB_LABEL_KEYS, TAB_WITH_COUNTER, type TabId } from '@/features/payment-detail/model/tabs';
 import { PaymentOverview } from './PaymentOverview';
@@ -30,6 +31,7 @@ export function PaymentDetail() {
   const navigate = useNavigate();
   const { payment, loading, error } = usePayment(uuid);
   const removeFromStore = usePaymentStore((s) => s.remove);
+  const removeWebhooksByPayment = useWebhookStore((s) => s.removeByPayment);
   // Les livraisons de ce paiement uniquement. Auparavant la liste
   // globale, faute de rattachement en base : l'onglet Payload affichait
   // alors le kr-answer du dernier webhook de l'instance, donc celui
@@ -44,9 +46,17 @@ export function PaymentDetail() {
   async function handleDelete() {
     setDeleting(true);
     try {
-      await deletePayment(uuid);
+      const res = await deletePayment(uuid);
       removeFromStore(uuid);
-      toast.success(t('payment.list.toast.deleteSuccess'));
+      // Les livraisons sont parties côté serveur : les garder ici
+      // laisserait l'onglet des webhooks montrer celles d'un paiement
+      // qu'on vient de quitter.
+      removeWebhooksByPayment(uuid);
+      if (res?.partial) {
+        toast.warning(t('payment.list.toast.deletePartial'), t('payment.list.toast.retryHint'));
+      } else {
+        toast.success(t('payment.list.toast.deleteSuccess'));
+      }
       navigate('/', { replace: true });
     } catch (e) {
       toast.error(t('payment.list.toast.deleteError'), (e as Error).message);

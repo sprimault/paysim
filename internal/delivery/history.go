@@ -27,6 +27,13 @@ type HistoryStore interface {
 	ByPayment(paymentUUID string, limit int) []WebhookRecord
 	CountsByPayment() map[string]store.DeliveryCounts
 	DeleteAll() (int, error)
+
+	// DeleteByPayment retire les livraisons des paiements désignés,
+	// DeleteAttached toutes celles qui sont rattachées à un paiement.
+	// La seconde sert la purge totale : lire les UUID puis les
+	// supprimer laisserait passer un paiement créé entre les deux.
+	DeleteByPayment(paymentUUIDs ...string) (int, error)
+	DeleteAttached() (int, error)
 }
 
 // historyCap est la capacité du ring buffer mémoire — 200 couvre
@@ -178,6 +185,78 @@ func (m *MemoryHistory) DeleteAll() (int, error) {
 	return total, nil
 }
 
+// DeleteByPayment supprime les livraisons des paiements désignés.
+func (m *MemoryHistory) DeleteByPayment(paymentUUIDs ...string) (int, error) {
+	uuids := store.UUIDsDistincts(paymentUUIDs)
+	if len(uuids) == 0 {
+		return 0, nil
+	}
+	vises := make(map[string]struct{}, len(uuids))
+	for _, u := range uuids {
+		vises[u] = struct{}{}
+	}
+	return m.compacter(func(rec WebhookRecord) bool {
+		_, vise := vises[rec.Webhook.PaymentUUID]
+		return !vise
+	}), nil
+}
+
+// DeleteAttached supprime les livraisons rattachées à un paiement et
+// conserve les orphelines — même prédicat que CountsByPayment.
+func (m *MemoryHistory) DeleteAttached() (int, error) {
+	return m.compacter(func(rec WebhookRecord) bool {
+		return rec.Webhook.PaymentUUID == ""
+	}), nil
+}
+
+// compacter reconstruit le tampon avec les seules entrées que garder
+// retient, dans leur ordre chronologique, et rend le nombre supprimé.
+//
+// Compaction et non trous : Recent parcourt le tampon à rebours depuis
+// idx en supposant que toute position vue porte une entrée. Y laisser
+// des emplacements vides rendrait des WebhookRecord à zéro au milieu de
+// la liste, avec des dates nulles et un identifiant vide.
+//
+// Sortie anticipée quand rien n'est supprimé : une purge de mille
+// paiements passe ici mille fois, et réécrire deux cents entrées à
+// chaque tour pour ne rien changer coûterait plus que la suppression
+// elle-même. Elle préserve aussi `full`, que la compaction remet
+// sinon à false.
+//
+// Effet de bord assumé sur `full` : après compaction le tampon repart
+// non plein, donc les emplacements libérés retardent la prochaine
+// éviction. C'est le comportement voulu — les entrées supprimées ne
+// doivent pas continuer d'occuper la fenêtre de rétention.
+func (m *MemoryHistory) compacter(garder func(WebhookRecord) bool) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	total := m.idx
+	if m.full {
+		total = historyCap
+	}
+	var neuf [historyCap]WebhookRecord
+	n := 0
+	for i := 0; i < total; i++ {
+		pos := i
+		if m.full {
+			pos = (m.idx + i) % historyCap
+		}
+		if garder(m.buffer[pos]) {
+			neuf[n] = m.buffer[pos]
+			n++
+		}
+	}
+	supprimes := total - n
+	if supprimes == 0 {
+		return 0
+	}
+	m.buffer = neuf
+	m.idx = n
+	m.full = false
+	return supprimes
+}
+
 // -----------------------------------------------------------------------------
 // SQLiteHistory : wrapper sur store.WebhookRepository
 // -----------------------------------------------------------------------------
@@ -269,6 +348,16 @@ func (s *SQLiteHistory) ByID(id string) (WebhookRecord, bool) {
 // DeleteAll délègue au repository.
 func (s *SQLiteHistory) DeleteAll() (int, error) {
 	return s.repo.DeleteAll()
+}
+
+// DeleteByPayment et DeleteAttached délèguent : le filtrage des UUID
+// vaut pour les deux implémentations et vit donc dans le dépôt, pas ici.
+func (s *SQLiteHistory) DeleteByPayment(paymentUUIDs ...string) (int, error) {
+	return s.repo.DeleteByPayment(paymentUUIDs...)
+}
+
+func (s *SQLiteHistory) DeleteAttached() (int, error) {
+	return s.repo.DeleteAttached()
 }
 
 // -----------------------------------------------------------------------------

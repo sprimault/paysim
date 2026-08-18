@@ -43,6 +43,29 @@ describe('webhookStore', () => {
     expect(useWebhookStore.getState().webhooks.a).toBeUndefined();
   });
 
+  // Le serveur supprime les livraisons avec leur paiement ; sans ce
+  // retrait local, l'écran continue d'en afficher qui n'existent plus.
+  it('removeByPayment ne retire que les livraisons du paiement', () => {
+    const rattachee = (id: string, paymentUuid?: string): WebhookEntry => ({
+      ...entry(id, 't'),
+      paymentUuid,
+    });
+    useWebhookStore.getState().setList([
+      rattachee('a1', 'pay-a'),
+      rattachee('a2', 'pay-a'),
+      rattachee('b1', 'pay-b'),
+      rattachee('orph'),
+    ]);
+
+    useWebhookStore.getState().removeByPayment('pay-a');
+    expect(Object.keys(useWebhookStore.getState().webhooks).sort()).toEqual(['b1', 'orph']);
+
+    // Un uuid vide ne vaut pas « toutes » : les orphelines sont
+    // légitimes et doivent survivre à un appel mal formé.
+    useWebhookStore.getState().removeByPayment('');
+    expect(Object.keys(useWebhookStore.getState().webhooks).sort()).toEqual(['b1', 'orph']);
+  });
+
   it('webhookListSelector trie par createdAt décroissant', () => {
     useWebhookStore.getState().setList([
       entry('old', '2026-08-01T10:00:00Z'),
