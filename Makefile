@@ -101,6 +101,12 @@ TYPES_GENERES = web/src/shared/model/api.ts web/src/shared/model/payzen.ts
 # légitimes et non encore commitées — c'est-à-dire exactement quand on
 # vient de toucher un DTO.
 #
+# --strip-trailing-cr : sur un poste Windows, git repose les fichiers
+# en CRLF à chaque bascule de branche alors que tygo écrit en LF. Sans
+# ce drapeau, le premier `make lint` après un changement de branche
+# échoue sur des fins de ligne, ce qui apprend surtout à ignorer le
+# contrôle.
+#
 # Les fichiers régénérés restent en place : c'est le résultat à
 # commiter, et les restaurer masquerait la correction qu'on vient de
 # rendre nécessaire.
@@ -115,7 +121,7 @@ web-types-check:
 	@tmp=$$(mktemp -d) && cp $(TYPES_GENERES) "$$tmp/" && \
 	tygo generate --config tools/tygo/tygo.yaml >/dev/null && \
 	ecart=0; for f in $(TYPES_GENERES); do \
-		diff -u "$$tmp/$$(basename $$f)" "$$f" || ecart=1; \
+		diff -u --strip-trailing-cr "$$tmp/$$(basename $$f)" "$$f" || ecart=1; \
 	done; rm -rf "$$tmp"; \
 	if [ $$ecart -ne 0 ]; then \
 		echo "Les types generes avaient derive des DTOs Go."; \
