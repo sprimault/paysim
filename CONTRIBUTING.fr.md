@@ -76,6 +76,7 @@ cd paysim
 | `make lint` | `golangci-lint run` |
 | `make build` | Binaire unique, front embarqué |
 | `make web-types` | Régénère les types TypeScript depuis les structs Go |
+| `make web-types-check` | Régénère et échoue si les types ont dérivé |
 
 Passer par les cibles `make` plutôt que d'appeler `go test` directement :
 elles construisent d'abord le front, que `internal/webui` embarque via
@@ -84,7 +85,12 @@ elles construisent d'abord le front, que `internal/webui` embarque via
 `make web-types` compte plus qu'il n'y paraît. Les types TypeScript de
 `web/src/shared/model/` sont générés depuis les structs Go par tygo, et un
 job de CI échoue dès qu'ils divergent. À lancer dès qu'on touche une
-struct exportée ou une constante exportée que le front consomme.
+struct exportée ou une constante exportée que le front consomme —
+**y compris pour reformuler un commentaire** : tygo recopie les godoc
+dans le TypeScript produit.
+
+`make lint` en dépend, donc la dérive se voit avant le push plutôt qu'une
+fois la pull request ouverte. `make web-types-check` la lance seule.
 
 ## Ce qu'on attend d'une pull request
 

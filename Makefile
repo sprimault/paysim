@@ -1,4 +1,4 @@
-.PHONY: dev test lint vulncheck sec build web-types web-build web-test web-lint image image-push
+.PHONY: dev test lint vulncheck sec build web-types web-types-check web-build web-test web-lint image image-push
 
 # Variables de développement, toutes surchargeables à l'appel :
 #   make dev PAYSIM_DEV_CALLBACK_URL=http://127.0.0.1:4000
@@ -48,7 +48,11 @@ dev: web-build
 test: web-build
 	go test -race ./...
 
-lint: web-build
+# La vérification des types générés est accrochée à lint, pas à test :
+# `make test` doit rester exécutable sur un clone frais sans rien
+# installer, alors que lint exige déjà golangci-lint et échoue sans lui.
+# C'est aussi la cible qu'on lance avant chaque publication.
+lint: web-build web-types-check
 	@command -v golangci-lint >/dev/null 2>&1 || { echo "golangci-lint absent"; exit 1; }
 	golangci-lint run
 
@@ -82,6 +86,43 @@ TYGO_VERSION ?= v0.2.21
 web-types:
 	@command -v tygo >/dev/null 2>&1 || { echo "tygo absent : go install github.com/gzuidhof/tygo@$(TYGO_VERSION)"; exit 1; }
 	tygo generate --config tools/tygo/tygo.yaml
+
+# TYPES_GENERES est la liste produite par tygo, déclarée une fois pour
+# que le contrôle ci-dessous ne puisse pas en oublier un.
+TYPES_GENERES = web/src/shared/model/api.ts web/src/shared/model/payzen.ts
+
+# web-types-check régénère et refuse toute dérive. Même contrôle que la
+# CI, à la même source — le job l'appelle plutôt que de refaire un diff
+# en YAML, et les deux ne peuvent donc plus diverger.
+#
+# La comparaison porte sur les fichiers d'avant régénération, pas sur
+# git : sur un poste, `make lint` tourne au milieu d'un travail en
+# cours, et un diff contre HEAD échouerait sur des modifications
+# légitimes et non encore commitées — c'est-à-dire exactement quand on
+# vient de toucher un DTO.
+#
+# Les fichiers régénérés restent en place : c'est le résultat à
+# commiter, et les restaurer masquerait la correction qu'on vient de
+# rendre nécessaire.
+#
+# Le contrôle n'existait que dans la CI, ce qui le faisait découvrir
+# après le push, PR déjà ouverte, alors que git.md demande de vérifier
+# avant de publier. Cinq fois en trois semaines, dont une pour une
+# simple reformulation de commentaire — tygo recopie les godoc dans le
+# TypeScript, et un texte reformulé suffit à faire dériver le fichier.
+web-types-check:
+	@command -v tygo >/dev/null 2>&1 || { echo "tygo absent : go install github.com/gzuidhof/tygo@$(TYGO_VERSION)"; exit 1; }
+	@tmp=$$(mktemp -d) && cp $(TYPES_GENERES) "$$tmp/" && \
+	tygo generate --config tools/tygo/tygo.yaml >/dev/null && \
+	ecart=0; for f in $(TYPES_GENERES); do \
+		diff -u "$$tmp/$$(basename $$f)" "$$f" || ecart=1; \
+	done; rm -rf "$$tmp"; \
+	if [ $$ecart -ne 0 ]; then \
+		echo "Les types generes avaient derive des DTOs Go."; \
+		echo "Le resultat est deja regenere : relire et commiter."; \
+		exit 1; \
+	fi; \
+	echo "Types generes conformes aux DTOs Go"
 
 web-build:
 	cd web && npm run build
