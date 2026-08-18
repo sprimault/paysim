@@ -6,6 +6,7 @@ import { fetchPayment, fetchPayments } from '@/entities/payment/api/paymentApi';
 import { usePaymentStore } from '@/entities/payment/model/paymentStore';
 import { fetchWebhooks } from '@/entities/webhook/api/webhookApi';
 import { useWebhookStore } from '@/entities/webhook/model/webhookStore';
+import { useClockStore } from '@/shared/model/clockStore';
 import { fetchPaymentMethods } from '@/entities/payment-method/api/paymentMethodApi';
 import { usePaymentMethodStore } from '@/entities/payment-method/model/paymentMethodStore';
 import { fetchSubscriptions } from '@/entities/subscription/api/subscriptionApi';
@@ -134,6 +135,26 @@ export function usePaysimEvents(
         // d'un race entre plusieurs clients.
         void fetchPayments().then(setPaymentList).catch(() => undefined);
         planifierResync();
+        return;
+      case 'clock_changed':
+        // Le verdict d'exploitabilité d'un alias est calculé au serveur,
+        // à la lecture, depuis son horloge : une avance le change sans
+        // qu'aucune donnée ne bouge. Sans ce rechargement, les listes
+        // déjà affichées continuent d'annoncer ce qui était vrai avant.
+        //
+        // On relit l'état par GET au lieu d'appliquer la charge utile,
+        // qui contient pourtant tout ce qu'il faut. Motif : les
+        // événements sont persistés en mode SQLite et rejoués sur
+        // Last-Event-ID, alors que le décalage n'est pas persisté et
+        // repart à zéro au redémarrage. Appliquer un clock_changed
+        // rejoué peindrait « décalé de 4 jours » sur une instance à
+        // l'heure — le mensonge exact que le bandeau existe pour
+        // empêcher.
+        //
+        // Resynchronisation immédiate et non planifiée : un changement
+        // d'horloge est une action délibérée et isolée, pas une rafale.
+        void useClockStore.getState().rafraichir().catch(() => undefined);
+        resynchroniser();
         return;
       case 'reset':
         // La réinitialisation vide les quatre collections d'un coup.

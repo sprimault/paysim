@@ -11,6 +11,10 @@ describe('isPaysimEvent', () => {
     'webhook_enqueued',
     'webhook_delivered',
     'webhook_failed',
+    // Oublier un type ici le fait rejeter en silence par isPaysimEvent :
+    // le serveur annonce, le front n'entend rien.
+    'clock_changed',
+    'reset',
   ])('accepte %s', (t) => {
     expect(isPaysimEvent({ type: t })).toBe(true);
   });

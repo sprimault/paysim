@@ -202,6 +202,36 @@ describe('usePaysimEvents', () => {
     expect(urls.some((u) => u.includes('/payments'))).toBe(true);
   });
 
+  // L'exploitabilité d'un alias est calculée au serveur depuis son
+  // horloge : après une avance, les listes affichées annoncent encore ce
+  // qui était vrai avant. On relit l'état ET les collections.
+  it("relit l'horloge et les collections sur un event clock_changed", async () => {
+    usePaymentStore.getState().setList([]);
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    );
+    renderHook(() => usePaysimEvents());
+
+    act(() => {
+      instances[0].onmessage?.(
+        new MessageEvent('message', {
+          data: JSON.stringify({
+            type: 'clock_changed',
+            at: 't',
+            data: { now: '2026-09-13T00:00:00Z', offset: '720h0m0s', offsetSeconds: 2592000 },
+          }),
+        }),
+      );
+    });
+
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+    const urls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) =>
+      String(c[0]),
+    );
+    expect(urls.some((u) => u.includes('/clock'))).toBe(true);
+    expect(urls.some((u) => u.includes('/payments'))).toBe(true);
+  });
+
   // Recharger une collection jamais ouverte ferait travailler l'app pour
   // un écran que personne ne regarde.
   it('ne relit pas les collections jamais chargées', async () => {

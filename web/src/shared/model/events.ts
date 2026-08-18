@@ -26,6 +26,7 @@ export type PaysimEventType =
   | 'webhook_enqueued'
   | 'webhook_delivered'
   | 'webhook_failed'
+  | 'clock_changed'
   | 'reset';
 
 /** Un paiement vient d'être créé. Amount est en centimes entiers. */
@@ -113,6 +114,18 @@ export interface ResetEvent {
   };
 }
 
+/**
+ * L'horloge de l'instance a bougé — avance ou retour à l'heure réelle.
+ *
+ * La charge utile décrit le nouvel état, mais l'interface ne l'applique
+ * pas telle quelle : voir usePaysimEvents, qui relit le serveur.
+ */
+export interface ClockChangedEvent {
+  type: 'clock_changed';
+  at: string;
+  data: { now: string; offset: string; offsetSeconds: number };
+}
+
 export type PaysimEvent =
   | PaymentCreatedEvent
   | PaymentStateChangedEvent
@@ -121,6 +134,7 @@ export type PaysimEvent =
   | WebhookEnqueuedEvent
   | WebhookDeliveredEvent
   | WebhookFailedEvent
+  | ClockChangedEvent
   | ResetEvent;
 
 const KNOWN_TYPES: readonly PaysimEventType[] = [
@@ -131,6 +145,7 @@ const KNOWN_TYPES: readonly PaysimEventType[] = [
   'webhook_enqueued',
   'webhook_delivered',
   'webhook_failed',
+  'clock_changed',
   'reset',
 ];
 
