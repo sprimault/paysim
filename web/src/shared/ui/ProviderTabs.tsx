@@ -39,23 +39,48 @@ const LIBELLES: Record<string, string> = {
   lyra: 'Lyra Collect',
 };
 
-interface ProviderTabsProps {
+interface ProviderTabsProps<T> {
   value: string;
   onChange: (provider: string) => void;
+
+  /**
+   * La collection complète, et de quoi lire la marque d'une entrée.
+   * Le compte est fait ici plutôt que par chaque écran : trois
+   * réductions identiques finiraient par diverger, et c'est le même
+   * composant qui les afficherait.
+   *
+   * Volontairement la collection ENTIÈRE, avant recherche et filtres
+   * d'état : un onglet annonce ce que la marque contient, pas ce que
+   * le filtre courant en laisse voir. Le contraire ferait varier le
+   * total d'un onglet au gré d'une frappe dans la recherche.
+   */
+  items: readonly T[];
+  providerOf: (item: T) => string;
 }
 
-export function ProviderTabs({ value, onChange }: ProviderTabsProps) {
+export function ProviderTabs<T>({ value, onChange, items, providerOf }: ProviderTabsProps<T>) {
   const t = useT();
+  const comptes = items.reduce<Record<string, number>>((acc, item) => {
+    const prov = providerOf(item);
+    acc[prov] = (acc[prov] ?? 0) + 1;
+    return acc;
+  }, {});
   return (
     <div
       className="mb-4 flex gap-1 border-b border-zinc-200 dark:border-zinc-800"
       role="tablist"
     >
-      <Tab label={t('providerTabs.all')} active={value === ''} onClick={() => onChange('')} />
+      <Tab
+        label={t('providerTabs.all')}
+        count={items.length}
+        active={value === ''}
+        onClick={() => onChange('')}
+      />
       {KNOWN_PROVIDERS.map((prov) => (
         <Tab
           key={prov}
           label={LIBELLES[prov] ?? prov}
+          count={comptes[prov] ?? 0}
           active={value === prov}
           onClick={() => onChange(prov)}
         />
@@ -66,10 +91,12 @@ export function ProviderTabs({ value, onChange }: ProviderTabsProps) {
 
 function Tab({
   label,
+  count,
   active,
   onClick,
 }: {
   label: string;
+  count: number;
   active: boolean;
   onClick: () => void;
 }) {
@@ -88,6 +115,21 @@ function Tab({
       }
     >
       {label}
+      {/* Le zéro s'affiche, contrairement aux pastilles de navigation
+          qui le masquent. Un onglet de marque vide est une information —
+          c'est même celle qu'on cherche en balayant la barre — alors
+          qu'une entrée de menu à zéro ne dit rien que l'écran lui-même
+          ne dira mieux. */}
+      <span
+        className={
+          'ml-1.5 rounded-full px-1.5 text-xs font-medium tabular-nums ' +
+          (active
+            ? 'bg-brand-100 text-brand-800 dark:bg-brand-900/50 dark:text-brand-200'
+            : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400')
+        }
+      >
+        {count}
+      </span>
     </button>
   );
 }
