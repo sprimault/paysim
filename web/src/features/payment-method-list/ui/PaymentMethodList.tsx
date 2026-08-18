@@ -170,7 +170,12 @@ export function PaymentMethodList() {
         <RefreshButton onRefresh={refresh} />
       </div>
 
-      <ProviderTabs value={providerFilter} onChange={setProviderFilter} />
+      <ProviderTabs
+        value={providerFilter}
+        onChange={setProviderFilter}
+        items={methods}
+        providerOf={(m) => m.provider}
+      />
 
       {error && <ErrorBanner message={t('paymentMethod.list.errorPrefix', { error })} />}
 

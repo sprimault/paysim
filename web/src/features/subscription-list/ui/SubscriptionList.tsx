@@ -181,7 +181,12 @@ export function SubscriptionList() {
         <RefreshButton onRefresh={refresh} />
       </div>
 
-      <ProviderTabs value={providerFilter} onChange={setProviderFilter} />
+      <ProviderTabs
+        value={providerFilter}
+        onChange={setProviderFilter}
+        items={subscriptions}
+        providerOf={(s) => s.provider}
+      />
 
       {error && <ErrorBanner message={t('subscription.list.errorPrefix', { error })} />}
 

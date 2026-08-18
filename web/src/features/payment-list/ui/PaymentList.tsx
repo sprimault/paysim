@@ -174,7 +174,12 @@ export function PaymentList() {
         </div>
       </div>
 
-      <ProviderTabs value={providerFilter} onChange={setProviderFilter} />
+      <ProviderTabs
+        value={providerFilter}
+        onChange={setProviderFilter}
+        items={payments}
+        providerOf={(p) => p.provider}
+      />
 
       {error && <ErrorBanner message={t('payment.list.errorPrefix', { error })} />}
 

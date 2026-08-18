@@ -65,7 +65,9 @@ describe('<SubscriptionList />', () => {
     // le nom commercial de la marque. Les deux doivent coexister : un
     // intégrateur filtre sur la première et se reconnaît dans le second.
     expect(within(screen.getAllByRole('row')[1]).getByText('payzen')).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'PayZen' })).toBeInTheDocument();
+    // Le nom accessible de l'onglet porte aussi son compte, d'ou la
+    // forme souple : « PayZen 1 » et non « PayZen ».
+    expect(screen.getByRole('tab', { name: /PayZen/ })).toBeInTheDocument();
   });
 
   it('affiche un abonnement annulé', () => {
@@ -96,8 +98,11 @@ describe('<SubscriptionList />', () => {
         <SubscriptionList />
       </MemoryRouter>,
     );
-    expect(screen.getByText('7')).toBeInTheDocument();
-    expect(screen.getByText('0')).toBeInTheDocument();
+    // Visé dans les lignes : les onglets de marque portent eux aussi
+    // des compteurs, dont plusieurs à zéro.
+    const lignes = screen.getAllByRole('row');
+    expect(within(lignes[1]).getByText('7')).toBeInTheDocument();
+    expect(within(lignes[2]).getByText('0')).toBeInTheDocument();
   });
 
   it('trie par createdAt décroissant', () => {
