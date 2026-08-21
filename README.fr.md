@@ -66,6 +66,10 @@ adaptateur les couvre donc toutes.
 [`docs/providers/lyra-family.fr.md`](docs/providers/lyra-family.fr.md)
 donne les hôtes réels et les pièges.
 
+[`docs/providers/`](docs/providers/README.fr.md) indexe chaque
+fournisseur, la version d'API amont visée par chaque référence, et là où
+la simulation s'arrête.
+
 ## Démarrage rapide (Docker Compose)
 
 Récupérer le code d'abord (même commande sur les deux plateformes) :

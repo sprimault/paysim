@@ -2,6 +2,10 @@
 
 # The Lyra family
 
+**API version targeted**: Lyra REST V4.0, one reference for all five
+brands — [`payzen.md`](payzen.md). Start from the
+[provider index](README.md) for the coverage table.
+
 PayZen, Systempay, Sogecommerce, Scellius and Lyra Collect are the same
 gateway under five brands. Paysim covers them all with a single adapter
 and no special configuration: **only the host differs, and the host is

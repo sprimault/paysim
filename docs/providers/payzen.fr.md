@@ -2,6 +2,10 @@
 
 # Référence provider PayZen
 
+**Version d'API visée** : Lyra REST V4.0. Voir
+l'[index des fournisseurs](README.fr.md) pour les autres marques qui
+tournent sur cette même passerelle.
+
 Référence exhaustive du protocole PayZen tel que simulé par Paysim.
 Documente chaque endpoint natif, chaque champ request/response, chaque
 valeur autorisée, et là où Paysim se comporte différemment du vrai PSP —

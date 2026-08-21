@@ -62,6 +62,10 @@ and the host is what you point at Paysim — so one adapter covers them
 all. [`docs/providers/lyra-family.md`](docs/providers/lyra-family.md)
 gives the real hosts and the caveats.
 
+[`docs/providers/`](docs/providers/README.md) indexes every provider,
+the upstream API version each reference targets, and where the
+simulation stops.
+
 ## Quick start (Docker Compose)
 
 Get the source first (same command on both platforms):

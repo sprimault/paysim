@@ -2,6 +2,10 @@
 
 # PayZen provider reference
 
+**API version targeted**: Lyra REST V4.0. See the
+[provider index](README.md) for the other brands running on this same
+gateway.
+
 Exhaustive reference of the PayZen protocol as simulated by Paysim.
 Documents every native endpoint, every request/response field, every
 allowed value, and where Paysim behaves differently from the real

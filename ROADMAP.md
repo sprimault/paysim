@@ -347,7 +347,7 @@ Le dépôt est public et l'image publiée depuis le 3 août 2026. Ce qui reste n
 la mise à disposition, mais le fait qu'on la trouve, qu'on l'intègre et qu'on y contribue.
 
 - [x] README avec la démonstration en premier écran et le renvoi vers `docs/install.md`.
-- [ ] Documentation par fournisseur, avec la version d'API visée.
+- [x] Documentation par fournisseur, avec la version d'API visée.
 - [x] `CONTRIBUTING.md` publiant les invariants, la mise en route et ce qu'on attend d'une
   pull request — sans eux, un correctif propre se fait refuser sur une règle invisible.
 - [ ] La recette d'ajout d'un fournisseur, à écrire quand la phase 7 aura extrait la
