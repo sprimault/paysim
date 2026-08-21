@@ -2,6 +2,10 @@
 
 # La famille Lyra
 
+**Version d'API visée** : Lyra REST V4.0, une seule référence pour les
+cinq marques — [`payzen.fr.md`](payzen.fr.md). Passer par
+l'[index des fournisseurs](README.fr.md) pour la table de couverture.
+
 PayZen, Systempay, Sogecommerce, Scellius et Lyra Collect sont la même
 passerelle sous cinq marques. Paysim les couvre toutes avec un seul
 adaptateur, sans configuration particulière : **seul l'hôte change, et
