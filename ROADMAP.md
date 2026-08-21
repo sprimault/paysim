@@ -71,6 +71,12 @@ valeur.
 **Fini quand** : les six modes de panne sont déclenchables et couverts par des tests, et que
 la course webhook/réponse se provoque en trois lignes.
 
+Un septième s'est ajouté après la clôture, `bad-algorithm` : le webhook annonce un
+`kr-hash-algorithm` que le SDK marchand n'attend pas. Le client JavaScript de la plateforme
+reposte tel quel ce que le serveur lui donne — la restriction à `sha256_hmac` ne vit que
+dans le SDK marchand, donc émettre autre chose est structurellement possible en vrai, et
+fait tomber une branche d'erreur que personne ne teste.
+
 ---
 
 ## Phase 3 — L'interface
@@ -418,11 +424,6 @@ Idées valides mais hors périmètre. On les note ici plutôt que de les commenc
   webhook déclaré à la création de la charge. Exclusion vérifiée dans les deux sens. À
   traiter comme un fournisseur à part entière le jour où quelqu'un le demande, jamais
   comme une variante de marque.
-- Signature à algorithme inattendu — le client JavaScript de la plateforme reposte tel quel
-  le `kr-hash-algorithm` que le serveur lui donne, sans le valider ; la restriction à
-  `sha256_hmac` vit uniquement dans le SDK marchand. Émettre autre chose est donc
-  structurellement possible en vrai, et fait tomber une branche d'erreur que personne ne
-  teste. Relève de `internal/chaos`.
 - Réessais de livraison avec temporisation exponentielle. `internal/delivery` ne tente
   qu'une fois ; les réessais sont annoncés en commentaire depuis la phase 2 sans avoir
   jamais été écrits. Ils changent le comportement de livraison, donc leur propre validation
