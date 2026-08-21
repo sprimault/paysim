@@ -2,6 +2,7 @@
 
 # Paysim
 
+![CI](https://github.com/sprimault/paysim/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 ![Release](https://img.shields.io/github/v/release/sprimault/paysim)
 ![Image](https://img.shields.io/badge/image-ghcr.io%2Fsprimault%2Fpaysim-blue?logo=docker)
