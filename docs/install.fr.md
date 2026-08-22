@@ -27,6 +27,13 @@ préfixées `PAYSIM_`. Chaque variable portant un secret accepte un
 doublon suffixé `_FILE` qui lit la valeur depuis un fichier — utile
 pour monter un Secret K8s sans écrire la valeur en clair.
 
+Un fichier vide **empêche le démarrage**, et le message nomme la variable
+fautive. Une valeur vide désactiverait la protection concernée — jeton ou
+signature — et l'instance démarrerait la surface ouverte, `/readyz` au
+vert. Une clé de Secret renommée suffit à produire ce cas. Laisser la
+variable *directe* vide reste en revanche le mode ouvert du développement
+local.
+
 | Variable | Rôle |
 |---|---|
 | `PAYSIM_PUBLIC_URL` | URL vue par le navigateur (host d'ingress, ou `http://<ip-noeud>:30890` pour NodePort). |

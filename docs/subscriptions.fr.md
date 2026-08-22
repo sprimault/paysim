@@ -68,6 +68,12 @@ le champ `provider` dans le body JSON (défaut `payzen` ; log Debug
 | POST    | `/{id}/trigger-billing`           | Déclenche l'échéance suivante            |
 | POST    | `/{id}/cancel`                    | Annule (idempotent, 204 sur id inconnu)  |
 
+**L'alias doit exister.** Un `paymentMethodToken` inconnu fait échouer la
+création — `PAYSIM_PAYMENT_METHOD_UNKNOWN` sur la route du fournisseur,
+404 sur l'API de contrôle — plutôt que de rendre un abonnement dont chaque
+échéance échouerait ensuite. La route native l'acceptait jusqu'à la
+`v0.7.3` ; les deux chemins vérifient désormais la même chose.
+
 La lecture et la liste retournent `billingCount` : le nombre d'échéances
 déjà produites par l'abonnement, réussies comme refusées. Il est recompté
 à la volée depuis les métadonnées des paiements plutôt que stocké — un

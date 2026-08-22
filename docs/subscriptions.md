@@ -67,6 +67,12 @@ emitted on the default fallback).
 | POST   | `/{id}/trigger-billing`           | Fire the next installment now           |
 | POST   | `/{id}/cancel`                    | Cancel (idempotent, 204 on unknown id)  |
 
+**The alias must exist.** An unknown `paymentMethodToken` fails the
+creation — `PAYSIM_PAYMENT_METHOD_UNKNOWN` on the provider route, 404 on
+the control API — rather than returning a subscription whose every
+installment would then fail. The native route accepted it until `v0.7.3`;
+both paths now check the same thing.
+
 Read and list both return `billingCount`: how many installments the
 subscription has produced, successful and declined alike. It is counted
 on the fly from payment metadata rather than stored — a persisted counter
