@@ -98,3 +98,41 @@ func (d *DB) InTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	}
 	return tx.Commit()
 }
+
+// Migrations de schéma.
+//
+// Chaque dépôt décrit son schéma et l'applique au démarrage. La boucle
+// qui l'exécute était recopiée dans les cinq, et sa variante tolérante
+// aux colonnes déjà présentes dans trois — où elle avait déjà divergé :
+// deux nommaient la colonne fautive, la troisième citait le statement
+// tronqué, soit trois messages pour un même échec. Ce qui se répète ici
+// n'est pas du schéma, c'est de la plomberie ; elle vit donc à un seul
+// endroit.
+
+// appliquer exécute des statements de schéma dans l'ordre donné. Toute
+// erreur interrompt : un schéma à moitié appliqué est un piège plus
+// coûteux qu'un démarrage refusé.
+func appliquer(ctx context.Context, db *DB, stmts ...string) error {
+	for _, stmt := range stmts {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("stmt %q: %w", firstLine(stmt), err)
+		}
+	}
+	return nil
+}
+
+// ajouterColonnes exécute des ALTER TABLE ADD COLUMN en tolérant la
+// colonne déjà présente — l'état demandé est alors atteint, il n'y a
+// rien à signaler. Toute autre erreur est propagée.
+//
+// C'est la migration incrémentale des bases créées par une version
+// antérieure : SQLite ne sait pas ajouter une colonne conditionnellement,
+// et tenter puis filtrer l'erreur est l'approche usuelle.
+func ajouterColonnes(ctx context.Context, db *DB, stmts ...string) error {
+	for _, stmt := range stmts {
+		if _, err := db.ExecContext(ctx, stmt); err != nil && !isDuplicateColumnErr(err) {
+			return fmt.Errorf("stmt %q: %w", firstLine(stmt), err)
+		}
+	}
+	return nil
+}

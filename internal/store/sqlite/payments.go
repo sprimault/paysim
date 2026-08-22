@@ -70,12 +70,7 @@ func (r *PaymentsRepository) migrate(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_payment_events_payment
 			ON payment_events(payment_uuid, seq)`,
 	}
-	for _, stmt := range stmts {
-		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("stmt %q: %w", firstLine(stmt), err)
-		}
-	}
-	return nil
+	return appliquer(ctx, r.db, stmts...)
 }
 
 // Save insère ou met à jour un PaymentRecord et ses events, dans une
@@ -116,8 +111,8 @@ func (r *PaymentsRepository) Save(rec *store.PaymentRecord) error {
 			rec.UUID, rec.Provider, rec.ProviderRef, rec.OrderID,
 			int64(rec.Amount), rec.Currency, string(rec.State), int64(rec.Refunded),
 			nonEmpty(rec.CustomerJSON), nonEmpty(rec.MetadataJSON), nonEmpty(rec.ProviderDataJSON),
-			rec.CreatedAt.UTC().Format(time.RFC3339Nano),
-			rec.UpdatedAt.UTC().Format(time.RFC3339Nano),
+			horodater(rec.CreatedAt),
+			horodater(rec.UpdatedAt),
 		)
 		if err != nil {
 			return err
@@ -135,7 +130,7 @@ func (r *PaymentsRepository) Save(rec *store.PaymentRecord) error {
 		`
 		for i, e := range rec.Events {
 			if _, err := tx.ExecContext(ctx, insertEvent,
-				rec.UUID, i, e.At.UTC().Format(time.RFC3339Nano),
+				rec.UUID, i, horodater(e.At),
 				string(e.Kind), int64(e.Amount), e.Note,
 			); err != nil {
 				return err
@@ -321,9 +316,9 @@ func (r *PaymentsRepository) loadEvents(uuid string) ([]domain.Event, error) {
 		if err := rows.Scan(&atStr, &kind, &amt, &note); err != nil {
 			return nil, err
 		}
-		at, err := time.Parse(time.RFC3339Nano, atStr)
+		at, err := lireHorodatage("event.at", atStr)
 		if err != nil {
-			return nil, fmt.Errorf("parse event.at %q: %w", atStr, err)
+			return nil, err
 		}
 		out = append(out, domain.Event{
 			At:     at,
@@ -360,13 +355,13 @@ func scanPayment(sc paymentScanner) (*store.PaymentRecord, error) {
 	rec.Amount = format.Amount(amount)
 	rec.Refunded = format.Amount(refunded)
 	rec.State = domain.State(stateStr)
-	rec.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAtStr)
+	rec.CreatedAt, err = lireHorodatage("created_at", createdAtStr)
 	if err != nil {
-		return nil, fmt.Errorf("parse created_at: %w", err)
+		return nil, err
 	}
-	rec.UpdatedAt, err = time.Parse(time.RFC3339Nano, updatedAtStr)
+	rec.UpdatedAt, err = lireHorodatage("updated_at", updatedAtStr)
 	if err != nil {
-		return nil, fmt.Errorf("parse updated_at: %w", err)
+		return nil, err
 	}
 	return &rec, nil
 }
