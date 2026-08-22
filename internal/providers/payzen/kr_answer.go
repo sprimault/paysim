@@ -296,13 +296,19 @@ func buildKrAnswer(clk clock.Clock, tx *Transaction, pm *PaymentMethod, presente
 		}
 	}
 
-	authType := "FRICTIONLESS"
+	// CHALLENGE dit comment l'authentification s'est déroulée, pas
+	// comment elle s'est terminée : c'est un type d'authentification, et
+	// le statut d'un challenge réussi reste SUCCESS. Recopier l'entrée
+	// telle quelle dans Status y plaçait une valeur absente du jeu
+	// documenté — un contrôle antifraude écrit contre les statuts réels
+	// ne l'aurait jamais vue en production.
+	authStatus, authType := threeDSStatus, "FRICTIONLESS"
 	if threeDSStatus == "CHALLENGE" {
-		authType = "CHALLENGE"
+		authStatus, authType = "SUCCESS", "CHALLENGE"
 	}
 	threeDS := &KrThreeDSResponse{
 		AuthenticationResultData: KrAuthenticationResultData{
-			Status:             threeDSStatus,
+			Status:             authStatus,
 			AuthenticationType: authType,
 			Type:               "V4/AuthenticationResultData",
 		},

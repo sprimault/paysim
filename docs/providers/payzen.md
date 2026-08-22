@@ -309,6 +309,7 @@ KrAnswer
 ├── serverDate          string       ISO 8601
 ├── serverUrl           string (optional)
 ├── applicationVersion  string (optional)
+├── applicationProvider string (optional) — brand code, see below
 ├── mode                string       "TEST" (Paysim never emits "PRODUCTION")
 ├── orderDetails
 │   ├── orderTotalAmount     integer
@@ -385,6 +386,25 @@ KrThreeDSResponse
 │   └── _type               "V4/AuthenticationResultData"
 └── _type                   "V4/ThreeDSResponse"
 ```
+
+### `applicationProvider` names the brand
+
+Every `kr-answer` carries the brand code of the instance that emitted it.
+It does not follow from the host name — four distinct hosts announce
+`PAYZEN` — so the mapping is an explicit table, read off the production
+APIs in August 2026:
+
+| Brand | `applicationProvider` |
+| --- | --- |
+| PayZen | `PAYZEN` |
+| Systempay | `NPS` |
+| Sogecommerce | `SOGECOM` |
+| Scellius | `LBP` |
+| Lyra Collect | `LYRA` |
+
+An unknown brand yields an empty value, hence an omitted field: better to
+announce nothing than the wrong brand. This is what lets a single instance
+host several integrations while each one recognises its own webhooks.
 
 ## Wallets are not simulated
 
@@ -596,8 +616,22 @@ Prefix `PAYSIM_*` so they can't be confused with real PayZen codes
 | `PAYSIM_SUBSCRIPTION_UNKNOWN`    | `Subscription/Get` on unknown id.                   |
 | `PAYSIM_STORE_FAILURE`           | Backing store error (SQLite disk full, corruption). |
 | `PAYSIM_PAYMENT_METHOD_UNKNOWN`  | One-click charge on unknown `paymentMethodToken`.   |
-| `PAYSIM_EXPIRED_CARD`            | Stored payment method past its expiry date.         |
-| `PAYSIM_REVOKED_CARD`            | Stored payment method revoked via generic API.      |
+
+An expired or revoked alias produces **no API error**. `CreatePayment`
+answers `SUCCESS` with a `formToken`, and the refusal arrives where a real
+refusal arrives — in the webhook:
+
+```
+orderStatus     UNPAID
+status          UNPAID
+detailedStatus  REFUSED
+errorCode       PAYSIM_REFUSED
+errorMessage    moyen de paiement revoque | moyen de paiement expire
+```
+
+That is deliberate, and it is what the real platform does: a card refused
+by the issuer is a declined payment, not a malformed request. Code written
+against an API error for these two cases would never run in production.
 
 ## kr-hash signature
 

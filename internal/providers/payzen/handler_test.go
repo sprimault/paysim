@@ -27,6 +27,29 @@ import (
 // newTestServer construit un serveur Paysim avec queue interne, config
 // vide (Basic Auth permissive, pas de HMAC, pas de bearer). Suffit
 // pour les tests des endpoints REST V4 qui n'utilisent pas la queue.
+// poserAlias enregistre un moyen de paiement exploitable et rend son
+// token. Nécessaire dès qu'un test crée un abonnement : la route native
+// vérifie désormais que l'alias existe, comme le faisait déjà le chemin
+// générique. Elle acceptait auparavant n'importe quelle chaîne, et
+// l'abonnement se créait sur un alias fantôme dont chaque échéance
+// échouait ensuite sans que rien ne l'ait annoncé.
+func poserAlias(t *testing.T, store Store, token string) string {
+	t.Helper()
+	if err := store.SaveMethod(&PaymentMethod{
+		Token:       token,
+		Provider:    "payzen",
+		PANFull:     "4970100000000154",
+		PANMasked:   "497010XXXXXX0154",
+		Brand:       "VISA",
+		ExpiryMonth: 12,
+		ExpiryYear:  time.Now().Year() + 3,
+		CreatedAt:   time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("enregistrement de l'alias de test : %v", err)
+	}
+	return token
+}
+
 func newTestServer(t *testing.T) (*httptest.Server, Store) {
 	t.Helper()
 	server, store, _ := newTestServerFull(t, HandlerConfig{})
@@ -461,6 +484,7 @@ func TestUpdatePaymentRejectsMissingToken(t *testing.T) {
 func TestCreateSubscriptionSuccess(t *testing.T) {
 	t.Parallel()
 	server, store := newTestServer(t)
+	poserAlias(t, store, "pmt-abc")
 
 	body := CreateSubscriptionRequest{
 		OrderID:            "sub-order-1",
@@ -544,7 +568,8 @@ func TestCreateSubscriptionRejectsMissingPaymentMethodToken(t *testing.T) {
 
 func TestSubscriptionGetKnown(t *testing.T) {
 	t.Parallel()
-	server, _ := newTestServer(t)
+	server, store := newTestServer(t)
+	poserAlias(t, store, "pmt-xyz")
 
 	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreateSubscription",
 		CreateSubscriptionRequest{
@@ -1738,7 +1763,8 @@ func TestSubscriptionGetSansTokenRefuse(t *testing.T) {
 // un appelant sur l'existence d'un abonnement dont il ignore le moyen.
 func TestSubscriptionGetTokenIncoherentRefuse(t *testing.T) {
 	t.Parallel()
-	server, _ := newTestServer(t)
+	server, store := newTestServer(t)
+	poserAlias(t, store, "pmt-vrai")
 
 	create, _ := post(t, server.URL+"/api-payment/V4/Charge/CreateSubscription",
 		CreateSubscriptionRequest{

@@ -23,7 +23,9 @@ import { useSimulatedNow } from '@/shared/hooks/useSimulatedNow';
  * Vue détail d'un moyen de paiement enregistré. Une seule action :
  * révocation manuelle (irréversible côté simulateur). La vue reste
  * accessible même après révocation — utile pour vérifier que le
- * charge_token suivant échouera bien avec `PAYSIM_REVOKED_CARD`.
+ * charge_token suivant sera bien refusé. Le refus est un paiement UNPAID,
+ * pas une erreur d'API : `errorCode` vaut `PAYSIM_REFUSED` et le motif
+ * tient dans `errorMessage`.
  */
 export function PaymentMethodDetail() {
   const t = useT();
