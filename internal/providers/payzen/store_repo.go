@@ -534,7 +534,13 @@ func recordToPayzen(clk clock.Clock, rec *store.PaymentRecord) (*Transaction, er
 }
 
 // subsToutesMarques concatène les abonnements des marques de
-// l'adaptateur. Même raison que pour les paiements.
+// l'adaptateur, puis retrie. Même raison que pour les paiements : chaque
+// dépôt rend sa lecture en updated_at décroissant, et concaténer cinq
+// listes triées donne une liste groupée par marque, pas triée.
+//
+// Le tri manquait ici alors que ce commentaire annonçait déjà « même
+// raison que pour les paiements » — l'oubli ne se voit pas sur une
+// instance mono-marque, où quatre lectures sur cinq rendent vide.
 func (s *RepoStore) subsToutesMarques() ([]*store.SubscriptionRecord, error) {
 	var out []*store.SubscriptionRecord
 	for _, marque := range MarquesLyra {
@@ -544,6 +550,12 @@ func (s *RepoStore) subsToutesMarques() ([]*store.SubscriptionRecord, error) {
 		}
 		out = append(out, recs...)
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].UpdatedAt.Equal(out[j].UpdatedAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].UpdatedAt.After(out[j].UpdatedAt)
+	})
 	return out, nil
 }
 

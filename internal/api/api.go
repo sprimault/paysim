@@ -864,7 +864,12 @@ func (h *Handler) listSubscriptions(w http.ResponseWriter, r *http.Request) {
 	// câblé aujourd'hui, d'où le filtre par nom ; le jour où Stripe
 	// arrive, c'est cette ligne qui s'élargit — rien d'autre, puisque
 	// plus rien ici ne connaît de type d'adaptateur.
-	subs, err := parMarquesLyra(h.subscriptionRepo.ByProvider)
+	// Même ordre que celui des dépôts, qui lisent en updated_at
+	// décroissant : l'abonnement touché en dernier arrive en tête.
+	subs, err := parMarquesLyra(h.subscriptionRepo.ByProvider,
+		func(a, b *store.SubscriptionRecord) int {
+			return b.UpdatedAt.Compare(a.UpdatedAt)
+		})
 	if err != nil {
 		h.logger.Error("api_list_subscriptions_failed", "err", err)
 		http.Error(w, "erreur de lecture", http.StatusInternalServerError)
@@ -1065,7 +1070,12 @@ func (h *Handler) listPaymentMethods(w http.ResponseWriter, r *http.Request) {
 		h.repoManquant(w, "payment methods")
 		return
 	}
-	recs, err := parMarquesLyra(h.paymentMethodRepo.ByProvider)
+	// Les moyens n'ont pas d'UpdatedAt : les dépôts lisent en created_at
+	// décroissant, le plus récemment enrôlé en tête.
+	recs, err := parMarquesLyra(h.paymentMethodRepo.ByProvider,
+		func(a, b *store.PaymentMethodRecord) int {
+			return b.CreatedAt.Compare(a.CreatedAt)
+		})
 	if err != nil {
 		h.logger.Error("api_list_payment_methods_failed", "err", err)
 		http.Error(w, "erreur de lecture", http.StatusInternalServerError)
