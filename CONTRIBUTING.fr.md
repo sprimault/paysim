@@ -41,7 +41,9 @@ conception qu'on discute, dans une issue, avant d'écrire du code.
    notre propre code — un vecteur produit par l'implémentation qu'il est
    censé vérifier ne prouve rien. `cmd/paysim-record` est le proxy
    d'enregistrement qui les produit. Si un vecteur manque, le demander
-   plutôt que le fabriquer.
+   plutôt que le fabriquer. Le proxy masque les en-têtes
+   d'authentification, mais pas les corps — relisez une capture avant de
+   la joindre, elle peut porter des données de votre propre compte.
 5. **Le chaos n'est jamais actif par défaut.** Il s'active explicitement :
    configuration, scénario, ou valeur magique.
 6. **Aucune dépendance externe nouvelle sans discussion** — Go comme npm.
