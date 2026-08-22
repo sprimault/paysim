@@ -311,7 +311,10 @@ func (b *Bus) SnapshotSince(lastID uint64) ([]Event, uint64) {
 // snapshotFromRepo est le fallback pur base : appelé quand le ring
 // est vide (post-restart avant tout Publish).
 func (b *Bus) snapshotFromRepo(lastID uint64) ([]Event, uint64) {
-	recs, err := b.persistRepo.Since(lastID)
+	// Même borne que le ring : au-delà, un client qui revient de loin
+	// doit refetcher un snapshot complet par les endpoints REST, ce que
+	// le commentaire de bufferCap annonce déjà.
+	recs, err := b.persistRepo.Since(lastID, bufferCap)
 	if err != nil || len(recs) == 0 {
 		return nil, 0
 	}
@@ -334,7 +337,7 @@ func (b *Bus) snapshotFromRepo(lastID uint64) ([]Event, uint64) {
 // loadFromRepo récupère les events entre lastID (exclusif) et
 // oldestBuffered (exclusif) — le trou qui manque au ring.
 func (b *Bus) loadFromRepo(lastID, oldestBuffered uint64) ([]Event, error) {
-	recs, err := b.persistRepo.Since(lastID)
+	recs, err := b.persistRepo.Since(lastID, bufferCap)
 	if err != nil {
 		return nil, err
 	}

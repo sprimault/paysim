@@ -246,8 +246,19 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httplog.Middleware(mux, logger),
+		Handler:           httplog.Middleware(bornerCorps(mux), logger),
 		ReadHeaderTimeout: 5 * time.Second,
+
+		// Borne le temps de lecture d'une requête entière, corps
+		// compris : sans elle, un client qui ouvre une connexion et
+		// n'envoie qu'un octet par minute la garde indéfiniment.
+		ReadTimeout: 30 * time.Second,
+
+		// Pas de WriteTimeout, et ce n'est pas un oubli : il s'applique
+		// à la durée totale de la réponse, ce qui couperait les flux
+		// SSE au bout du délai. IdleTimeout couvre le cas qu'on voulait
+		// couvrir — une connexion gardée ouverte sans rien demander.
+		IdleTimeout: 120 * time.Second,
 	}
 	server.RegisterOnShutdown(func() { close(arret) })
 
@@ -332,6 +343,28 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 //     index.html pour les routes react-router (/payments/:uuid, etc.).
 //
 // spaHandler peut être nil dans les tests qui n'ont pas besoin du SPA.
+// maxCorpsRequete borne le corps d'une requête entrante. Large au regard
+// du protocole simulé — la plus grosse charge légitime est un
+// CreatePayment avec ses métadonnées — et sans commune mesure avec ce
+// qu'il faut pour épuiser la mémoire du processus.
+const maxCorpsRequete = 1 << 20 // 1 MiB
+
+// bornerCorps limite ce que chaque handler peut lire du corps.
+//
+// Posé ici plutôt qu'aux dix sites de décodage : un décodeur JSON sur un
+// corps non borné alloue tout ce qu'on lui envoie, et il aurait suffi
+// d'en oublier un — ou d'en ajouter un plus tard — pour rouvrir le trou.
+// Au-delà de la borne, la lecture échoue et le handler répond « requête
+// invalide », ce qu'il fait déjà pour un corps malformé.
+func bornerCorps(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, maxCorpsRequete)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func buildMux(payzenHandler http.Handler, apiHandler http.Handler, spaHandler http.Handler, basePath string, ready *atomic.Bool) http.Handler {
 	mux := http.NewServeMux()
 
