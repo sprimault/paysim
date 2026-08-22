@@ -76,6 +76,19 @@ export interface Deps {
    * révèle presque toujours fausse à la deuxième.
    */
   Clock?: any /* clock.Controllable */;
+  /**
+   * Arret est fermé au début de la séquence d'arrêt pour que les
+   * handlers longue durée rendent la main d'eux-mêmes. Sans lui, un
+   * flux SSE ouvert retient http.Server.Shutdown jusqu'à son délai
+   * complet : Shutdown ferme les connexions inactives et attend les
+   * handlers actifs, sans jamais annuler leur contexte de requête.
+   * Un onglet de l'interface suffisait donc à faire dépasser le délai
+   * de grâce de l'orchestrateur, et le processus finissait en SIGKILL.
+   * Laisser ce champ à nil est licite : une lecture sur un canal nil
+   * bloque pour toujours, donc le select se comporte comme avant. Les
+   * tests qui n'arrêtent rien n'ont rien à fournir.
+   */
+  Arret: any;
 }
 /**
  * Handler regroupe les dépendances nécessaires pour servir les
