@@ -56,10 +56,8 @@ func (r *PaymentMethodsRepository) migrate(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_payment_methods_provider
 			ON payment_methods(provider, created_at DESC)`,
 	}
-	for _, stmt := range stmts {
-		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("stmt %q: %w", firstLine(stmt), err)
-		}
+	if err := appliquer(ctx, r.db, stmts...); err != nil {
+		return err
 	}
 	// Bases créées avant l'ajout des attributs de carte : même approche
 	// que subscriptions.cancelled, on tente l'ALTER et on ignore le
@@ -68,14 +66,13 @@ func (r *PaymentMethodsRepository) migrate(ctx context.Context) error {
 	// customer_json rejoint la liste : il porte le client à qui l'alias
 	// appartient, capturé à l'enrôlement. Vide sur les alias antérieurs,
 	// et le rejeu retombe alors sur le client de la requête.
+	alters := make([]string, 0, 5)
 	for _, col := range []string{"holder_name", "country", "product_category", "issuer_name", "customer_json"} {
-		stmt := fmt.Sprintf(
-			`ALTER TABLE payment_methods ADD COLUMN %s TEXT NOT NULL DEFAULT ''`, col)
-		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
-			if !isDuplicateColumnErr(err) {
-				return fmt.Errorf("add %s column: %w", col, err)
-			}
-		}
+		alters = append(alters, fmt.Sprintf(
+			`ALTER TABLE payment_methods ADD COLUMN %s TEXT NOT NULL DEFAULT ''`, col))
+	}
+	if err := ajouterColonnes(ctx, r.db, alters...); err != nil {
+		return err
 	}
 	return nil
 }
@@ -117,7 +114,7 @@ func (r *PaymentMethodsRepository) Save(rec *store.PaymentMethodRecord) error {
 		rec.Country, rec.ProductCategory, rec.IssuerName, rec.CustomerJSON,
 		rec.ExpiryMonth, rec.ExpiryYear, boolToInt(rec.Revoked),
 		rec.MetadataJSON, rec.ProviderDataJSON,
-		rec.CreatedAt.UTC().Format(time.RFC3339Nano),
+		horodater(rec.CreatedAt),
 	)
 	if err != nil {
 		return fmt.Errorf("payment_methods upsert %s: %w", rec.Token, err)
@@ -221,9 +218,9 @@ func scanPaymentMethod(scan func(dest ...any) error) (*store.PaymentMethodRecord
 		return nil, err
 	}
 	rec.Revoked = revoked != 0
-	ca, err := time.Parse(time.RFC3339Nano, createdAt)
+	ca, err := lireHorodatage("created_at", createdAt)
 	if err != nil {
-		return nil, fmt.Errorf("parse created_at: %w", err)
+		return nil, err
 	}
 	rec.CreatedAt = ca
 	return &rec, nil

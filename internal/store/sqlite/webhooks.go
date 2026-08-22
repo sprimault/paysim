@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/sprimault/paysim/internal/store"
 )
@@ -49,10 +48,8 @@ func (r *WebhooksRepository) migrate(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_webhooks_completed_at
 			ON webhooks(completed_at DESC)`,
 	}
-	for _, stmt := range stmts {
-		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("stmt %q: %w", firstLine(stmt), err)
-		}
+	if err := appliquer(ctx, r.db, stmts...); err != nil {
+		return err
 	}
 	// Bases antérieures à ces colonnes : on tente l'ALTER et on ignore
 	// le "duplicate column", qui signale que l'état voulu est déjà
@@ -68,21 +65,14 @@ func (r *WebhooksRepository) migrate(ctx context.Context) error {
 		// justement de faire.
 		`ALTER TABLE webhooks ADD COLUMN is_replay INTEGER NOT NULL DEFAULT 0`,
 	}
-	for _, stmt := range alters {
-		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
-			if !isDuplicateColumnErr(err) {
-				return fmt.Errorf("stmt %q: %w", firstLine(stmt), err)
-			}
-		}
+	if err := ajouterColonnes(ctx, r.db, alters...); err != nil {
+		return err
 	}
 	// Index créé après l'ALTER : sur une base ancienne, la colonne
 	// n'existe pas encore au moment où le bloc stmts s'exécute.
-	if _, err := r.db.ExecContext(ctx,
+	return appliquer(ctx, r.db,
 		`CREATE INDEX IF NOT EXISTS idx_webhooks_payment_uuid
-			ON webhooks(payment_uuid, completed_at DESC)`); err != nil {
-		return fmt.Errorf("index payment_uuid: %w", err)
-	}
-	return nil
+			ON webhooks(payment_uuid, completed_at DESC)`)
 }
 
 // Save insère ou remplace un WebhookRecord.
@@ -115,8 +105,8 @@ func (r *WebhooksRepository) Save(rec *store.WebhookRecord) error {
 		rec.ID, rec.URL, nonEmpty(rec.HeadersJSON), rec.Body,
 		rec.Status, rec.Outcome, rec.PaymentUUID,
 		rec.StatusCode, rec.ErrorMsg, rec.Attempts, rec.IsReplay,
-		rec.CreatedAt.UTC().Format(time.RFC3339Nano),
-		rec.CompletedAt.UTC().Format(time.RFC3339Nano),
+		horodater(rec.CreatedAt),
+		horodater(rec.CompletedAt),
 	)
 	return err
 }
@@ -320,13 +310,13 @@ func scanWebhook(sc paymentScanner) (*store.WebhookRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	rec.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAtStr)
+	rec.CreatedAt, err = lireHorodatage("created_at", createdAtStr)
 	if err != nil {
-		return nil, fmt.Errorf("parse created_at: %w", err)
+		return nil, err
 	}
-	rec.CompletedAt, err = time.Parse(time.RFC3339Nano, completedAtStr)
+	rec.CompletedAt, err = lireHorodatage("completed_at", completedAtStr)
 	if err != nil {
-		return nil, fmt.Errorf("parse completed_at: %w", err)
+		return nil, err
 	}
 	return &rec, nil
 }

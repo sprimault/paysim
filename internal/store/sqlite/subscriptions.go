@@ -55,23 +55,15 @@ func (r *SubscriptionsRepository) migrate(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_subscriptions_method_token
 			ON subscriptions(payment_method_token)`,
 	}
-	for _, stmt := range stmts {
-		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("stmt %q: %w", firstLine(stmt), err)
-		}
+	if err := appliquer(ctx, r.db, stmts...); err != nil {
+		return err
 	}
 	// ALTER TABLE ADD COLUMN pour les bases préexistantes (5a livré
 	// sans cette colonne). SQLite renvoie "duplicate column" si elle
 	// existe déjà — on ignore silencieusement, l'état demandé est
 	// atteint. Approche standard SQLite pour migration incrémentale.
-	if _, err := r.db.ExecContext(ctx,
-		`ALTER TABLE subscriptions ADD COLUMN cancelled INTEGER NOT NULL DEFAULT 0`); err != nil {
-		// Ignorer "duplicate column" ; propager toute autre erreur.
-		if !isDuplicateColumnErr(err) {
-			return fmt.Errorf("add cancelled column: %w", err)
-		}
-	}
-	return nil
+	return ajouterColonnes(ctx, r.db,
+		`ALTER TABLE subscriptions ADD COLUMN cancelled INTEGER NOT NULL DEFAULT 0`)
 }
 
 // isDuplicateColumnErr identifie l'erreur SQLite renvoyée par
@@ -115,8 +107,8 @@ func (r *SubscriptionsRepository) Save(rec *store.SubscriptionRecord) error {
 		rec.ID, rec.Provider, rec.OrderID, int64(rec.Amount), rec.Currency,
 		rec.PaymentMethodToken, rec.EffectDate, rec.Rrule,
 		rec.MetadataJSON, rec.ProviderDataJSON, boolToInt(rec.Cancelled),
-		rec.CreatedAt.UTC().Format(time.RFC3339Nano),
-		rec.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		horodater(rec.CreatedAt),
+		horodater(rec.UpdatedAt),
 	)
 	if err != nil {
 		return fmt.Errorf("subscriptions upsert %s: %w", rec.ID, err)
@@ -239,13 +231,13 @@ func scanSubscription(scan func(dest ...any) error) (*store.SubscriptionRecord, 
 	}
 	rec.Amount = format.Amount(amount)
 	rec.Cancelled = cancelled != 0
-	ca, err := time.Parse(time.RFC3339Nano, createdAt)
+	ca, err := lireHorodatage("created_at", createdAt)
 	if err != nil {
-		return nil, fmt.Errorf("parse created_at: %w", err)
+		return nil, err
 	}
-	ua, err := time.Parse(time.RFC3339Nano, updatedAt)
+	ua, err := lireHorodatage("updated_at", updatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("parse updated_at: %w", err)
+		return nil, err
 	}
 	rec.CreatedAt = ca
 	rec.UpdatedAt = ua

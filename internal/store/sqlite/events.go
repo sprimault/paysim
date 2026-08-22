@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/sprimault/paysim/internal/store"
 )
@@ -35,12 +34,7 @@ func (r *EventsRepository) migrate(ctx context.Context) error {
 			data_json TEXT NOT NULL DEFAULT '{}'
 		)`,
 	}
-	for _, stmt := range stmts {
-		if _, err := r.db.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("stmt %q: %w", firstLine(stmt), err)
-		}
-	}
-	return nil
+	return appliquer(ctx, r.db, stmts...)
 }
 
 // Save insère un event (ID monotone assigné par le bus).
@@ -52,7 +46,7 @@ func (r *EventsRepository) Save(rec store.EventRecord) error {
 		`INSERT INTO bus_events (id, type, at, data_json)
 		 VALUES (?, ?, ?, ?)
 		 ON CONFLICT(id) DO NOTHING`,
-		rec.ID, rec.Type, rec.At.UTC().Format(time.RFC3339Nano),
+		rec.ID, rec.Type, horodater(rec.At),
 		nonEmpty(rec.DataJSON),
 	)
 	return err
@@ -80,9 +74,9 @@ func (r *EventsRepository) Since(lastID uint64, limit int) ([]store.EventRecord,
 		if err := rows.Scan(&rec.ID, &rec.Type, &atStr, &rec.DataJSON); err != nil {
 			return nil, err
 		}
-		rec.At, err = time.Parse(time.RFC3339Nano, atStr)
+		rec.At, err = lireHorodatage("at", atStr)
 		if err != nil {
-			return nil, fmt.Errorf("parse at: %w", err)
+			return nil, err
 		}
 		out = append(out, rec)
 	}
