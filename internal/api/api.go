@@ -481,10 +481,20 @@ type SimulatePaymentRequest struct {
 	ReturnURL       string `json:"returnUrl,omitempty"`
 	NotificationURL string `json:"notificationUrl,omitempty"`
 
-	// CardBrand et ThreeDSStatus habillent le webhook : marque
-	// annoncée, verdict d'authentification. CardBrand est ignoré dès
-	// qu'un moyen enrôlé existe.
-	CardBrand     string `json:"cardBrand,omitempty"`
+	// PaymentMethodType et CardBrand décrivent le moyen annoncé dans le
+	// webhook : type (défaut CARDS) et marque (défaut VISA). Ignorés dès
+	// qu'un moyen enrôlé existe — ce qu'on annonce vient alors de la
+	// carte réelle.
+	//
+	// Pas de wallet ici, contrairement aux routes du fournisseur : la
+	// forme que prend un portefeuille dans un kr-answer réel n'est
+	// attestée par aucune capture, et testdata/raw est vide. Tant qu'un
+	// vecteur ne le confirme pas, on ne propage pas le champ sur une
+	// surface de plus.
+	PaymentMethodType string `json:"paymentMethodType,omitempty"`
+	CardBrand         string `json:"cardBrand,omitempty"`
+
+	// ThreeDSStatus pilote le verdict d'authentification annoncé.
 	ThreeDSStatus string `json:"threeDSStatus,omitempty"`
 
 	// ErrorCode et ErrorMessage détaillent un refus.
@@ -1630,13 +1640,14 @@ func (h *Handler) simulatePayment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := payzen.BrowserReturnOpts{
-		Outcome:         req.Outcome,
-		CardBrand:       req.CardBrand,
-		ThreeDSStatus:   req.ThreeDSStatus,
-		ErrorCode:       req.ErrorCode,
-		ErrorMessage:    req.ErrorMessage,
-		Chaos:           req.Chaos,
-		DeliveryDelayMs: req.DeliveryDelayMs,
+		Outcome:           req.Outcome,
+		PaymentMethodType: req.PaymentMethodType,
+		CardBrand:         req.CardBrand,
+		ThreeDSStatus:     req.ThreeDSStatus,
+		ErrorCode:         req.ErrorCode,
+		ErrorMessage:      req.ErrorMessage,
+		Chaos:             req.Chaos,
+		DeliveryDelayMs:   req.DeliveryDelayMs,
 	}
 
 	input := payzen.SimulateInput{

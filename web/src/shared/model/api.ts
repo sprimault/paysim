@@ -433,11 +433,21 @@ export interface SimulatePaymentRequest {
   returnUrl?: string;
   notificationUrl?: string;
   /**
-   * CardBrand et ThreeDSStatus habillent le webhook : marque
-   * annoncée, verdict d'authentification. CardBrand est ignoré dès
-   * qu'un moyen enrôlé existe.
+   * PaymentMethodType et CardBrand décrivent le moyen annoncé dans le
+   * webhook : type (défaut CARDS) et marque (défaut VISA). Ignorés dès
+   * qu'un moyen enrôlé existe — ce qu'on annonce vient alors de la
+   * carte réelle.
+   * Pas de wallet ici, contrairement aux routes du fournisseur : la
+   * forme que prend un portefeuille dans un kr-answer réel n'est
+   * attestée par aucune capture, et testdata/raw est vide. Tant qu'un
+   * vecteur ne le confirme pas, on ne propage pas le champ sur une
+   * surface de plus.
    */
+  paymentMethodType?: string;
   cardBrand?: string;
+  /**
+   * ThreeDSStatus pilote le verdict d'authentification annoncé.
+   */
   threeDSStatus?: string;
   /**
    * ErrorCode et ErrorMessage détaillent un refus.
