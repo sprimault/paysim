@@ -13,6 +13,7 @@ import { fetchPaymentsByToken } from '@/entities/payment/api/paymentApi';
 import { fetchSubscriptionsByToken } from '@/entities/subscription/api/subscriptionApi';
 import type { PaymentSummary, SubscriptionOutput } from '@/shared/model';
 
+import { SectionTitle } from '@/shared/ui/FicheField';
 /**
  * PaymentMethodUsage — ce qui a été fait avec un moyen enregistré :
  * les paiements qui l'ont enrôlé ou débité, les abonnements qui le
@@ -66,7 +67,7 @@ export function PaymentMethodUsage({
   if (loading) {
     return (
       <Card padded className="mt-4">
-        <Titre>{t('paymentMethod.usage.title')}</Titre>
+        <SectionTitle>{t('paymentMethod.usage.title')}</SectionTitle>
         <Skeleton count={2} />
       </Card>
     );
@@ -75,7 +76,7 @@ export function PaymentMethodUsage({
   if (payments.length === 0 && subscriptions.length === 0) {
     return (
       <Card padded className="mt-4">
-        <Titre>{t('paymentMethod.usage.title')}</Titre>
+        <SectionTitle>{t('paymentMethod.usage.title')}</SectionTitle>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
           {t('paymentMethod.usage.empty')}
         </p>
@@ -85,7 +86,7 @@ export function PaymentMethodUsage({
 
   return (
     <Card padded className="mt-4">
-      <Titre>{t('paymentMethod.usage.title')}</Titre>
+      <SectionTitle>{t('paymentMethod.usage.title')}</SectionTitle>
 
       {payments.length > 0 && (
         <section className="mb-5">
@@ -153,14 +154,6 @@ export function PaymentMethodUsage({
         </section>
       )}
     </Card>
-  );
-}
-
-function Titre({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-      {children}
-    </h3>
   );
 }
 

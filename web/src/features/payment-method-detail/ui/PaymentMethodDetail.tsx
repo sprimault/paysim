@@ -19,6 +19,7 @@ import { revokePaymentMethod } from '@/entities/payment-method/api/paymentMethod
 import { paymentMethodStatus } from '@/entities/payment-method/lib/status';
 import { useSimulatedNow } from '@/shared/hooks/useSimulatedNow';
 
+import { Field } from '@/shared/ui/FicheField';
 /**
  * Vue détail d'un moyen de paiement enregistré. Une seule action :
  * révocation manuelle (irréversible côté simulateur). La vue reste
@@ -148,21 +149,3 @@ export function PaymentMethodDetail() {
   );
 }
 
-function Field({
-  label,
-  value,
-  wide,
-}: {
-  label: string;
-  value: React.ReactNode;
-  wide?: boolean;
-}) {
-  return (
-    <div className={wide ? 'sm:col-span-2' : ''}>
-      <dt className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-        {label}
-      </dt>
-      <dd className="mt-0.5 text-sm text-zinc-900 dark:text-zinc-100">{value}</dd>
-    </div>
-  );
-}

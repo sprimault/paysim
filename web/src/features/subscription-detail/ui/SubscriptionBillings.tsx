@@ -14,6 +14,7 @@ import { useT } from '@/shared/i18n/useT';
 import { fetchPaymentsBySubscription } from '@/entities/payment/api/paymentApi';
 import type { PaymentSummary } from '@/shared/model';
 
+import { SectionTitle } from '@/shared/ui/FicheField';
 /**
  * SubscriptionBillings — les échéances produites par un abonnement.
  *
@@ -55,7 +56,7 @@ export function SubscriptionBillings({ subscriptionId }: { subscriptionId: strin
   if (loading) {
     return (
       <Card padded className="mt-4">
-        <Titre>{t('subscription.billings.title')}</Titre>
+        <SectionTitle>{t('subscription.billings.title')}</SectionTitle>
         <Skeleton count={2} />
       </Card>
     );
@@ -64,7 +65,7 @@ export function SubscriptionBillings({ subscriptionId }: { subscriptionId: strin
   if (payments.length === 0) {
     return (
       <Card padded className="mt-4">
-        <Titre>{t('subscription.billings.title')}</Titre>
+        <SectionTitle>{t('subscription.billings.title')}</SectionTitle>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
           {t('subscription.billings.empty')}
         </p>
@@ -74,11 +75,11 @@ export function SubscriptionBillings({ subscriptionId }: { subscriptionId: strin
 
   return (
     <Card padded className="mt-4">
-      <Titre>
+      <SectionTitle>
         {payments.length === 1
           ? t('subscription.billings.one')
           : t('subscription.billings.many', { count: payments.length })}
-      </Titre>
+      </SectionTitle>
       <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
         {payments.map((p) => {
           const meta = paymentStateMeta[p.state];
@@ -121,10 +122,3 @@ export function SubscriptionBillings({ subscriptionId }: { subscriptionId: strin
 }
 
 /** Intitulé de section, aligné sur celui des autres fiches. */
-function Titre({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-      {children}
-    </h3>
-  );
-}

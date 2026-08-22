@@ -6,6 +6,7 @@ import { Card } from '@/shared/ui/Card';
 import { useT } from '@/shared/i18n/useT';
 import type { Customer } from '@/shared/model';
 
+import { SectionTitle } from '@/shared/ui/FicheField';
 /**
  * PaymentCustomer — le contexte marchand d'un paiement : identité du
  * client, facturation, livraison, contexte navigateur.
@@ -76,7 +77,7 @@ export function PaymentCustomer({
   if (vide) {
     return (
       <Card padded>
-        <Titre>{t('payment.detail.customer.title')}</Titre>
+        <SectionTitle>{t('payment.detail.customer.title')}</SectionTitle>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
           {t('payment.detail.customer.empty')}
         </p>
@@ -86,7 +87,7 @@ export function PaymentCustomer({
 
   return (
     <Card padded>
-      <Titre>{t('payment.detail.customer.title')}</Titre>
+      <SectionTitle>{t('payment.detail.customer.title')}</SectionTitle>
       <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
         <Section titre={t('payment.detail.customer.identity')} lignes={identite} />
         <Section titre={t('payment.detail.customer.billing')} lignes={facturation} />
@@ -95,14 +96,6 @@ export function PaymentCustomer({
         <Section titre={t('payment.detail.customer.metadata')} lignes={meta} mono />
       </div>
     </Card>
-  );
-}
-
-function Titre({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-      {children}
-    </h3>
   );
 }
 
