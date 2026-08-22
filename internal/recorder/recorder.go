@@ -201,6 +201,9 @@ func writeCapture(w io.Writer, req *http.Request, reqBody []byte, resp *http.Res
 func writeHeaders(w io.Writer, h http.Header) error {
 	for k, vv := range h {
 		for _, v := range vv {
+			if enTetesSensibles[http.CanonicalHeaderKey(k)] {
+				v = valeurMasquee
+			}
 			if _, err := fmt.Fprintf(w, "%s: %s\n", k, v); err != nil {
 				return err
 			}
@@ -208,6 +211,30 @@ func writeHeaders(w io.Writer, h http.Header) error {
 	}
 	return nil
 }
+
+// enTetesSensibles liste les en-têtes dont la valeur ne doit jamais
+// atteindre un fichier de capture. Une capture est produite en plaçant
+// paysim-record devant la vraie sandbox du fournisseur, avec les
+// identifiants du contributeur : elle finit dans testdata/ et part en
+// pull request sur un dépôt public. L'identifiant PSP y serait publié
+// en clair, et un Basic se décode d'un copier-coller.
+//
+// Le nom de l'en-tête reste écrit : c'est sa présence qui a une valeur
+// documentaire, pas sa valeur. Rien de ce qui est masqué ici n'entre
+// dans le calcul d'une signature — kr-hash porte sur le corps — donc
+// aucun vecteur ne perd sa validité.
+var enTetesSensibles = map[string]bool{
+	"Authorization":       true,
+	"Proxy-Authorization": true,
+	"Cookie":              true,
+	"Set-Cookie":          true,
+}
+
+// valeurMasquee remplace la valeur d'un en-tête sensible. Volontairement
+// constante, et non format.Mask : Mask conserve la longueur d'origine,
+// ce qui laisserait déduire la taille du secret sans rien apporter à la
+// lecture de la capture.
+const valeurMasquee = "<masque par paysim-record>"
 
 // sanitize transforme un path HTTP en composant de nom de fichier sûr.
 // Ex : "/api-payment/V4/Charge/CreatePayment" → "api-payment-v4-charge-createpayment".
