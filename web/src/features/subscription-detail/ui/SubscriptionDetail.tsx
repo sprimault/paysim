@@ -16,6 +16,7 @@ import { useT } from '@/shared/i18n/useT';
 import { formatAmount } from '@/shared/lib/numbers';
 import { formatShort } from '@/shared/lib/dates';
 import { useSubscription } from '@/entities/subscription/model/useSubscriptions';
+import { Field } from '@/shared/ui/FicheField';
 import {
   cancelSubscription,
   triggerBilling,
@@ -207,21 +208,3 @@ export function SubscriptionDetail() {
   );
 }
 
-function Field({
-  label,
-  value,
-  wide,
-}: {
-  label: string;
-  value: React.ReactNode;
-  wide?: boolean;
-}) {
-  return (
-    <div className={wide ? 'sm:col-span-2' : ''}>
-      <dt className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-        {label}
-      </dt>
-      <dd className="mt-0.5 text-sm text-zinc-900 dark:text-zinc-100">{value}</dd>
-    </div>
-  );
-}
