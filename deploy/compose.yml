@@ -70,8 +70,10 @@ services:
       # PAYSIM_API_TOKEN: "un-token-bearer-a-generer"
 
       # Décommenter pour activer le chaos (latence + taux d'erreur).
+      # Le taux est un pourcentage entier, 0-100 : "10" pour une requête
+      # REST V4 sur dix en erreur. Une fraction est refusée au démarrage.
       # PAYSIM_CHAOS_LATENCY_MS: "200"
-      # PAYSIM_CHAOS_ERROR_RATE: "0.1"
+      # PAYSIM_CHAOS_ERROR_RATE: "10"
 
     volumes:
       - paysim-data:/data

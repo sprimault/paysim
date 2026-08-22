@@ -1,6 +1,12 @@
 module github.com/sprimault/paysim
 
-go 1.25.0
+// Aligné sur l'image de build du Dockerfile (golang:1.26-alpine). La CI
+// installe Go depuis ce fichier : les laisser diverger faisait compiler
+// le binaire publié par un toolchain qu'aucun check n'exerçait, alors
+// que ce projet dépend de comportements de la bibliothèque standard —
+// routage de ServeMux, défauts du client HTTP qui livre les webhooks,
+// sémantique de Server.Shutdown.
+go 1.26.0
 
 require (
 	gopkg.in/yaml.v3 v3.0.1
