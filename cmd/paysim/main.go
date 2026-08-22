@@ -216,6 +216,10 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		logger.Warn("autoplay_actif",
 			"detail", "chaque paiement cree est joue immediatement, sans appel de simulation")
 	}
+	// Fermé au début de la séquence d'arrêt, via RegisterOnShutdown, pour
+	// que les flux SSE se terminent au lieu de retenir Shutdown.
+	arret := make(chan struct{})
+
 	apiHandler := api.NewHandler(api.Deps{
 		Store:             payzenStore,
 		PaymentRepo:       paymentRepo,
@@ -227,6 +231,7 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		Token:             cfg.APIToken,
 		PayzenHandler:     payzenHandler,
 		Clock:             clk,
+		Arret:             arret,
 	})
 
 	var ready atomic.Bool
@@ -244,17 +249,32 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		Handler:           httplog.Middleware(mux, logger),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+	server.RegisterOnShutdown(func() { close(arret) })
 
 	// SIGTERM sur Unix, SIGINT (Ctrl+C) partout. syscall.SIGTERM compile
 	// sur Windows mais n'y est jamais émis — sans conséquence.
 	ctx, stop := signal.NotifyContext(baseCtx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// La file a son propre contexte, et surtout pas celui du signal :
+	// signal.NotifyContext annule ctx dès l'arrivée du SIGTERM, alors que
+	// le serveur sert encore pendant tout le délai de grâce. La file se
+	// vidait donc en premier, et un webhook mis en file après elle
+	// recevait un identifiant de livraison, s'affichait « en attente »
+	// dans l'interface, et ne partait jamais. On l'arrête après Shutdown,
+	// quand plus aucune requête ne peut en ajouter — l'ordre qu'annonce
+	// le contrat de conteneur.
+	queueCtx, arreterQueue := context.WithCancel(context.Background())
+	// Filet : tout chemin de sortie ajouté plus tard libère la goroutine
+	// au lieu de la laisser tourner. Un CancelFunc supporte les appels
+	// répétés, donc ce defer ne gêne pas l'arrêt ordonné plus bas.
+	defer arreterQueue()
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := queue.Run(ctx); err != nil {
+		if err := queue.Run(queueCtx); err != nil {
 			logger.Error("queue_run_error", "err", err)
 		}
 	}()
@@ -272,6 +292,7 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		if !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("server_error", "err", err)
 			stop()
+			arreterQueue()
 			wg.Wait()
 			return err
 		}
@@ -290,7 +311,10 @@ func run(baseCtx context.Context, stdout, stderr io.Writer) error {
 		logger.Error("http_shutdown_error", "err", err)
 	}
 
+	// Le serveur est fermé : plus personne ne peut y déposer. La file peut
+	// se vider, et c'est seulement maintenant que son contexte s'annule.
 	stop()
+	arreterQueue()
 	wg.Wait()
 
 	logger.Info("paysim_stopped")

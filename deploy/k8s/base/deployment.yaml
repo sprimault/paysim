@@ -33,10 +33,15 @@ spec:
         seccompProfile:
           type: RuntimeDefault
 
-      # 30s : cohérent avec shutdownTimeout Go (voir cmd/paysim/main.go).
-      # Laisse le temps aux probes de basculer readyz KO, aux LB de
-      # router ailleurs, et à la file de webhooks de se vider.
-      terminationGracePeriodSeconds: 30
+      # Somme du budget d'arrêt côté Go, plus une marge : shutdownGrace
+      # (2s, le temps que readyz bascule et que les LB routent ailleurs)
+      # + shutdownTimeout (30s, fermeture du serveur puis vidage de la
+      # file de webhooks). Voir cmd/paysim/main.go.
+      #
+      # 30s ne suffisait pas : à budget égal, le kubelet envoyait SIGKILL
+      # à l'instant précis où le processus finissait de se fermer, donc
+      # avant la fermeture de la base et le drain des événements.
+      terminationGracePeriodSeconds: 40
 
       containers:
         - name: paysim
