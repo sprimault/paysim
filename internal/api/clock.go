@@ -6,6 +6,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/sprimault/paysim/internal/bus"
@@ -146,13 +147,20 @@ func (h *Handler) annoncerHorloge(etat ClockState) {
 }
 
 // parMarquesLyra concatène le résultat d'une lecture par provider sur
-// les cinq marques de l'adaptateur Lyra.
+// les cinq marques de l'adaptateur Lyra, puis réordonne le tout.
 //
 // Les dépôts filtrent par un provider unique ; l'adaptateur en possède
 // cinq. Sans cette boucle, une liste ne montrerait que les paiements
 // PayZen et tairait les autres — silencieusement, « aucun résultat »
 // étant une réponse plausible.
-func parMarquesLyra[T any](lire func(string) ([]T, error)) ([]T, error) {
+//
+// Le comparateur n'est pas optionnel, et c'est le sujet : chaque dépôt
+// rend déjà sa lecture triée, mais concaténer cinq listes triées produit
+// une liste groupée par marque, pas une liste triée. L'ordre se perd
+// donc exactement là où on croit ne rien faire, et l'oubli est invisible
+// sur une instance mono-marque — quatre lectures sur cinq rendent vide.
+// Exiger le comparateur à l'appel est ce qui empêche de le redécouvrir.
+func parMarquesLyra[T any](lire func(string) ([]T, error), ordonner func(a, b T) int) ([]T, error) {
 	var out []T
 	for _, marque := range payzen.MarquesLyra {
 		recs, err := lire(marque)
@@ -161,5 +169,6 @@ func parMarquesLyra[T any](lire func(string) ([]T, error)) ([]T, error) {
 		}
 		out = append(out, recs...)
 	}
+	slices.SortStableFunc(out, ordonner)
 	return out, nil
 }
