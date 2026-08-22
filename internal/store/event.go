@@ -40,8 +40,15 @@ type EventRepository interface {
 	Save(rec EventRecord) error
 
 	// Since retourne les événements avec un ID strictement supérieur
-	// à lastID, dans l'ordre croissant.
-	Since(lastID uint64) ([]EventRecord, error)
+	// à lastID, dans l'ordre croissant, au plus limit d'entre eux.
+	//
+	// La borne n'est pas un confort : la table n'est purgée par
+	// personne, et un client SSE qui se reconnecte avec un
+	// Last-Event-ID ancien — ou absent, donc zéro — demanderait sinon
+	// la totalité de l'historique d'un coup, en mémoire. Un limit
+	// négatif ou nul est traité comme « aucune ligne » : c'est un
+	// appelant fautif, pas une invitation à tout charger.
+	Since(lastID uint64, limit int) ([]EventRecord, error)
 
 	// DeleteBefore supprime les événements plus anciens que id inclus.
 	// Utile pour éviter la croissance illimitée en prod ; non appelé

@@ -349,7 +349,21 @@ func secretValue(
 		// Les fichiers de Secret Kubernetes ou créés par un simple echo
 		// se terminent typiquement par un saut de ligne qu'on ne veut
 		// pas inclure dans la valeur du secret.
-		return strings.TrimRight(string(data), "\r\n \t"), nil
+		valeur := strings.TrimRight(string(data), "\r\n \t")
+
+		// Un fichier vide est une erreur de configuration, pas un choix.
+		// Une valeur vide désactive la protection concernée — jeton
+		// d'API ou signature — et l'instance démarrait alors sans
+		// broncher, readyz au vert, la surface ouverte à qui l'atteint.
+		// Le cas n'est pas théorique : une clé de Secret renommée, ou un
+		// --from-file sur un fichier vide, suffisent.
+		//
+		// Ne concerne que le mode fichier. Laisser la variable directe à
+		// vide reste le mode ouvert assumé du développement local.
+		if valeur == "" {
+			return "", fmt.Errorf("configuration: %s (%q) designe un fichier vide", fileName, path)
+		}
+		return valeur, nil
 	}
 	return direct, nil
 }

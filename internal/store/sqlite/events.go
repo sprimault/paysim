@@ -58,11 +58,16 @@ func (r *EventsRepository) Save(rec store.EventRecord) error {
 	return err
 }
 
-// Since retourne les events avec ID > lastID, ordonnés croissants.
-func (r *EventsRepository) Since(lastID uint64) ([]store.EventRecord, error) {
+// Since retourne les events avec ID > lastID, ordonnés croissants, au
+// plus limit d'entre eux. La borne vit dans la requête : la ramener en
+// Go aurait déjà chargé toute la table.
+func (r *EventsRepository) Since(lastID uint64, limit int) ([]store.EventRecord, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
 	rows, err := r.db.Query(
 		`SELECT id, type, at, data_json FROM bus_events
-		 WHERE id > ? ORDER BY id`, lastID)
+		 WHERE id > ? ORDER BY id LIMIT ?`, lastID, limit)
 	if err != nil {
 		return nil, err
 	}

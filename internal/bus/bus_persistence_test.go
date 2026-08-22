@@ -32,7 +32,10 @@ func (r *fakeEventRepo) Save(rec store.EventRecord) error {
 	return nil
 }
 
-func (r *fakeEventRepo) Since(lastID uint64) ([]store.EventRecord, error) {
+func (r *fakeEventRepo) Since(lastID uint64, limit int) ([]store.EventRecord, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sorted := append([]store.EventRecord{}, r.records...)
@@ -41,6 +44,9 @@ func (r *fakeEventRepo) Since(lastID uint64) ([]store.EventRecord, error) {
 	for _, rec := range sorted {
 		if rec.ID > lastID {
 			out = append(out, rec)
+		}
+		if len(out) == limit {
+			break
 		}
 	}
 	return out, nil
@@ -87,7 +93,7 @@ func TestWithPersistenceSavesEachEvent(t *testing.T) {
 	if got := repo.count(); got != 10 {
 		t.Errorf("repo.count() = %d, veut 10", got)
 	}
-	all, _ := repo.Since(0)
+	all, _ := repo.Since(0, 1000)
 	for i, rec := range all {
 		if rec.ID != uint64(i+1) {
 			t.Errorf("[%d].ID = %d, veut %d", i, rec.ID, i+1)
@@ -270,6 +276,6 @@ func (r *slowFakeRepo) Save(store.EventRecord) error {
 	r.mu.Unlock()
 	return nil
 }
-func (r *slowFakeRepo) Since(uint64) ([]store.EventRecord, error) { return nil, nil }
+func (r *slowFakeRepo) Since(uint64, int) ([]store.EventRecord, error) { return nil, nil }
 func (r *slowFakeRepo) DeleteBefore(uint64) (int, error)          { return 0, nil }
 func (r *slowFakeRepo) Close() error                              { return nil }

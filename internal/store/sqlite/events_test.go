@@ -42,7 +42,7 @@ func TestSaveAndSinceEvents(t *testing.T) {
 		}
 	}
 
-	all, err := repo.Since(0)
+	all, err := repo.Since(0, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestSaveAndSinceEvents(t *testing.T) {
 		t.Errorf("At roundtrip : %v", all[0].At)
 	}
 
-	partial, err := repo.Since(3)
+	partial, err := repo.Since(3, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestSaveIsIdempotent(t *testing.T) {
 	if err := repo.Save(rec); err != nil {
 		t.Errorf("Save rejeu : %v", err)
 	}
-	got, _ := repo.Since(0)
+	got, _ := repo.Since(0, 1000)
 	if len(got) != 1 {
 		t.Errorf("Since(0) len=%d apres rejeu, veut 1", len(got))
 	}
@@ -108,7 +108,7 @@ func TestDeleteBefore(t *testing.T) {
 	if n != 5 {
 		t.Errorf("DeleteBefore(5) supprimé=%d, veut 5", n)
 	}
-	rest, _ := repo.Since(0)
+	rest, _ := repo.Since(0, 1000)
 	if len(rest) != 5 || rest[0].ID != 6 {
 		t.Errorf("apres purge : %+v", rest)
 	}
@@ -117,7 +117,7 @@ func TestDeleteBefore(t *testing.T) {
 func TestSinceEmpty(t *testing.T) {
 	t.Parallel()
 	repo := buildEventsRepo(t)
-	got, err := repo.Since(0)
+	got, err := repo.Since(0, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
