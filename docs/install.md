@@ -26,6 +26,12 @@ All configuration goes through environment variables prefixed with
 suffix that reads the value from a file — useful for K8s Secret
 mounts.
 
+An empty file **prevents startup**, and the message names the offending
+variable. An empty value would disable the protection concerned — token or
+signature — and the instance would start with its surface open, `/readyz`
+green. A renamed Secret key is enough to produce that case. Leaving the
+*direct* variable empty remains the open mode for local development.
+
 | Variable | Purpose |
 |---|---|
 | `PAYSIM_PUBLIC_URL` | URL the browser sees (ingress host, or `http://<node-ip>:30890` for NodePort). |

@@ -384,7 +384,7 @@ alors une carte de démonstration construite à partir de la seule marque.
 KrThreeDSResponse
 ├── authenticationResultData
 │   ├── status              "SUCCESS" | "FAILURE" | "NOT_ENROLLED" | "UNAVAILABLE"
-│   ├── authenticationType  "FRICTIONLESS" | "CHALLENGE" (dérivé du status)
+│   ├── authenticationType  "FRICTIONLESS" | "CHALLENGE" (issu du threeDSStatus demandé)
 │   └── _type               "V4/AuthenticationResultData"
 └── _type                   "V4/ThreeDSResponse"
 ```

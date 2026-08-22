@@ -382,7 +382,7 @@ issues a demonstration card built from the brand alone.
 KrThreeDSResponse
 ├── authenticationResultData
 │   ├── status              "SUCCESS" | "FAILURE" | "NOT_ENROLLED" | "UNAVAILABLE"
-│   ├── authenticationType  "FRICTIONLESS" | "CHALLENGE" (derived from status)
+│   ├── authenticationType  "FRICTIONLESS" | "CHALLENGE" (from the requested threeDSStatus)
 │   └── _type               "V4/AuthenticationResultData"
 └── _type                   "V4/ThreeDSResponse"
 ```
