@@ -278,7 +278,7 @@ Paysim envoie un `kr-answer` signé vers `ReturnURL`.
 | `outcome`           | string             |  oui   | Voir [outcomes](#outcomes).                            |
 | `paymentMethodType` | string             |  non   | Défaut `CARDS`.                                        |
 | `cardBrand`         | string             |  non   | Défaut `VISA`.                                         |
-| `wallet`            | string             |  non   | `APPLE_PAY`, `GOOGLEPAY`, vide.                        |
+| `wallet`            | string             |  non   | `APPLE_PAY`, `GOOGLEPAY`, vide. Voir [portefeuilles](#les-portefeuilles-ne-sont-pas-simulés). |
 | `threeDSStatus`     | string             |  non   | `SUCCESS` (défaut) / `CHALLENGE` / `FAILURE` / `NOT_ENROLLED`. |
 | `errorCode`         | string             |  non   | Pour `outcome=UNPAID`.                                 |
 | `errorMessage`      | string             |  non   |                                                        |
@@ -387,6 +387,31 @@ KrThreeDSResponse
 │   └── _type               "V4/AuthenticationResultData"
 └── _type                   "V4/ThreeDSResponse"
 ```
+
+## Les portefeuilles ne sont pas simulés
+
+Le champ `wallet` porte une étiquette, rien de plus.
+
+Un vrai paiement Apple Pay ou Google Pay se joue dans le navigateur : le SDK
+Krypton servi depuis `static.payzen.eu`, `ApplePaySession` ou l'API Google
+Pay, un domaine validé chez Apple, un certificat marchand, un appareil
+compatible. Rien de tout cela n'est à portée d'un simulateur qui ne sert pas
+le SDK — et le SDK est délibérément hors périmètre, puisqu'il appartient au
+fournisseur et que vous l'utilisez tel quel.
+
+Ce que Paysim offre, c'est le versant serveur : annoncer un portefeuille dans
+le `kr-answer` pour exercer votre code — le libellé affiché, la règle de
+réconciliation, le contrôle antifraude qui traite un portefeuille à part.
+
+**Sa forme exacte n'est attestée par aucune capture réelle.** `testdata/raw`
+est vide : le champ est émis tel que documenté ici sur la foi d'une lecture,
+non d'un `kr-answer` enregistré, et une source au moins laisse entendre que
+le portefeuille apparaîtrait plutôt concaténé au type de carte. À prendre
+comme une commodité pour exercer votre propre code, pas comme une
+reproduction fidèle de ce qu'émet la vraie plateforme. Si vous disposez d'une
+capture authentique d'un paiement par portefeuille,
+[ouvrez une issue](https://github.com/sprimault/paysim/issues) — c'est
+exactement le type de vecteur que ce projet demande plutôt que d'inventer.
 
 ## Outcomes
 

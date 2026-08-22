@@ -277,7 +277,7 @@ Paysim sends a signed `kr-answer` to `ReturnURL`.
 | `outcome`           | string             |    yes   | See [outcomes](#outcomes).                             |
 | `paymentMethodType` | string             |    no    | Default `CARDS`.                                       |
 | `cardBrand`         | string             |    no    | Default `VISA`.                                        |
-| `wallet`            | string             |    no    | `APPLE_PAY`, `GOOGLEPAY`, empty.                       |
+| `wallet`            | string             |    no    | `APPLE_PAY`, `GOOGLEPAY`, empty. See [wallets](#wallets-are-not-simulated). |
 | `threeDSStatus`     | string             |    no    | `SUCCESS` (default) / `CHALLENGE` / `FAILURE` / `NOT_ENROLLED`. |
 | `errorCode`         | string             |    no    | For `outcome=UNPAID`.                                  |
 | `errorMessage`      | string             |    no    |                                                        |
@@ -385,6 +385,30 @@ KrThreeDSResponse
 │   └── _type               "V4/AuthenticationResultData"
 └── _type                   "V4/ThreeDSResponse"
 ```
+
+## Wallets are not simulated
+
+The `wallet` field carries a label, and nothing more.
+
+A real Apple Pay or Google Pay payment happens in the browser: the Krypton
+SDK served from `static.payzen.eu`, `ApplePaySession` or the Google Pay API,
+a domain validated with Apple, a merchant certificate, a compatible device.
+None of it is within reach of a simulator that does not serve the SDK — and
+the SDK is deliberately out of scope, since it is the provider's own and you
+use it unchanged.
+
+What Paysim offers is the server side: announcing a wallet in the `kr-answer`
+so your backend can be exercised — the label you display, the reconciliation
+rule, the fraud check that treats a wallet differently.
+
+**Its exact shape is not attested by a real capture.** `testdata/raw` is
+empty: the field is emitted as documented here on the strength of reading,
+not of a recorded `kr-answer`, and at least one source suggests the wallet
+may instead appear concatenated with the card type. Treat it as a
+convenience for exercising your own code, not as a faithful reproduction of
+what the real platform sends. If you have a genuine capture of a wallet
+payment, [open an issue](https://github.com/sprimault/paysim/issues) — it is
+exactly the kind of vector this project asks for rather than invents.
 
 ## Outcomes
 
