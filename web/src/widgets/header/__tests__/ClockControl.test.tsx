@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ClockControl } from '@/widgets/header/ClockControl';
 import { useClockStore } from '@/shared/model/clockStore';
@@ -46,6 +46,32 @@ describe('ClockControl', () => {
     await user.click(screen.getByRole('button', { name: /\+1 (jour|day)/i }));
 
     expect(post).toHaveBeenCalledWith('/clock/advance', { duration: '24h' });
+  });
+
+  // Le décalage ne bouge que sur action explicite : une seule lecture
+  // au montage suffit, et c'est ce que le composant annonce.
+  //
+  // Il en émettait davantage : `t` changeait d'identité à chaque rendu,
+  // l'effet la déclarait en dépendance, et la lecture qu'il déclenchait
+  // écrivait dans le store — donc provoquait le rendu suivant. Chaque
+  // gigue sur l'heure serveur relançait la boucle.
+  it('ne lit l’horloge qu’une fois au montage', async () => {
+    const get = vi.spyOn(client, 'apiGetJson').mockResolvedValue({
+      now: new Date().toISOString(),
+      offset: '0s',
+      offsetSeconds: 0,
+    });
+    const { rerender } = render(<ClockControl />);
+
+    // Laisser l'effet et sa promesse se résoudre, puis provoquer des
+    // rendus supplémentaires : aucun ne doit relire l'horloge.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    rerender(<ClockControl />);
+    rerender(<ClockControl />);
+
+    expect(get).toHaveBeenCalledTimes(1);
   });
 
   // Rien à réinitialiser quand rien n'a bougé : le bouton reste

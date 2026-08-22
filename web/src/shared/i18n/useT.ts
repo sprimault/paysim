@@ -1,6 +1,8 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: Apache-2.0
 
+import { useCallback } from 'react';
+
 import { messages, type MessageKey } from './messages';
 import { useLangStore } from './store';
 
@@ -19,7 +21,16 @@ import { useLangStore } from './store';
  */
 export function useT(): (key: MessageKey, params?: Record<string, string | number>) => string {
   const lang = useLangStore((s) => s.lang);
-  return (key, params) => traduire(lang, key, params);
+
+  // Mémoïsée sur la langue, et c'est nécessaire, pas cosmétique : sans
+  // cela `t` change d'identité à chaque rendu, et tout effet qui la
+  // déclare en dépendance se relance à chaque rendu. Un effet qui écrit
+  // dans un store se réveille alors lui-même — ClockControl relançait
+  // sa lecture de l'horloge en boucle, une requête par rendu.
+  return useCallback(
+    (key: MessageKey, params?: Record<string, string | number>) => traduire(lang, key, params),
+    [lang],
+  );
 }
 
 /**

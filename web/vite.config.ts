@@ -45,7 +45,7 @@ export default defineConfig({
           if (id.includes('node_modules/lucide-react')) {
             return 'vendor-icons';
           }
-          // React + router + zustand + zod = coeur commun.
+          // React + router + zustand = coeur commun.
           if (id.includes('node_modules')) {
             return 'vendor-core';
           }
