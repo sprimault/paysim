@@ -58,8 +58,6 @@ const (
 	ErrCodeSubscriptionUnknown  = "PAYSIM_SUBSCRIPTION_UNKNOWN"
 	ErrCodeStoreFailure         = "PAYSIM_STORE_FAILURE"
 	ErrCodePaymentMethodUnknown = "PAYSIM_PAYMENT_METHOD_UNKNOWN"
-	ErrCodeExpiredCard          = "PAYSIM_EXPIRED_CARD"
-	ErrCodeRevokedCard          = "PAYSIM_REVOKED_CARD"
 	// #nosec G101 -- code d'erreur, pas un secret.
 	ErrCodeInvalidCard = "PAYSIM_INVALID_CARD"
 

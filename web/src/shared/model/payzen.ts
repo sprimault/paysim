@@ -102,18 +102,6 @@ export const ErrCodeStoreFailure = "PAYSIM_STORE_FAILURE";
  */
 export const ErrCodePaymentMethodUnknown = "PAYSIM_PAYMENT_METHOD_UNKNOWN";
 /**
- * Codes d'erreur Paysim. Prefixe PAYSIM_ pour ne pas se confondre avec
- * les codes reels de PayZen (INT_010, PSP_010, ACQ_010...). Le jour ou
- * un client attend un code PayZen precis, on mappera ici.
- */
-export const ErrCodeExpiredCard = "PAYSIM_EXPIRED_CARD";
-/**
- * Codes d'erreur Paysim. Prefixe PAYSIM_ pour ne pas se confondre avec
- * les codes reels de PayZen (INT_010, PSP_010, ACQ_010...). Le jour ou
- * un client attend un code PayZen precis, on mappera ici.
- */
-export const ErrCodeRevokedCard = "PAYSIM_REVOKED_CARD";
-/**
  * #nosec G101 -- code d'erreur, pas un secret.
  */
 export const ErrCodeInvalidCard = "PAYSIM_INVALID_CARD";

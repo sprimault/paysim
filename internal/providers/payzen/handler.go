@@ -1308,33 +1308,48 @@ func (h *Handler) createSubscription(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, ErrCodeInvalidCurrency, "devise invalide")
 		return
 	}
+	// Le token vide est tranché ici : le chemin générique le refuse aussi,
+	// mais par une erreur non typée qu'on ne peut pas distinguer d'une
+	// panne de dépôt. Un corps incomplet doit répondre « requête
+	// invalide », jamais « erreur de stockage ».
 	if req.PaymentMethodToken == "" {
 		h.writeError(w, ErrCodeInvalidRequest, "paymentMethodToken manquant")
 		return
 	}
-	subID, err := newUUID()
-	if err != nil {
-		h.writeError(w, ErrCodeInvalidRequest, "generation subscriptionId impossible")
-		return
-	}
 
-	sub := &Subscription{
-		ID:                 subID,
-		OrderID:            req.OrderID,
+	// Délégué au chemin générique, comme createPayment délègue à Create.
+	// L'écrire deux fois l'avait fait diverger sur deux points : la route
+	// native acceptait un alias inexistant — l'abonnement se créait, puis
+	// chaque échéance échouait sans que rien ne l'ait annoncé — et elle
+	// n'attribuait aucune marque, si bien qu'une instance configurée sur
+	// une autre marque enregistrait quand même l'abonnement sous celle
+	// par défaut.
+	sub, err := h.CreateSubscription(CreateSubscriptionInput{
+		PaymentMethodToken: req.PaymentMethodToken,
 		Amount:             req.Amount,
 		Currency:           req.Currency,
-		PaymentMethodToken: req.PaymentMethodToken,
+		OrderID:            req.OrderID,
 		EffectDate:         req.EffectDate,
 		Rrule:              req.Rrule,
 		Metadata:           req.Metadata,
-		CreatedAt:          h.clk.Now(),
-	}
-	if err := h.store.SaveSubscription(sub); err != nil {
-		h.storeErr(w, "createSubscription.SaveSubscription", err)
+	})
+	switch {
+	case err == nil:
+	case errors.Is(err, ErrPaymentMethodUnknown):
+		h.writeError(w, ErrCodePaymentMethodUnknown, "paymentMethodToken inconnu")
+		return
+	case errors.Is(err, domain.ErrInvalidAmount):
+		h.writeError(w, ErrCodeInvalidAmount, "montant invalide")
+		return
+	case errors.Is(err, domain.ErrInvalidCurrency):
+		h.writeError(w, ErrCodeInvalidCurrency, "devise invalide")
+		return
+	default:
+		h.storeErr(w, "createSubscription.CreateSubscription", err)
 		return
 	}
 
-	h.writeSuccess(w, CreateSubscriptionAnswer{SubscriptionID: subID})
+	h.writeSuccess(w, CreateSubscriptionAnswer{SubscriptionID: sub.ID})
 }
 
 // getSubscription traite POST /api-payment/V4/Subscription/Get.

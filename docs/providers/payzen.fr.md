@@ -310,6 +310,7 @@ KrAnswer
 ├── serverDate          string       ISO 8601
 ├── serverUrl           string (optionnel)
 ├── applicationVersion  string (optionnel)
+├── applicationProvider string (optionnel) — code de marque, voir plus bas
 ├── mode                string       "TEST" (Paysim n'émet jamais "PRODUCTION")
 ├── orderDetails
 │   ├── orderTotalAmount     integer
@@ -387,6 +388,26 @@ KrThreeDSResponse
 │   └── _type               "V4/AuthenticationResultData"
 └── _type                   "V4/ThreeDSResponse"
 ```
+
+### `applicationProvider` nomme la marque
+
+Chaque `kr-answer` porte le code de marque de l'instance qui l'a émis. Il
+ne se déduit pas du nom d'hôte — quatre hôtes distincts annoncent
+`PAYZEN` — d'où une table explicite, relevée sur les API de production en
+août 2026 :
+
+| Marque | `applicationProvider` |
+| --- | --- |
+| PayZen | `PAYZEN` |
+| Systempay | `NPS` |
+| Sogecommerce | `SOGECOM` |
+| Scellius | `LBP` |
+| Lyra Collect | `LYRA` |
+
+Une marque inconnue rend une valeur vide, donc un champ omis : mieux vaut
+ne rien annoncer qu'annoncer la mauvaise marque. C'est ce qui permet à une
+instance d'héberger plusieurs intégrations en laissant chacune reconnaître
+ses propres webhooks.
 
 ## Les portefeuilles ne sont pas simulés
 
@@ -603,8 +624,23 @@ Préfixe `PAYSIM_*` pour ne pas se confondre avec les codes PayZen réels
 | `PAYSIM_SUBSCRIPTION_UNKNOWN`    | `Subscription/Get` sur id inconnu.                  |
 | `PAYSIM_STORE_FAILURE`           | Erreur du store sous-jacent (SQLite plein, corruption). |
 | `PAYSIM_PAYMENT_METHOD_UNKNOWN`  | Rejeu one-click sur `paymentMethodToken` inconnu.   |
-| `PAYSIM_EXPIRED_CARD`            | Moyen de paiement stocké dont la date d'expiration est passée. |
-| `PAYSIM_REVOKED_CARD`            | Moyen de paiement stocké révoqué via l'API générique. |
+
+Un alias expiré ou révoqué ne produit **aucune erreur d'API**.
+`CreatePayment` répond `SUCCESS` avec un `formToken`, et le refus arrive
+là où arrive un vrai refus — dans le webhook :
+
+```
+orderStatus     UNPAID
+status          UNPAID
+detailedStatus  REFUSED
+errorCode       PAYSIM_REFUSED
+errorMessage    moyen de paiement revoque | moyen de paiement expire
+```
+
+C'est délibéré, et c'est ce que fait la vraie plateforme : une carte
+refusée par l'émetteur est un paiement refusé, pas une requête malformée.
+Du code écrit contre une erreur d'API pour ces deux cas ne s'exécuterait
+jamais en production.
 
 ## Signature kr-hash
 
