@@ -32,7 +32,7 @@
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^6.0.2",
-    "@vitest/coverage-v8": "^4.1.8",
+    "@vitest/coverage-v8": "^4.1.11",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.17.0",
     "eslint-plugin-react-hooks": "^5.0.0",
@@ -46,12 +46,6 @@
     "typescript": "~5.7.2",
     "typescript-eslint": "^8.18.2",
     "vite": "^8.0.16",
-    "vitest": "^4.1.8"
-  },
-  "overrides": {
-    "nanoid": "3.3.18"
-  },
-  "overridesReason": {
-    "nanoid": "3.3.18 corrige GHSA-2v37-7h3g-55p8 (boucle infinie sur taille zero). 3.3.17 avait ete epinglee en la croyant corrective : l'avis couvre en fait tout ce qui precede 3.3.18. Adoptee le 2026-08-14, une semaine apres sa publication du 2026-08-07 — le delai minimum est respecte, ce qui n'etait pas le cas au moment du premier epinglage. Exposition nulle de toute facon : postcss est en devDependencies et nanoid n'entre pas dans le bundle publie. A retirer quand postcss remontera nanoid tout seul."
+    "vitest": "^4.1.11"
   }
 }
