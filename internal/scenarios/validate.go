@@ -144,13 +144,21 @@ func (c *CreatePayment) Validate() error {
 }
 
 // Validate contrôle la forme d'une Card. Aucune validation Luhn (choix
-// projet : Paysim accepte tout PAN). ExpiryMonth 1-12 ; ExpiryYear
-// pas contraint côté loader — c'est au runner/serveur de refuser au
-// moment de la vérification d'expiration (via `IsExpired`).
+// projet : Paysim accepte tout PAN). L'échéance s'exprime sous l'une des
+// deux formes, jamais les deux : ExpiryMonth 1-12 + ExpiryYear, ou
+// ExpiryInMonths que le runner résout sur l'horloge de l'instance.
+// ExpiryYear n'est pas contraint côté loader — c'est au runner/serveur de
+// refuser au moment de la vérification d'expiration (via `IsExpired`).
 func (c *Card) Validate() error {
 	var errs []error
 	if c.PAN == "" {
 		errs = append(errs, errors.New("pan vide"))
+	}
+	if c.ExpiryInMonths != nil {
+		if c.ExpiryMonth != 0 || c.ExpiryYear != 0 {
+			errs = append(errs, errors.New("expiry_in_months exclut expiry_month et expiry_year"))
+		}
+		return errors.Join(errs...)
 	}
 	if c.ExpiryMonth < 1 || c.ExpiryMonth > 12 {
 		errs = append(errs, fmt.Errorf("expiry_month = %d, veut 1-12", c.ExpiryMonth))

@@ -261,6 +261,20 @@ type Card struct {
 	ExpiryMonth int `json:"expiryMonth"        yaml:"expiry_month"`
 	ExpiryYear  int `json:"expiryYear"         yaml:"expiry_year"`
 
+	// ExpiryInMonths exprime l'échéance relativement à l'horloge de
+	// l'instance, que le runner résout en mois/année juste avant
+	// l'envoi. Exclusif avec ExpiryMonth et ExpiryYear.
+	//
+	// Pointeur pour distinguer l'absence du zéro, qui désigne la fin
+	// du mois courant — une carte encore valide, mais plus pour
+	// longtemps. Une valeur négative donne une carte déjà échue.
+	//
+	// Existe parce qu'une date absolue écrite dans un scénario commité
+	// devient fausse le jour où le calendrier la dépasse : elle
+	// n'échoue pas à l'écriture, elle échoue des mois plus tard sans
+	// que personne n'ait rien touché.
+	ExpiryInMonths *int `json:"-" yaml:"expiry_in_months,omitempty"`
+
 	// Brand est la marque, déduite du BIN si absente.
 	Brand string `json:"brand,omitempty"    yaml:"brand,omitempty"`
 

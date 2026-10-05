@@ -215,6 +215,10 @@ func (r *Runner) exec(ctx context.Context, st *state, step Step) error {
 // Si le paiement retourne un paymentMethodToken (enrôlement via Card),
 // il est aussi mémorisé pour les charge_token à venir.
 func (r *Runner) doCreate(ctx context.Context, st *state, in *CreatePayment) error {
+	in, err := r.resolveExpiry(ctx, in)
+	if err != nil {
+		return err
+	}
 	got, err := r.client.CreatePayment(ctx, in)
 	if err != nil {
 		return err
@@ -224,6 +228,46 @@ func (r *Runner) doCreate(ctx context.Context, st *state, in *CreatePayment) err
 		st.currentToken = got.PaymentMethodToken
 	}
 	return nil
+}
+
+// resolveExpiry traduit un expiry_in_months en couple mois/année lu sur
+// l'horloge de l'instance — celle que advance_time déplace, pas celle du
+// poste. Un scénario qui fait vieillir l'instance puis enrôle une carte
+// doit voir l'échéance depuis le présent de l'instance, sinon il mesure
+// un décalage qu'il a lui-même créé.
+//
+// L'entrée n'est pas modifiée : le scénario chargé reste la description
+// de ce qui a été demandé, et deux exécutions du même Runner ne se
+// contaminent pas.
+//
+// Contrairement au curseur posé par Run, l'échec de lecture n'est pas
+// toléré. Un curseur replié sur l'heure du poste élargit une fenêtre
+// d'assertion, ce qui est sans conséquence ; une échéance repliée sur
+// l'heure du poste donnerait une carte dont la date ne veut rien dire
+// sur une instance avancée — et c'est précisément le mensonge que
+// expiry_in_months existe pour supprimer.
+func (r *Runner) resolveExpiry(ctx context.Context, in *CreatePayment) (*CreatePayment, error) {
+	if in.Card == nil || in.Card.ExpiryInMonths == nil {
+		return in, nil
+	}
+	now, err := r.client.ClockNow(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("expiry_in_months: horloge de l'instance illisible: %w", err)
+	}
+	// Le calcul part du premier du mois : AddDate reporte les jours
+	// inexistants sur le mois suivant, donc un 31 janvier + 1 mois
+	// donnerait le 3 mars et ferait sauter février.
+	firstOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	due := firstOfMonth.AddDate(0, *in.Card.ExpiryInMonths, 0)
+
+	card := *in.Card
+	card.ExpiryInMonths = nil
+	card.ExpiryMonth = int(due.Month())
+	card.ExpiryYear = due.Year()
+
+	out := *in
+	out.Card = &card
+	return &out, nil
 }
 
 // doChargeToken déclenche un rejeu one-click. Token vide → utilise le

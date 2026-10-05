@@ -221,6 +221,30 @@ produira ensuite. C'est ce qui rend testables la carte étrangère, la
 carte de débit et le routage par émetteur — les quatre derniers champs
 étaient auparavant figés à `FR` / `CREDIT` / `PAYSIM`.
 
+### Échéance relative
+
+`expiry_in_months` remplace le couple `expiry_month` / `expiry_year` et se
+résout sur **l'horloge de l'instance** — celle que `advance_time` déplace,
+pas celle de votre poste :
+
+```yaml
+card:
+  pan: "4111111111111111"
+  expiry_in_months: 24   # dans deux ans ; exclut expiry_month/expiry_year
+```
+
+`0` désigne la fin du mois courant — une carte encore valide, mais plus
+pour longtemps. Une valeur négative donne une carte déjà échue, soit le
+cas du refus immédiat.
+
+À préférer dans tout scénario que vous commitez. Une date absolue est
+vraie le jour où on l'écrit et fausse dès que le calendrier la dépasse :
+elle n'échoue pas à l'écriture, elle échoue des mois plus tard sans que
+rien n'ait changé. C'est pour cette raison que les scénarios canoniques
+emploient tous la forme relative, et `clock-expiry.yml` ne peut pas s'en
+passer — tout son propos est de franchir une échéance que l'horloge de
+l'instance vient d'atteindre.
+
 **N'utilisez jamais un numéro de carte réel** : les PAN sont stockés en
 clair. Voir [testing-cards.fr.md](testing-cards.fr.md).
 
