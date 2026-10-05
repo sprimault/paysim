@@ -3,6 +3,7 @@
 
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 // Configuration Vite pour l'UI Paysim.
 //
@@ -13,7 +14,9 @@ import react from '@vitejs/plugin-react';
 // - Bundle sortant dans ../dist non — on garde web/dist/ (relatif au
 //   web/) parce que le go:embed côté serveur pointe sur web/dist/*.
 export default defineConfig({
-  plugins: [react()],
+  // Tailwind passe par son plugin Vite depuis la v4 : plus de
+  // postcss.config.js ni d'autoprefixer, le préfixage est intégré.
+  plugins: [tailwindcss(), react()],
   resolve: {
     alias: {
       '@': new URL('./src', import.meta.url).pathname,

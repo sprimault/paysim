@@ -2,9 +2,78 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+
+/* Le variant dark est piloté par une classe, pas par prefers-color-scheme.
+ * C'est ce qui permet au toggle à trois états (clair / système / sombre)
+ * d'écraser la préférence du navigateur ; en « système », useTheme
+ * réapplique lui-même prefers-color-scheme. Sans cette ligne, la v4
+ * retombe sur la requête média et le toggle n'a plus aucun effet — en
+ * silence. Voir shared/lib/theme.ts. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Thème Paysim. En v4 la configuration vit ici : chaque variable d'un
+ * espace de noms connu engendre ses utilitaires (--color-* donne bg-*,
+ * text-*, ring-*…), ce qui remplace tailwind.config.js. */
+@theme {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+
+  /* Accent indigo, cohérent avec l'esthétique d'un outil dev. */
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-brand-800: #3730a3;
+  --color-brand-900: #312e81;
+  --color-brand-950: #1e1b4b;
+
+  /* Statuts alignés sur les conventions PSP : vert = paid, rouge =
+   * unpaid, bleu = authorised (fonds réservés), ambre = chargeback. */
+  --color-status-paid: #10b981;
+  --color-status-unpaid: #f43f5e;
+  --color-status-authorised: #0ea5e9;
+  --color-status-expired: #71717a;
+  --color-status-chargeback: #f59e0b;
+  --color-status-abandoned: #a1a1aa;
+
+  --radius-panel: 0.75rem;
+
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-card-hover: 0 4px 12px rgba(15, 23, 42, 0.1), 0 2px 4px rgba(15, 23, 42, 0.06);
+  --shadow-panel: 0 10px 40px rgba(15, 23, 42, 0.1), 0 4px 12px rgba(15, 23, 42, 0.06);
+
+  --animate-fade-in: fadeIn 150ms ease-out;
+  --animate-slide-in-top: slideInTop 200ms ease-out;
+  --animate-pulse-slow: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Hors @theme : les keyframes restent émises même si l'utilitaire
+ * correspondant n'est employé nulle part, ce qui évite qu'une animation
+ * disparaisse du bundle au gré des usages. */
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInTop {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
 /* Reset et bases design system Paysim.
  * - Font Inter par défaut sur body.
@@ -13,7 +82,7 @@
  */
 @layer base {
   html {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -23,16 +92,14 @@
   }
 
   :focus-visible {
-    @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-white dark:ring-offset-zinc-950;
+    @apply outline-hidden ring-2 ring-brand-500 ring-offset-2 ring-offset-white dark:ring-offset-zinc-950;
   }
 }
 
-@layer utilities {
-  .tabular {
-    font-variant-numeric: tabular-nums;
-  }
-
-  .font-mono {
-    font-family: 'JetBrains Mono Variable', ui-monospace, monospace;
-  }
+/* @utility plutôt que @layer utilities : c'est ce qui rend la classe
+ * composable avec les variants (hover:tabular, md:tabular). La
+ * surcharge .font-mono d'avant la v4 disparaît — --font-mono engendre
+ * désormais l'utilitaire lui-même. */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
 }
