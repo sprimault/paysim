@@ -78,7 +78,7 @@ export function ListFilters({
           onChange={(e) => onQueryChange(e.target.value)}
           placeholder={t(placeholderKey)}
           aria-label={t(placeholderKey)}
-          className="h-8 w-64 rounded-md border border-zinc-200 bg-white pl-8 pr-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-brand-400 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-600"
+          className="h-8 w-64 rounded-md border border-zinc-200 bg-white pl-8 pr-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-brand-400 focus:outline-hidden dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-600"
         />
       </div>
 

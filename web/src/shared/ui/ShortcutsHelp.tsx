@@ -38,7 +38,7 @@ export function ShortcutsHelp({ open, onClose }: ShortcutsHelpProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 p-4 backdrop-blur-xs"
       onClick={onClose}
       role="presentation"
     >

@@ -34,7 +34,7 @@ export function UpdateBanner() {
         <button
           type="button"
           onClick={() => window.location.reload()}
-          className="mt-2 inline-flex items-center rounded-md bg-brand-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
+          className="mt-2 inline-flex items-center rounded-md bg-brand-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-brand-700 focus:outline-hidden focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
         >
           {t('updateBanner.action')}
         </button>
