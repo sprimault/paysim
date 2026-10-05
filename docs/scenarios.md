@@ -218,6 +218,29 @@ These values are stored with the payment method and reported as-is in the
 what makes a foreign card, a debit card, or issuer-based routing testable
 — the last four fields used to be frozen at `FR` / `CREDIT` / `PAYSIM`.
 
+### Relative expiry
+
+`expiry_in_months` replaces the `expiry_month` / `expiry_year` pair and is
+resolved against **the instance clock** — the one `advance_time` moves,
+not the one on your machine:
+
+```yaml
+card:
+  pan: "4111111111111111"
+  expiry_in_months: 24   # two years out; excludes expiry_month/expiry_year
+```
+
+`0` means the end of the current month — a card still valid, but not for
+long. A negative value yields a card that has already lapsed, which is the
+immediate-decline case.
+
+Prefer it in any scenario you commit. An absolute date is true the day it
+is written and false once the calendar passes it: it does not fail when
+you write it, it fails months later with nothing having changed. The
+canonical scenarios all use the relative form for that reason, and
+`clock-expiry.yml` cannot work without it — its whole point is to cross an
+expiry that the instance clock has just reached.
+
 **Never use a real card number**: PANs are stored in clear text. See
 [testing-cards.md](testing-cards.md).
 

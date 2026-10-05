@@ -4,6 +4,7 @@
 package scenarios
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -240,6 +241,24 @@ steps:
 			wantSub: "expiry_month = 13",
 		},
 		{
+			name: "card avec expiry_in_months et date absolue",
+			yaml: `
+name: x
+steps:
+  - action: create_payment
+    provider: payzen
+    amount: 1000
+    currency: EUR
+    order_id: O
+    card:
+      pan: "4111111111111111"
+      expiry_in_months: 1
+      expiry_month: 12
+      expiry_year: 2028
+`,
+			wantSub: "expiry_in_months exclut",
+		},
+		{
 			name: "card avec pan vide",
 			yaml: `
 name: x
@@ -381,22 +400,32 @@ func TestLoadFile_canonicalExamples(t *testing.T) {
 	// Les scénarios canoniques publiés dans examples/scenarios/ doivent
 	// rester valides — si le format YAML évolue, cette suite casse et
 	// force la mise à jour cohérente doc + exemples.
-	examples := []string{
-		"one-shot.yml",
-		"one-shot-declined.yml",
-		"recurring-token.yml",
-		"subscription.yml",
-		"subscription-with-decline.yml",
-		"chaos-duplicate.yml",
+	//
+	// Le répertoire est lu plutôt qu'énuméré : une liste en dur avait
+	// laissé clock-expiry.yml et register-only.yml hors couverture, sans
+	// que rien ne le signale.
+	dir := filepath.Join("..", "..", "examples", "scenarios")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("lecture de %s : %v", dir, err)
 	}
-	for _, name := range examples {
-		t.Run(name, func(t *testing.T) {
+	var vus int
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".yml" {
+			continue
+		}
+		vus++
+		t.Run(e.Name(), func(t *testing.T) {
 			t.Parallel()
-			path := filepath.Join("..", "..", "examples", "scenarios", name)
+			path := filepath.Join(dir, e.Name())
 			if _, err := LoadFile(path); err != nil {
 				t.Errorf("LoadFile(%s): %v", path, err)
 			}
 		})
+	}
+	// Un répertoire vide ferait passer la suite sans rien charger.
+	if vus == 0 {
+		t.Fatalf("aucun scenario trouve dans %s", dir)
 	}
 }
 

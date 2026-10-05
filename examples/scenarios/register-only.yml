@@ -34,8 +34,7 @@ steps:
       # scenario sur PAN 4xxx resterait vert meme si la marque se
       # perdait en route — il ne prouverait rien.
       pan: "5555555555554444"
-      expiry_month: 12
-      expiry_year: 2028
+      expiry_in_months: 24
       # Attributs du porteur et de l'emetteur : ils remontent tels
       # quels dans cardDetails du kr-answer. Avant, ce bloc annoncait
       # une carte de credit francaise quoi qu'on enregistre.

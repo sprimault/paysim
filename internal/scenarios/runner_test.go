@@ -28,6 +28,10 @@ type fakeServer struct {
 	methods  map[string]*fakeMethod // token -> moyen de paiement
 	subs     map[string]*fakeSub    // subscriptionId -> abonnement
 	webhooks []WebhookEntry
+	// now est l'heure que le fake annonce sur GET /clock. Réglable pour
+	// placer un test à une date choisie — un 31, typiquement, où le
+	// calcul d'échéance a un piège.
+	now time.Time
 	// hooks permettent aux tests de forcer une réponse anormale sur un
 	// endpoint donné (nil = comportement nominal).
 	failCreate func(w http.ResponseWriter) bool
@@ -96,6 +100,10 @@ func newFakeServer(t *testing.T) (*fakeServer, *httptest.Server) {
 		payments: make(map[string]string),
 		methods:  make(map[string]*fakeMethod),
 		subs:     make(map[string]*fakeSub),
+		// Heure réelle par défaut : le curseur que Run pose au démarrage
+		// garde ainsi la valeur qu'il avait avant que le fake réponde
+		// sur /clock.
+		now: time.Now().UTC(),
 	}
 	srv := httptest.NewServer(fs.router())
 	t.Cleanup(srv.Close)
@@ -114,7 +122,18 @@ func (fs *fakeServer) router() http.Handler {
 	mux.HandleFunc("GET /paysim/api/v1/subscriptions/{id}", fs.getSub)
 	mux.HandleFunc("POST /paysim/api/v1/subscriptions/{id}/trigger-billing", fs.triggerBilling)
 	mux.HandleFunc("POST /paysim/api/v1/subscriptions/{id}/cancel", fs.cancelSub)
+	mux.HandleFunc("GET /paysim/api/v1/clock", fs.getClock)
 	return mux
+}
+
+func (fs *fakeServer) getClock(w http.ResponseWriter, _ *http.Request) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	writeJSONResp(w, http.StatusOK, map[string]any{
+		"now":           fs.now,
+		"offset":        "0s",
+		"offsetSeconds": 0,
+	})
 }
 
 func (fs *fakeServer) createSub(w http.ResponseWriter, r *http.Request) {
@@ -1258,5 +1277,123 @@ func TestAdvanceTime_dureeInvalide(t *testing.T) {
 		if err := a.Validate(); err == nil {
 			t.Errorf("duration %v acceptee, veut une erreur", d)
 		}
+	}
+}
+
+// setNow règle l'heure annoncée par le fake sur GET /clock.
+func (fs *fakeServer) setNow(t time.Time) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	fs.now = t
+}
+
+// moisRelatifs emballe un offset de mois pour Card.ExpiryInMonths, dont
+// le pointeur distingue l'absence du zéro.
+func moisRelatifs(n int) *int { return &n }
+
+// TestRunner_expiryInMonths vérifie que l'échéance relative est résolue
+// sur l'horloge de l'instance, et qu'elle l'est en mois calendaires —
+// un décompte en jours déraperait d'un mois sur les fins de mois.
+func TestRunner_expiryInMonths(t *testing.T) {
+	t.Parallel()
+	cas := []struct {
+		name            string
+		now             time.Time
+		offset          int
+		wantMonth, want int
+	}{
+		{
+			name: "mois suivant",
+			now:  time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC),
+			offset: 1, wantMonth: 7, want: 2026,
+		},
+		{
+			// Le cas qui impose de partir du premier du mois : AddDate
+			// reporte le 31 février sur mars, et l'échéance sauterait
+			// un mois un jour sur douze.
+			name: "depuis un 31",
+			now:  time.Date(2026, 1, 31, 12, 0, 0, 0, time.UTC),
+			offset: 1, wantMonth: 2, want: 2026,
+		},
+		{
+			name: "bascule d'annee",
+			now:  time.Date(2026, 12, 20, 12, 0, 0, 0, time.UTC),
+			offset: 1, wantMonth: 1, want: 2027,
+		},
+		{
+			name: "zero vaut fin du mois courant",
+			now:  time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC),
+			offset: 0, wantMonth: 6, want: 2026,
+		},
+		{
+			name: "offset long",
+			now:  time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC),
+			offset: 24, wantMonth: 6, want: 2028,
+		},
+		{
+			// Une carte déjà échue à l'enrôlement est un cas de test
+			// légitime : c'est le refus immédiat.
+			name: "offset negatif",
+			now:  time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC),
+			offset: -1, wantMonth: 5, want: 2026,
+		},
+	}
+	for _, c := range cas {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			fs, srv := newFakeServer(t)
+			fs.setNow(c.now)
+
+			sc := &Scenario{Name: "echeance", Steps: []Step{{
+				Action: ActionCreatePayment,
+				CreatePayment: &CreatePayment{
+					Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "O",
+					Card: &Card{PAN: "4111111111111111", ExpiryInMonths: moisRelatifs(c.offset)},
+				},
+			}}}
+			if err := NewRunner(NewClient(srv.URL, "")).Run(context.Background(), sc).Err(); err != nil {
+				t.Fatalf("Run : %v", err)
+			}
+
+			fs.mu.Lock()
+			defer fs.mu.Unlock()
+			if len(fs.methods) != 1 {
+				t.Fatalf("%d moyen(s) enrole(s), veut 1", len(fs.methods))
+			}
+			for _, pm := range fs.methods {
+				if pm.ExpiryMonth != c.wantMonth || pm.ExpiryYear != c.want {
+					t.Errorf("echeance = %02d/%d, veut %02d/%d",
+						pm.ExpiryMonth, pm.ExpiryYear, c.wantMonth, c.want)
+				}
+			}
+		})
+	}
+}
+
+// TestRunner_expiryInMonthsSansHorloge vérifie qu'une horloge illisible
+// fait échouer l'étape au lieu de retomber sur l'heure du poste : sur une
+// instance avancée, ce repli produirait une échéance fausse sans rien
+// signaler.
+func TestRunner_expiryInMonthsSansHorloge(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/paysim/api/v1/clock" {
+			http.Error(w, "indisponible", http.StatusInternalServerError)
+			return
+		}
+		writeJSONResp(w, http.StatusCreated, CreatedPayment{UUID: "u", Provider: "payzen", State: "initiated"})
+	}))
+	defer srv.Close()
+
+	sc := &Scenario{Name: "echeance", Steps: []Step{{
+		Action: ActionCreatePayment,
+		CreatePayment: &CreatePayment{
+			Provider: "payzen", Amount: 0, Currency: "EUR", OrderID: "O",
+			Card: &Card{PAN: "4111111111111111", ExpiryInMonths: moisRelatifs(1)},
+		},
+	}}}
+	err := NewRunner(NewClient(srv.URL, "")).Run(context.Background(), sc).Err()
+	if err == nil || !strings.Contains(err.Error(), "expiry_in_months") {
+		t.Errorf("erreur = %v, veut un message nommant expiry_in_months", err)
 	}
 }

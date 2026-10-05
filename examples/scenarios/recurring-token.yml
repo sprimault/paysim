@@ -24,8 +24,7 @@ steps:
         country: FR
     card:
       pan: "4111111111111111"
-      expiry_month: 12
-      expiry_year: 2028
+      expiry_in_months: 24
   - action: simulate
     status: captured
   - action: assert_state

@@ -147,8 +147,7 @@ steps:
     form_action: REGISTER
     card:
       pan: "4111111111111111"
-      expiry_month: 12
-      expiry_year: 2028
+      expiry_in_months: 24
   - action: create_subscription
     amount: 2990
     currency: EUR
